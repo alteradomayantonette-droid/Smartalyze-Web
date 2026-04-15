@@ -12,7 +12,7 @@ def _auth_response(message: str, token: str, user) -> AuthResponse:
     return {
         "message": message,
         "token": token,
-        "user": user,
+        "user": UserRead.model_validate(user).model_dump(),
     }
 
 
@@ -36,4 +36,5 @@ async def me(authorization: str | None = Header(default=None), db: AsyncSession 
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
 
     token = authorization.removeprefix("Bearer ").strip()
-    return await get_user_by_token(db, token)
+    user = await get_user_by_token(db, token)
+    return UserRead.model_validate(user).model_dump()

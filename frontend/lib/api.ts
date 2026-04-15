@@ -52,21 +52,37 @@ export type DatasetWorkspace = {
   suggestions: Array<{ scope: string; message: string }>;
 };
 
+const REQUEST_TIMEOUT_MS = 15000;
+
 async function request<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(options?.headers ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    throw new Error(errorBody?.detail ?? "Request failed.");
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...(options?.headers ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      throw new Error(errorBody?.detail ?? "Request failed.");
+    }
+
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
   }
-
-  return response.json() as Promise<T>;
 }
 
 export function registerUser(username: string, password: string): Promise<AuthResponse> {
