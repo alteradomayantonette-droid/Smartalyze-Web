@@ -12,6 +12,8 @@ CleaningOperationType = Literal[
     "drop_rows",
     "remove_all_duplicates",
     "convert_column_type",
+    "trim_whitespace",
+    "lowercase_column",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]

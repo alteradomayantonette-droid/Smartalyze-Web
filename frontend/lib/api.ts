@@ -63,7 +63,7 @@ export type CleaningIssue = {
 };
 
 export type CleaningOperation = {
-  operation_type: "fill_mean" | "fill_median" | "fill_mode" | "drop_rows" | "remove_all_duplicates" | "convert_column_type";
+  operation_type: "fill_mean" | "fill_median" | "fill_mode" | "drop_rows" | "remove_all_duplicates" | "convert_column_type" | "trim_whitespace" | "lowercase_column";
   columns?: string[];
   column?: string | null;
   target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;

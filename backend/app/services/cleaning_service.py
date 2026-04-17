@@ -149,6 +149,14 @@ def _convert_column_type(series: pd.Series, target_type: str, errors: str) -> pd
     )
 
 
+def _text_columns(frame: pd.DataFrame, columns: list[str] | None = None) -> list[str]:
+    if columns is not None:
+        _ensure_columns(frame, columns)
+        return columns
+
+    return [str(column) for column in frame.columns if pd.api.types.is_string_dtype(frame[column]) or pd.api.types.is_object_dtype(frame[column])]
+
+
 async def get_dataset_source_version(
     db: AsyncSession,
     dataset: Dataset,
@@ -251,6 +259,24 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
             )
         _ensure_columns(frame, [operation.column])
         frame[operation.column] = _convert_column_type(frame[operation.column], operation.target_type, operation.errors)
+        return frame
+
+    if operation.operation_type == "trim_whitespace":
+        columns = _text_columns(frame, operation.columns or None)
+        for column in columns:
+            frame[column] = frame[column].astype("string").str.strip()
+        return frame
+
+    if operation.operation_type == "lowercase_column":
+        columns = operation.columns or ([operation.column] if operation.column else [])
+        if not columns:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="lowercase_column requires at least one column.",
+            )
+        _ensure_columns(frame, columns)
+        for column in columns:
+            frame[column] = frame[column].astype("string").str.lower()
         return frame
 
     raise HTTPException(

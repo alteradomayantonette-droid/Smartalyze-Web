@@ -8,151 +8,173 @@ import {
   applyCleaningOperations,
   CleaningIssue,
   CleaningOperation,
-  CleanDetectResponse,
   CleanApplyResponse,
-  detectCleaningIssues,
+  CleanDetectResponse,
   createDatasetVersion,
   DatasetWorkspace,
+  detectCleaningIssues,
   getDatasetWorkspace,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
 type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "prediction";
+type FeedbackTone = "neutral" | "success" | "warning" | "error";
+type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
 
-type SuggestedCleaningAction = {
-  label: string;
-  description: string;
-  operation: CleaningOperation;
-};
-
-function formatIssueTitle(issue: CleaningIssue): string {
-  if (issue.kind === "duplicates") {
-    return "Duplicate rows detected";
-  }
-
-  if (issue.kind === "missing_values") {
-    return issue.column ? `Missing values in ${issue.column}` : "Missing values detected";
-  }
-
-  if (issue.kind === "type_inconsistency") {
-    if (issue.column) {
-      return `${issue.column} needs a type fix`;
-    }
-    return "Type issue detected";
-  }
-
-  return issue.message;
-}
-
-function describeSeverity(severity: CleaningIssue["severity"]): string {
-  if (severity === "error") {
-    return "High priority";
-  }
-
-  if (severity === "warning") {
-    return "Recommended";
-  }
-
-  return "Optional";
-}
-
-function buildSuggestedCleaningAction(
-  issue: CleaningIssue,
-  detection: CleanDetectResponse | null,
-): SuggestedCleaningAction | null {
-  if (issue.kind === "duplicates") {
-    return {
-      label: "Remove duplicates",
-      description: "Remove duplicate rows before saving or exporting.",
-      operation: {
-        operation_type: "remove_all_duplicates",
-        columns: [],
-        column: null,
-        target_type: null,
-        drop_all_missing: true,
-        errors: "coerce",
-      },
-    };
-  }
-
-  if (issue.kind === "missing_values" && issue.column) {
-    const columnType = detection?.column_types?.[issue.column] ?? "unknown";
-    const shouldUseMedian = columnType === "numeric" || columnType === "numeric_string";
-    return {
-      label: shouldUseMedian ? "Fill missing values with median" : "Fill missing values with most common value",
-      description: shouldUseMedian
-        ? `Use the median for ${issue.column} to keep the data balanced.`
-        : `Use the most common value for ${issue.column} to keep the column complete.`,
-      operation: {
-        operation_type: shouldUseMedian ? "fill_median" : "fill_mode",
-        columns: [issue.column],
-        column: issue.column,
-        target_type: null,
-        drop_all_missing: true,
-        errors: "coerce",
-      },
-    };
-  }
-
-  if (issue.kind === "type_inconsistency" && issue.column) {
-    const inferredType = String(issue.details?.inferred_type ?? detection?.column_types?.[issue.column] ?? "");
-    const targetType = inferredType === "datetime_string" ? "datetime" : "numeric";
-    return {
-      label: targetType === "datetime" ? "Convert to date format" : "Convert to numeric",
-      description: targetType === "datetime"
-        ? `Turn ${issue.column} into a proper date field.`
-        : `Turn ${issue.column} into a proper numeric field.`,
-      operation: {
-        operation_type: "convert_column_type",
-        columns: [issue.column],
-        column: issue.column,
-        target_type: targetType,
-        drop_all_missing: true,
-        errors: "coerce",
-      },
-    };
-  }
-
-  return null;
-}
-
-function describeCleaningOperation(operation: CleaningOperation): { title: string; detail: string } {
-  switch (operation.operation_type) {
-    case "fill_mean":
-      return {
-        title: "Fill missing values with average",
-        detail: `Columns: ${operation.columns?.join(", ") ?? "-"}`,
-      };
-    case "fill_median":
-      return {
-        title: "Fill missing values with median",
-        detail: `Columns: ${operation.columns?.join(", ") ?? "-"}`,
-      };
-    case "fill_mode":
-      return {
-        title: "Fill missing values with most common value",
-        detail: `Columns: ${operation.columns?.join(", ") ?? "-"}`,
-      };
-    case "drop_rows":
-      return {
-        title: "Drop rows with missing values",
-        detail: `Columns: ${operation.columns?.join(", ") ?? "-"}`,
-      };
-    case "remove_all_duplicates":
-      return {
-        title: "Remove duplicate rows",
-        detail: "Applies to the full dataset.",
-      };
-    case "convert_column_type":
-      return {
-        title: operation.target_type === "datetime" ? "Convert to date format" : "Convert to numeric",
-        detail: `Column: ${operation.column ?? "-"}`,
-      };
+function getFeedbackClasses(tone: FeedbackTone): string {
+  switch (tone) {
+    case "success":
+      return "border-green-200 bg-green-50 text-green-800";
+    case "warning":
+      return "border-yellow-200 bg-yellow-50 text-yellow-800";
+    case "error":
+      return "border-red-200 bg-red-50 text-red-800";
     default:
-      return {
-        title: "Cleaning action",
-        detail: `Columns: ${operation.columns?.join(", ") ?? "-"}`,
-      };
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
+function getSummaryTone(label: string, value: number | string | null | undefined): string {
+  const numericValue = typeof value === "number" ? value : Number(value ?? 0);
+
+  if (label === "Missing cells") {
+    return numericValue > 0 ? "border-yellow-200 bg-yellow-50 text-yellow-800" : "border-green-200 bg-green-50 text-green-800";
+  }
+
+  if (label === "Duplicates") {
+    return numericValue > 0 ? "border-red-200 bg-red-50 text-red-800" : "border-green-200 bg-green-50 text-green-800";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function getIssueTone(kind: string): { border: string; background: string; label: string; badge: string } {
+  if (kind === "duplicates") {
+    return {
+      border: "border-red-200",
+      background: "bg-red-50",
+      label: "text-red-700",
+      badge: "bg-red-100 text-red-700",
+    };
+  }
+
+  if (kind === "type_inconsistency") {
+    return {
+      border: "border-orange-200",
+      background: "bg-orange-50",
+      label: "text-orange-700",
+      badge: "bg-orange-100 text-orange-700",
+    };
+  }
+
+  return {
+    border: "border-yellow-200",
+    background: "bg-yellow-50",
+    label: "text-yellow-800",
+    badge: "bg-yellow-100 text-yellow-700",
+  };
+}
+
+function getColumnType(columnName: string, detection: CleanDetectResponse | null): string {
+  return detection?.column_types?.[columnName] ?? "unknown";
+}
+
+function isTextLikeColumnType(columnType: string): boolean {
+  return ["text", "categorical", "numeric_string", "datetime_string"].includes(columnType);
+}
+
+function isLowercaseCandidate(columnType: string): boolean {
+  return ["text", "categorical"].includes(columnType);
+}
+
+function getTextColumns(detection: CleanDetectResponse | null, availableColumns: string[]): string[] {
+  return availableColumns.filter((columnName) => isTextLikeColumnType(getColumnType(columnName, detection)));
+}
+
+function getDefaultMissingStrategy(columnName: string, detection: CleanDetectResponse | null): MissingStrategy {
+  const columnType = getColumnType(columnName, detection);
+  return columnType === "numeric" || columnType === "numeric_string" ? "fill_median" : "fill_mode";
+}
+
+function buildDuplicateOperation(): CleaningOperation {
+  return {
+    operation_type: "remove_all_duplicates",
+    columns: [],
+    column: null,
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
+function buildMissingValueOperation(columnName: string, strategy: MissingStrategy): CleaningOperation {
+  return {
+    operation_type: strategy,
+    columns: [columnName],
+    column: columnName,
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
+function buildTrimWhitespaceOperation(columns: string[]): CleaningOperation {
+  return {
+    operation_type: "trim_whitespace",
+    columns,
+    column: null,
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
+function buildLowercaseOperation(columnName: string): CleaningOperation {
+  return {
+    operation_type: "lowercase_column",
+    columns: [columnName],
+    column: columnName,
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
+function getOperationLabel(operation: CleaningOperation): string {
+  switch (operation.operation_type) {
+    case "remove_all_duplicates":
+      return "Remove duplicate rows";
+    case "fill_mean":
+      return operation.column ? `Fill "${operation.column}" missing values with average` : "Fill missing values with average";
+    case "fill_median":
+      return operation.column ? `Fill "${operation.column}" missing values with median` : "Fill missing values with median";
+    case "fill_mode":
+      return operation.column ? `Fill "${operation.column}" missing values with mode` : "Fill missing values with mode";
+    case "drop_rows":
+      return operation.column ? `Drop rows with missing values in "${operation.column}"` : "Drop rows with missing values";
+    case "trim_whitespace":
+      return "Trim whitespace";
+    case "lowercase_column":
+      return operation.column ? `Lowercase "${operation.column}"` : "Lowercase text";
+    case "convert_column_type":
+      return operation.column ? `Convert "${operation.column}"` : "Convert column type";
+    default:
+      return "Cleaning action";
+  }
+}
+
+function getOperationDetail(operation: CleaningOperation): string {
+  switch (operation.operation_type) {
+    case "remove_all_duplicates":
+      return "Applies to the full dataset.";
+    case "trim_whitespace":
+      return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "Applied to detected text columns.";
+    case "lowercase_column":
+      return operation.column ? `Column: ${operation.column}` : "Lowercase a text column.";
+    case "convert_column_type":
+      return operation.column ? `Column: ${operation.column}` : "Convert a column to another type.";
+    default:
+      return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "";
   }
 }
 
@@ -164,12 +186,14 @@ export default function DatasetWorkspacePage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const datasetId = Number(params.id);
+
   const [workspace, setWorkspace] = useState<DatasetWorkspace | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [token, setToken] = useState<string | null>(null);
   const [operationType, setOperationType] = useState("cleaned");
   const [replaceCurrent, setReplaceCurrent] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -178,12 +202,12 @@ export default function DatasetWorkspacePage() {
   const [cleaningIssues, setCleaningIssues] = useState<CleaningIssue[]>([]);
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
   const [cleaningResult, setCleaningResult] = useState<CleanApplyResponse | null>(null);
-  const [operationDraftType, setOperationDraftType] = useState<CleaningOperation["operation_type"]>("fill_mode");
-  const [operationDraftColumns, setOperationDraftColumns] = useState("");
-  const [operationDraftColumn, setOperationDraftColumn] = useState("");
-  const [operationDraftTargetType, setOperationDraftTargetType] = useState<NonNullable<CleaningOperation["target_type"]>>("numeric");
-  const [operationDraftDropAllMissing, setOperationDraftDropAllMissing] = useState(true);
-  const [operationDraftErrors, setOperationDraftErrors] = useState<NonNullable<CleaningOperation["errors"]>>("coerce");
+  const [missingValueStrategies, setMissingValueStrategies] = useState<Record<string, MissingStrategy>>({});
+
+  function setFeedback(text: string, tone: FeedbackTone = "neutral") {
+    setMessage(text);
+    setMessageTone(tone);
+  }
 
   useEffect(() => {
     const storedToken = getStoredToken();
@@ -191,6 +215,7 @@ export default function DatasetWorkspacePage() {
       router.replace("/login");
       return;
     }
+
     setToken(storedToken);
 
     if (!Number.isFinite(datasetId)) {
@@ -213,25 +238,65 @@ export default function DatasetWorkspacePage() {
     return workspace?.dataset.current_version_id ?? workspace?.versions.at(-1)?.id ?? null;
   }
 
+  function hasQueuedOperation(operation: CleaningOperation): boolean {
+    return cleaningOperations.some((currentOperation) => areCleaningOperationsEqual(currentOperation, operation));
+  }
+
+  function toggleOperation(operation: CleaningOperation, addMessage: string, removeMessage: string) {
+    setCleaningOperations((currentOperations) => {
+      const exists = currentOperations.some((currentOperation) => areCleaningOperationsEqual(currentOperation, operation));
+      if (exists) {
+        setFeedback(removeMessage, "warning");
+        return currentOperations.filter((currentOperation) => !areCleaningOperationsEqual(currentOperation, operation));
+      }
+
+      setFeedback(addMessage, "success");
+      return [...currentOperations, operation];
+    });
+  }
+
+  function addMissingValueOperation(columnName: string) {
+    const strategy = missingValueStrategies[columnName] ?? getDefaultMissingStrategy(columnName, cleaningDetection);
+    const operation = buildMissingValueOperation(columnName, strategy);
+    toggleOperation(operation, `Added ${getOperationLabel(operation)}.`, `Removed ${getOperationLabel(operation)} from the queue.`);
+  }
+
+  function toggleDuplicateRows() {
+    const operation = buildDuplicateOperation();
+    toggleOperation(operation, "Added remove duplicate rows.", "Removed duplicate rows from the queue.");
+  }
+
+  function toggleTrimWhitespace() {
+    const textColumns = getTextColumns(cleaningDetection, availableColumns);
+    if (textColumns.length === 0) {
+      setFeedback("No text columns were found for trimming.", "warning");
+      return;
+    }
+
+    const operation = buildTrimWhitespaceOperation(textColumns);
+    toggleOperation(operation, "Added trim whitespace.", "Removed trim whitespace from the queue.");
+  }
+
+  function toggleLowercaseColumn(columnName: string) {
+    const operation = buildLowercaseOperation(columnName);
+    toggleOperation(operation, `Added lowercase for ${columnName}.`, `Removed lowercase for ${columnName}.`);
+  }
+
   async function handleDetectCleaning() {
     if (!workspace || !token) {
       return;
     }
 
     setDetecting(true);
-    setMessage("");
+    setFeedback("");
 
     try {
-      const response = await detectCleaningIssues(
-        workspace.dataset.id,
-        token,
-        getSourceVersionId(),
-      );
+      const response = await detectCleaningIssues(workspace.dataset.id, token, getSourceVersionId());
       setCleaningDetection(response);
       setCleaningIssues(response.issues);
-      setMessage(`Detected ${response.issues.length} issue(s).`);
+      setFeedback(`Detected ${response.issues.length} issue(s).`, "success");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not detect cleaning issues.");
+      setFeedback(error instanceof Error ? error.message : "Could not detect cleaning issues.", "error");
     } finally {
       setDetecting(false);
     }
@@ -239,26 +304,21 @@ export default function DatasetWorkspacePage() {
 
   async function handleApplyCleaning() {
     if (!workspace || !token || cleaningOperations.length === 0) {
-      setMessage("Add at least one cleaning operation before applying changes.");
+      setFeedback("Add at least one cleaning operation before applying changes.", "warning");
       return;
     }
 
     setApplying(true);
-    setMessage("");
+    setFeedback("");
 
     try {
-      const response = await applyCleaningOperations(
-        workspace.dataset.id,
-        cleaningOperations,
-        token,
-        getSourceVersionId(),
-      );
+      const response = await applyCleaningOperations(workspace.dataset.id, cleaningOperations, token, getSourceVersionId());
       setCleaningDetection(response);
       setCleaningResult(response);
       setCleaningIssues(response.issues);
-      setMessage("Cleaning applied. Review the preview before saving.");
+      setFeedback("Cleaning applied. Review the preview before saving.", "success");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not apply cleaning operations.");
+      setFeedback(error instanceof Error ? error.message : "Could not apply cleaning operations.", "error");
     } finally {
       setApplying(false);
     }
@@ -270,7 +330,7 @@ export default function DatasetWorkspacePage() {
     }
 
     setSaving(true);
-    setMessage("");
+    setFeedback("");
 
     try {
       const version = await createDatasetVersion(
@@ -282,24 +342,26 @@ export default function DatasetWorkspacePage() {
         },
         token,
       );
+
       setWorkspace({
         ...workspace,
-        dataset: replaceCurrent && cleaningResult
-          ? {
-              ...workspace.dataset,
-              current_version_id: version.id,
-              row_count: Number(cleaningResult.summary.row_count ?? workspace.dataset.row_count),
-              column_count: Number(cleaningResult.summary.column_count ?? workspace.dataset.column_count),
-              preview_json: cleaningResult.preview,
-              summary_json: cleaningResult.summary,
-              size_bytes: Number(cleaningResult.summary.size_bytes ?? workspace.dataset.size_bytes),
-            }
-          : workspace.dataset,
+        dataset:
+          replaceCurrent && cleaningResult
+            ? {
+                ...workspace.dataset,
+                current_version_id: version.id,
+                row_count: Number(cleaningResult.summary.row_count ?? workspace.dataset.row_count),
+                column_count: Number(cleaningResult.summary.column_count ?? workspace.dataset.column_count),
+                preview_json: cleaningResult.preview,
+                summary_json: cleaningResult.summary,
+                size_bytes: Number(cleaningResult.summary.size_bytes ?? workspace.dataset.size_bytes),
+              }
+            : workspace.dataset,
         versions: [...workspace.versions, version].sort((left, right) => left.version_number - right.version_number),
       });
-      setMessage("Version saved.");
+      setFeedback("Version saved.", "success");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save version.");
+      setFeedback(error instanceof Error ? error.message : "Could not save version.", "error");
     } finally {
       setSaving(false);
     }
@@ -339,364 +401,318 @@ export default function DatasetWorkspacePage() {
     );
   }
 
-  function addCleaningOperation() {
-    const columns = operationDraftColumns
-      .split(",")
-      .map((column) => column.trim())
-      .filter(Boolean);
-
-    const operation: CleaningOperation = {
-      operation_type: operationDraftType,
-      columns: operationDraftType === "remove_all_duplicates" ? [] : columns,
-      column: operationDraftColumn.trim() || null,
-      target_type: operationDraftType === "convert_column_type" ? operationDraftTargetType : null,
-      drop_all_missing: operationDraftDropAllMissing,
-      errors: operationDraftErrors,
-    };
-
-    if (operation.operation_type === "convert_column_type" && !operation.column) {
-      setMessage("Choose a column for type conversion.");
-      return;
-    }
-
-    if ((operation.operation_type === "fill_mean" || operation.operation_type === "fill_median" || operation.operation_type === "fill_mode" || operation.operation_type === "drop_rows") && columns.length === 0) {
-      setMessage("Add at least one column for this cleaning action.");
-      return;
-    }
-
-    setCleaningOperations((currentOperations) => [...currentOperations, operation]);
-    setMessage("Cleaning operation added.");
-  }
-
-  function removeCleaningOperation(index: number) {
-    setCleaningOperations((currentOperations) => currentOperations.filter((_, operationIndex) => operationIndex !== index));
-  }
-
-  function queueCleaningOperation(operation: CleaningOperation, successMessage: string) {
-    setCleaningOperations((currentOperations) => {
-      const exists = currentOperations.some((currentOperation) => areCleaningOperationsEqual(currentOperation, operation));
-      if (exists) {
-        return currentOperations;
-      }
-
-      return [...currentOperations, operation];
-    });
-    setMessage(successMessage);
-  }
-
-  function addSuggestedCleaningAction(issue: CleaningIssue) {
-    const suggestedAction = buildSuggestedCleaningAction(issue, cleaningDetection);
-
-    if (!suggestedAction) {
-      setMessage("No suggestion is available for this issue yet.");
-      return;
-    }
-
-    queueCleaningOperation(suggestedAction.operation, `Added suggestion: ${suggestedAction.label}`);
-  }
-
-  function applyAllSuggestions() {
-    if (cleaningIssues.length === 0) {
-      setMessage("Run issue detection first.");
-      return;
-    }
-
-    const suggestedOperations = cleaningIssues
-      .map((issue) => buildSuggestedCleaningAction(issue, cleaningDetection)?.operation)
-      .filter((operation): operation is CleaningOperation => Boolean(operation));
-
-    if (suggestedOperations.length === 0) {
-      setMessage("No suggestions are available for the detected issues.");
-      return;
-    }
-
-    setCleaningOperations((currentOperations) => {
-      const mergedOperations = [...currentOperations];
-
-      suggestedOperations.forEach((operation) => {
-        const exists = mergedOperations.some((currentOperation) => areCleaningOperationsEqual(currentOperation, operation));
-        if (!exists) {
-          mergedOperations.push(operation);
-        }
-      });
-
-      return mergedOperations;
-    });
-
-    setMessage("Added all suggestions to the cleaning queue.");
-  }
-
   function renderCleaningTab() {
-    const detectedIssues = cleaningIssues.length > 0 ? cleaningIssues : [];
-    const suggestedIssues = detectedIssues
-      .map((issue) => ({ issue, suggestion: buildSuggestedCleaningAction(issue, cleaningDetection) }))
-      .filter((entry): entry is { issue: CleaningIssue; suggestion: SuggestedCleaningAction } => Boolean(entry.suggestion));
+    const duplicateCount = cleaningDetection?.duplicates ?? 0;
+    const missingIssues = cleaningIssues.filter((issue) => issue.kind === "missing_values" && issue.column);
+    const textColumns = getTextColumns(cleaningDetection, availableColumns);
+    const duplicateOperation = buildDuplicateOperation();
+    const trimWhitespaceOperation = buildTrimWhitespaceOperation(textColumns);
+    const duplicateQueued = hasQueuedOperation(duplicateOperation);
+    const trimQueued = hasQueuedOperation(trimWhitespaceOperation);
+    const originalRows = workspace?.dataset.row_count;
+    const afterCleaningRows = cleaningResult?.summary.row_count ?? originalRows;
+    const rowsRemoved = typeof originalRows === "number" && typeof afterCleaningRows === "number" ? Math.max(originalRows - afterCleaningRows, 0) : 0;
 
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-2xl border border-slate-200 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="font-semibold">Suggested fixes</h3>
-                <p className="text-sm text-slate-600">Detect issues, then click a suggestion to add it to the queue.</p>
-              </div>
-              <button
-                type="button"
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                onClick={handleDetectCleaning}
-                disabled={detecting}
-              >
-                {detecting ? "Detecting..." : "Detect issues"}
-              </button>
-            </div>
+        {message ? <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${getFeedbackClasses(messageTone)}`}>{message}</div> : null}
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-slate-50 p-3 text-sm">
-                <p className="text-slate-500">Active version</p>
-                <p className="font-medium">{getSourceVersionId() ?? "Latest"}</p>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3 text-sm">
-                <p className="text-slate-500">Queued operations</p>
-                <p className="font-medium">{cleaningOperations.length}</p>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3 text-sm">
-                <p className="text-slate-500">Detected issues</p>
-                <p className="font-medium">{detectedIssues.length}</p>
-              </div>
-            </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm text-slate-500">Original Rows</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{workspace?.dataset.row_count ?? "-"}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm text-slate-500">After Cleaning</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{String(cleaningResult?.summary.row_count ?? workspace?.dataset.row_count ?? "-")}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm text-slate-500">Rows Removed</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{rowsRemoved}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm text-slate-500">Ops Selected</p>
+            <p className="mt-1 text-2xl font-semibold text-indigo-600">{cleaningOperations.length}</p>
+          </div>
+        </div>
 
-            {detectedIssues.length > 0 ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                    <h3 className="text-lg font-semibold text-slate-950">Duplicate Rows</h3>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{duplicateCount > 0 ? `${duplicateCount} duplicate rows found.` : "No duplicates detected right now."}</p>
+                </div>
+                <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+                  {duplicateCount > 0 ? `${duplicateCount} found` : "Clear"}
+                </span>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <p className="font-medium text-slate-950">Remove duplicate rows</p>
+                  <p className="text-sm text-slate-600">Keep one copy of each repeated record.</p>
+                </div>
+                <button
+                  type="button"
+                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${duplicateQueued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-600 text-white hover:bg-red-500"}`}
+                  onClick={toggleDuplicateRows}
+                >
+                  {duplicateQueued ? "Added" : "Add"}
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-yellow-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
+                    <h3 className="text-lg font-semibold text-slate-950">Missing Values</h3>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">Choose a simple fix for each affected column.</p>
+                </div>
+                <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                  {missingIssues.length > 0 ? `${missingIssues.length} columns` : "None detected"}
+                </span>
+              </div>
+
               <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                {missingIssues.length > 0 ? (
+                  missingIssues.map((issue) => {
+                    const columnName = issue.column ?? "";
+                    const columnType = getColumnType(columnName, cleaningDetection);
+                    const selectedStrategy = missingValueStrategies[columnName] ?? getDefaultMissingStrategy(columnName, cleaningDetection);
+                    const operation = buildMissingValueOperation(columnName, selectedStrategy);
+                    const queued = hasQueuedOperation(operation);
+                    const missingCount = Number(issue.details?.missing_values ?? 0);
+                    const rowCount = Number(workspace?.dataset.row_count ?? 0);
+                    const percentage = rowCount > 0 ? ((missingCount / rowCount) * 100).toFixed(1) : "0.0";
+
+                    return (
+                      <div key={columnName} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-slate-950">Column: {columnName}</p>
+                            <p className="mt-1 text-sm text-slate-600">{missingCount} missing values ({percentage}%)</p>
+                          </div>
+                          <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-medium text-yellow-700">{columnType}</span>
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <select
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none sm:max-w-xs"
+                            value={selectedStrategy}
+                            onChange={(event) =>
+                              setMissingValueStrategies((currentStrategies) => ({
+                                ...currentStrategies,
+                                [columnName]: event.target.value as MissingStrategy,
+                              }))
+                            }
+                          >
+                            <option value="fill_mean">Fill with average</option>
+                            <option value="fill_median">Fill with median</option>
+                            <option value="fill_mode">Fill with mode</option>
+                            <option value="drop_rows">Drop rows</option>
+                          </select>
+
+                          <button
+                            type="button"
+                            className={`rounded-xl px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
+                            onClick={() => addMissingValueOperation(columnName)}
+                          >
+                            {queued ? "Added" : "Add"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                    No missing-value issues detected.
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-orange-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+                    <h3 className="text-lg font-semibold text-slate-950">Text Standardization</h3>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">Quick cleanup for text-heavy columns.</p>
+                </div>
+                <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
+                  {textColumns.length > 0 ? `${textColumns.length} columns` : "No text columns"}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <div>
-                    <p className="font-medium text-slate-900">Suggested actions</p>
-                    <p className="text-sm text-slate-600">Add every recommended fix to the queue with one click.</p>
+                    <p className="font-medium text-slate-950">Trim whitespace</p>
+                    <p className="text-sm text-slate-600">Remove leading and trailing spaces from text columns.</p>
                   </div>
                   <button
                     type="button"
-                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                    onClick={applyAllSuggestions}
-                    disabled={suggestedIssues.length === 0}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${trimQueued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
+                    onClick={toggleTrimWhitespace}
+                    disabled={textColumns.length === 0}
                   >
-                    Apply All Suggestions
+                    {trimQueued ? "Added" : "Add"}
                   </button>
                 </div>
 
-                {suggestedIssues.map(({ issue, suggestion }, index) => {
-                  const hasColumn = issue.column ? `Column: ${issue.column}` : null;
-                  const title = formatIssueTitle(issue);
+                <div className="space-y-2">
+                  {textColumns.length > 0 ? (
+                    textColumns.map((columnName) => {
+                      const columnType = getColumnType(columnName, cleaningDetection);
+                      if (!isLowercaseCandidate(columnType)) {
+                        return null;
+                      }
 
-                  return (
-                    <article key={`${issue.kind}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-slate-500">{describeSeverity(issue.severity)}</p>
-                          <h4 className="mt-1 text-base font-semibold text-slate-950">{title}</h4>
+                      const operation = buildLowercaseOperation(columnName);
+                      const queued = hasQueuedOperation(operation);
+
+                      return (
+                        <div key={columnName} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <div>
+                            <p className="font-medium text-slate-950">Lowercase "{columnName}"</p>
+                            <p className="text-sm text-slate-600">Make text consistent.</p>
+                          </div>
+                          <button
+                            type="button"
+                            className={`rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
+                            onClick={() => toggleLowercaseColumn(columnName)}
+                          >
+                            {queued ? "Added" : "Add"}
+                          </button>
                         </div>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
-                          {issue.severity}
-                        </span>
-                      </div>
-
-                      <p className="mt-3 text-sm leading-6 text-slate-700">{issue.message}</p>
-                      <p className="mt-2 text-sm text-slate-600">Suggestion: {suggestion.description}</p>
-
-                      <div className="mt-4 flex flex-wrap items-center gap-3">
-                        {hasColumn ? (
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                            {hasColumn}
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-                          onClick={() => addSuggestedCleaningAction(issue)}
-                        >
-                          Apply Suggestion
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                      No text columns were detected for standardization.
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">Run detection to review missing values, duplicates, and type issues.</p>
-            )}
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-950">Outliers</h3>
+                  <p className="text-sm text-slate-600">Optional for now. This section is ready for future numeric checks.</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Coming soon</span>
+              </div>
+            </section>
           </div>
 
-          <details className="rounded-2xl border border-slate-200 p-4">
-            <summary className="cursor-pointer list-none font-semibold">Advanced Cleaning (Optional)</summary>
-            <p className="mt-1 text-sm text-slate-600">Power users can still build custom cleaning actions here.</p>
-
-            <div className="mt-4 space-y-3 text-sm">
-              <label className="block">
-                <span className="mb-2 block font-medium">Action type</span>
-                <select
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                  value={operationDraftType}
-                  onChange={(event) => setOperationDraftType(event.target.value as CleaningOperation["operation_type"])}
-                >
-                  <option value="fill_mean">Fill missing values with average</option>
-                  <option value="fill_median">Fill missing values with median</option>
-                  <option value="fill_mode">Fill missing values with most common value</option>
-                  <option value="drop_rows">Drop rows with missing values</option>
-                  <option value="remove_all_duplicates">Remove duplicate rows</option>
-                  <option value="convert_column_type">Convert column type</option>
-                </select>
-              </label>
-
-              {operationDraftType === "convert_column_type" ? (
-                <label className="block">
-                  <span className="mb-2 block font-medium">Column</span>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={operationDraftColumn}
-                    onChange={(event) => setOperationDraftColumn(event.target.value)}
-                    placeholder="column name"
-                  />
-                </label>
-              ) : null}
-
-              {operationDraftType !== "remove_all_duplicates" ? (
-                <label className="block">
-                  <span className="mb-2 block font-medium">Columns</span>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={operationDraftColumns}
-                    onChange={(event) => setOperationDraftColumns(event.target.value)}
-                    placeholder="comma-separated column names"
-                  />
-                </label>
-              ) : null}
-
-              {operationDraftType === "convert_column_type" ? (
-                <label className="block">
-                  <span className="mb-2 block font-medium">Target type</span>
-                  <select
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={operationDraftTargetType}
-                    onChange={(event) => setOperationDraftTargetType(event.target.value as NonNullable<CleaningOperation["target_type"]>)}
-                  >
-                    <option value="numeric">Numeric</option>
-                    <option value="string">String</option>
-                    <option value="datetime">Datetime</option>
-                    <option value="categorical">Categorical</option>
-                    <option value="boolean">Boolean</option>
-                  </select>
-                </label>
-              ) : null}
-
-              {operationDraftType === "drop_rows" ? (
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={operationDraftDropAllMissing}
-                    onChange={(event) => setOperationDraftDropAllMissing(event.target.checked)}
-                  />
-                  Drop rows with any missing value
-                </label>
-              ) : null}
-
-              {operationDraftType === "convert_column_type" ? (
-                <label className="block">
-                  <span className="mb-2 block font-medium">Conversion mode</span>
-                  <select
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                    value={operationDraftErrors}
-                    onChange={(event) => setOperationDraftErrors(event.target.value as NonNullable<CleaningOperation["errors"]>)}
-                  >
-                    <option value="coerce">Coerce invalid values</option>
-                    <option value="raise">Raise error</option>
-                    <option value="ignore">Ignore invalid values</option>
-                  </select>
-                </label>
-              ) : null}
-
-              {availableColumns.length > 0 ? (
-                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-                  Available columns: {availableColumns.join(", ")}
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                className="w-full rounded-xl border border-slate-300 px-4 py-2 font-medium transition hover:bg-slate-50"
-                onClick={addCleaningOperation}
-              >
-                Add to queue
-              </button>
-            </div>
-          </details>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-2xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between gap-3">
+          <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-6 h-fit">
+            <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold">Queued operations</h3>
-                <p className="text-sm text-slate-600">These actions will be applied in order.</p>
+                <h3 className="text-lg font-semibold text-slate-950">Selected Operations</h3>
+                <p className="text-sm text-slate-600">Review the queue before applying.</p>
               </div>
-              <button
-                type="button"
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                onClick={handleApplyCleaning}
-                disabled={applying || cleaningOperations.length === 0}
-              >
-                {applying ? "Applying..." : "Apply cleaning"}
-              </button>
+              <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{cleaningOperations.length}</span>
             </div>
 
-            <div className="mt-4 space-y-3">
+            <div className="space-y-3">
               {cleaningOperations.length === 0 ? (
-                <p className="text-sm text-slate-600">No operations queued yet.</p>
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                  No operations selected yet.
+                </div>
               ) : (
                 cleaningOperations.map((operation, index) => (
-                  <div key={`${operation.operation_type}-${index}`} className="rounded-xl border border-slate-200 p-3 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium">{describeCleaningOperation(operation).title}</p>
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-red-600"
-                        onClick={() => removeCleaningOperation(index)}
-                      >
-                        Remove
-                      </button>
+                  <div key={`${operation.operation_type}-${index}`} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm shadow-sm">
+                    <div>
+                      <p className="font-medium text-slate-950">{getOperationLabel(operation)}</p>
+                      <p className="mt-1 text-xs text-slate-500">{getOperationDetail(operation)}</p>
                     </div>
-                    <p className="mt-2 text-slate-600">{describeCleaningOperation(operation).detail}</p>
-                    {operation.target_type ? <p className="mt-2 text-slate-600">Target: {operation.target_type}</p> : null}
+                    <button
+                      type="button"
+                      className="rounded-full px-2 py-1 text-sm font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-700"
+                      onClick={() => setCleaningOperations((currentOperations) => currentOperations.filter((_, operationIndex) => operationIndex !== index))}
+                      aria-label={`Remove ${getOperationLabel(operation)}`}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))
               )}
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 p-4">
-            <h3 className="font-semibold">Cleaned preview</h3>
-            <p className="mt-1 text-sm text-slate-600">Apply operations to preview the transformed dataset before saving.</p>
+            <button
+              type="button"
+              className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+              onClick={handleApplyCleaning}
+              disabled={applying || cleaningOperations.length === 0}
+            >
+              {applying ? "Applying..." : `Apply ${cleaningOperations.length} Operation${cleaningOperations.length === 1 ? "" : "s"}`}
+            </button>
+          </aside>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="font-semibold text-slate-950">Cleaned Preview</h3>
+            <p className="mt-1 text-sm text-slate-600">Preview the result before saving a new version.</p>
             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
               {cleaningResult ? renderPreviewTable(cleaningResult.preview) : <p className="text-sm text-slate-600">No cleaned preview yet.</p>}
             </div>
             {cleaningResult ? (
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <dt className="text-slate-500">Rows</dt>
-                  <dd className="font-medium">{String(cleaningResult.summary.row_count ?? "-")}</dd>
+                  <dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd>
                 </div>
-                <div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <dt className="text-slate-500">Columns</dt>
-                  <dd className="font-medium">{String(cleaningResult.summary.column_count ?? "-")}</dd>
+                  <dd className="font-medium text-slate-950">{String(cleaningResult.summary.column_count ?? "-")}</dd>
                 </div>
-                <div>
+                <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.missing_cells ?? 0) > 0 ? "warning" : "success")}`}>
                   <dt className="text-slate-500">Missing</dt>
                   <dd className="font-medium">{String(cleaningResult.summary.missing_cells ?? "-")}</dd>
                 </div>
-                <div>
+                <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.duplicate_rows ?? 0) > 0 ? "error" : "success")}`}>
                   <dt className="text-slate-500">Duplicates</dt>
                   <dd className="font-medium">{String(cleaningResult.summary.duplicate_rows ?? "-")}</dd>
                 </div>
               </dl>
             ) : null}
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="font-semibold text-slate-950">Save Version</h3>
+            <p className="text-sm text-slate-600">Save the cleaned result as a new dataset version.</p>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Operation type</span>
+              <input
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
+                value={operationType}
+                onChange={(event) => setOperationType(event.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={replaceCurrent} onChange={(event) => setReplaceCurrent(event.target.checked)} />
+              Replace current dataset preview with this result
+            </label>
+            <button
+              type="button"
+              className="w-full rounded-xl border border-green-200 bg-green-50 px-4 py-3 font-medium text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={saving}
+              onClick={handleSaveVersion}
+            >
+              {saving ? "Saving..." : "Save as new version"}
+            </button>
           </div>
         </div>
       </div>
@@ -712,19 +728,19 @@ export default function DatasetWorkspacePage() {
       return (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Rows</p>
-              <p className="mt-1 text-2xl font-semibold">{workspace.dataset.row_count ?? "-"}</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{workspace.dataset.row_count ?? "-"}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Columns</p>
-              <p className="mt-1 text-2xl font-semibold">{workspace.dataset.column_count ?? "-"}</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{workspace.dataset.column_count ?? "-"}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 p-4">
+            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Missing cells", workspace.dataset.summary_json?.missing_cells as number | string | null | undefined)}`}>
               <p className="text-sm text-slate-500">Missing cells</p>
               <p className="mt-1 text-2xl font-semibold">{String(workspace.dataset.summary_json?.missing_cells ?? "-")}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 p-4">
+            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Duplicates", workspace.dataset.summary_json?.duplicate_rows as number | string | null | undefined)}`}>
               <p className="text-sm text-slate-500">Duplicates</p>
               <p className="mt-1 text-2xl font-semibold">{String(workspace.dataset.summary_json?.duplicate_rows ?? "-")}</p>
             </div>
@@ -753,7 +769,7 @@ export default function DatasetWorkspacePage() {
   }
 
   if (loading) {
-    return <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">Loading workspace...</main>;
+    return <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">Loading workspace...</main>;
   }
 
   if (!workspace) {
@@ -761,16 +777,16 @@ export default function DatasetWorkspacePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-900">
+    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Dataset workspace</p>
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Dataset workspace</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight">{workspace.dataset.original_filename}</h1>
               <p className="text-sm text-slate-600">Versioned workspace for previewing, cleaning, analyzing, and exporting data.</p>
             </div>
-            <Link className="text-sm font-medium text-slate-900 underline" href="/dashboard">
+            <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href="/dashboard">
               Back to dashboard
             </Link>
           </div>
@@ -785,7 +801,7 @@ export default function DatasetWorkspacePage() {
                   type="button"
                   onClick={() => setActiveTab(tab)}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                    activeTab === tab ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    activeTab === tab ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
                   }`}
                 >
                   {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -797,44 +813,42 @@ export default function DatasetWorkspacePage() {
           </div>
 
           <aside className="space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Save result</h2>
-              <p className="mt-1 text-sm text-slate-600">Use this after an action to create a new version of the current dataset.</p>
-              <label className="mt-4 block">
-                <span className="mb-2 block text-sm font-medium">Operation type</span>
-                <input
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"
-                  value={operationType}
-                  onChange={(event) => setOperationType(event.target.value)}
-                />
-              </label>
-              <label className="mt-4 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={replaceCurrent}
-                  onChange={(event) => setReplaceCurrent(event.target.checked)}
-                />
-                Replace current dataset preview with this result
-              </label>
-              <button
-                type="button"
-                className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={saving}
-                onClick={handleSaveVersion}
-              >
-                {saving ? "Saving..." : "Save as new version"}
-              </button>
-              {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
-            </div>
+            {activeTab !== "cleaning" ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-950">Save result</h2>
+                <p className="mt-1 text-sm text-slate-600">Use this after an action to create a new version of the current dataset.</p>
+                <label className="mt-4 block">
+                  <span className="mb-2 block text-sm font-medium text-slate-900">Operation type</span>
+                  <input
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
+                    value={operationType}
+                    onChange={(event) => setOperationType(event.target.value)}
+                  />
+                </label>
+                <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={replaceCurrent} onChange={(event) => setReplaceCurrent(event.target.checked)} />
+                  Replace current dataset preview with this result
+                </label>
+                <button
+                  type="button"
+                  className="mt-4 w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                  disabled={saving}
+                  onClick={handleSaveVersion}
+                >
+                  {saving ? "Saving..." : "Save as new version"}
+                </button>
+                {message ? <p className={`mt-3 rounded-xl border px-3 py-2 text-sm ${getFeedbackClasses(messageTone)}`}>{message}</p> : null}
+              </div>
+            ) : null}
 
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Versions</h2>
+              <h2 className="text-lg font-semibold text-slate-950">Versions</h2>
               <div className="mt-4 space-y-3">
                 {workspace.versions.map((version) => (
-                  <div key={version.id} className="rounded-2xl border border-slate-200 p-4 text-sm">
+                  <div key={version.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm shadow-sm">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">Version {version.version_number}</span>
-                      <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{version.operation_type}</span>
+                      <span className="font-medium text-slate-950">Version {version.version_number}</span>
+                      <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs uppercase tracking-[0.2em] text-indigo-700">{version.operation_type}</span>
                     </div>
                     <p className="mt-2 text-slate-600">{new Date(version.created_at).toLocaleString()}</p>
                   </div>
@@ -843,7 +857,7 @@ export default function DatasetWorkspacePage() {
             </div>
 
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Next actions</h2>
+              <h2 className="text-lg font-semibold text-slate-950">Next actions</h2>
               <div className="mt-4 space-y-3 text-sm text-slate-600">
                 <p>1. Save the result as a new dataset.</p>
                 <p>2. Save the result as a new version.</p>
