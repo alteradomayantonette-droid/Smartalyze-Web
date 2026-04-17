@@ -11,7 +11,8 @@ app = FastAPI(title="Smartalyze API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    #Added this cors valueee to match any testing grounds for nowww like wtfff bro i forgot to add this shit earlier and struggling to find a bug thats not even on production
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,7 +27,7 @@ async def on_startup() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-
+#Made it so if I go to local host it automatically jumps me at the landing page
 @app.get("/")
 def root():
     return {"message": "Smartalyze API is running"}
