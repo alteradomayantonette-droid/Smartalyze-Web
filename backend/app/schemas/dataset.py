@@ -70,3 +70,4 @@ class DatasetUploadResponse(BaseModel):
 class CreateDatasetVersionRequest(BaseModel):
     operation_type: str = Field(min_length=3, max_length=50)
     replace_current: bool = False
+    data_snapshot: dict | None = None

@@ -15,6 +15,7 @@ export type AuthResponse = {
 export type Dataset = {
   id: number;
   owner_user_id: number;
+  current_version_id: number | null;
   original_filename: string;
   stored_filename: string;
   file_path: string;
@@ -50,6 +51,41 @@ export type DatasetWorkspace = {
   versions: DatasetVersion[];
   warnings: Array<{ scope: string; severity: string; message: string }>;
   suggestions: Array<{ scope: string; message: string }>;
+};
+
+export type CleaningIssue = {
+  kind: string;
+  severity: "info" | "warning" | "error";
+  column: string | null;
+  message: string;
+  suggestion: string | null;
+  details: Record<string, unknown> | null;
+};
+
+export type CleaningOperation = {
+  operation_type: "fill_mean" | "fill_median" | "fill_mode" | "drop_rows" | "remove_all_duplicates" | "convert_column_type";
+  columns?: string[];
+  column?: string | null;
+  target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;
+  drop_all_missing?: boolean;
+  errors?: "raise" | "coerce" | "ignore";
+};
+
+export type CleanDetectResponse = {
+  dataset_id: number;
+  dataset_version_id: number;
+  missing_values: Record<string, number>;
+  duplicates: number;
+  column_types: Record<string, string>;
+  issues: CleaningIssue[];
+};
+
+export type CleanApplyResponse = CleanDetectResponse & {
+  source_version_id: number;
+  operations_applied: CleaningOperation[];
+  preview: Array<Record<string, unknown>>;
+  summary: Record<string, unknown>;
+  data_snapshot: Record<string, unknown>;
 };
 
 const REQUEST_TIMEOUT_MS = 15000;
@@ -115,7 +151,7 @@ export function getDatasetWorkspace(datasetId: number, token: string): Promise<D
 
 export function createDatasetVersion(
   datasetId: number,
-  payload: { operation_type: string; replace_current?: boolean },
+  payload: { operation_type: string; replace_current?: boolean; data_snapshot?: Record<string, unknown> | null },
   token: string,
 ): Promise<DatasetVersion> {
   return request<DatasetVersion>(
@@ -124,6 +160,39 @@ export function createDatasetVersion(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function detectCleaningIssues(
+  datasetId: number,
+  token: string,
+  datasetVersionId?: number | null,
+): Promise<CleanDetectResponse> {
+  return request<CleanDetectResponse>(
+    "/clean/detect",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+    },
+    token,
+  );
+}
+
+export function applyCleaningOperations(
+  datasetId: number,
+  cleaningOperations: CleaningOperation[],
+  token: string,
+  datasetVersionId?: number | null,
+): Promise<CleanApplyResponse> {
+  return request<CleanApplyResponse>(
+    "/clean/apply",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null, cleaning_operations: cleaningOperations }),
     },
     token,
   );

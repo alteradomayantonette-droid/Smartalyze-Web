@@ -14,6 +14,7 @@ from app.models.dataset_action import DatasetAction
 from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
 from app.schemas.dataset import CreateDatasetVersionRequest
+from app.services.dataset_snapshot import build_snapshot
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".json"}
 PREVIEW_ROWS = 10
@@ -225,7 +226,7 @@ async def create_dataset_from_upload(
         )
 
     frame, file_format = _read_dataframe(file_bytes, original_filename)
-    snapshot = _build_snapshot(
+    snapshot = build_snapshot(
         frame,
         source_name=original_filename,
         file_type=file_format,
@@ -262,9 +263,13 @@ async def create_dataset_from_upload(
     )
 
     await db.commit()
-    await db.refresh(dataset)
-    await db.refresh(version)
-    return dataset
+    result = await db.execute(
+        select(Dataset)
+        .options(selectinload(Dataset.current_version))
+        .where(Dataset.id == dataset.id)
+    )
+    loaded_dataset = result.scalar_one()
+    return loaded_dataset
 
 
 async def list_user_datasets(db: AsyncSession, owner: User) -> list[Dataset]:
@@ -315,7 +320,7 @@ async def create_dataset_version(
     latest_version_number = result.scalar_one_or_none()
     version_number = (latest_version_number or 0) + 1
 
-    source_snapshot = dataset.current_snapshot or {
+    source_snapshot = payload.data_snapshot or dataset.current_snapshot or {
         "source_name": dataset.name,
         "file_type": dataset.file_type,
         "size_bytes": 0,
