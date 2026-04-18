@@ -61,9 +61,9 @@ export default function Home() {
                 <p className="mt-1 text-sm text-slate-600">Run it when you need it, not on a fixed path.</p>
               </div>
               <div className="rounded-2xl border border-indigo-100 bg-white p-4 ring-1 ring-indigo-100/60">
-                <p className="text-sm text-slate-600">Versions</p>
+                <p className="text-sm text-slate-600">Results</p>
                 <p className="mt-2 text-3xl font-semibold text-slate-950">Tracked</p>
-                <p className="mt-1 text-sm text-slate-600">Keep a history of dataset changes.</p>
+                <p className="mt-1 text-sm text-slate-600">Keep every saved output organized.</p>
               </div>
             </div>
 

@@ -8,12 +8,14 @@ from app.schemas.dataset import (
     DatasetUploadResponse,
     DatasetVersionRead,
     DatasetWorkspaceRead,
+    SaveResultRequest,
+    SaveResultResponse,
 )
 from app.services.auth_service import get_user_by_token
 from app.services.dataset_service import (
     create_dataset_from_upload,
+    create_dataset_from_snapshot,
     create_dataset_version,
-    get_dataset_versions,
     get_owned_dataset,
     get_workspace_guidance,
     list_user_datasets,
@@ -49,9 +51,8 @@ async def get_dataset(dataset_id: int, authorization: str | None = Header(defaul
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, dataset_id, owner)
-    versions = await get_dataset_versions(db, dataset)
     warnings, suggestions = get_workspace_guidance(dataset)
-    return {"dataset": dataset, "versions": versions, "warnings": warnings, "suggestions": suggestions}
+    return {"dataset": dataset, "warnings": warnings, "suggestions": suggestions}
 
 
 @router.get("/datasets", response_model=list[DatasetRead])
@@ -73,3 +74,48 @@ async def save_dataset_version(
     dataset = await get_owned_dataset(db, dataset_id, owner)
     version = await create_dataset_version(db, dataset, payload)
     return version
+
+
+@router.post("/dataset/{dataset_id}/result", response_model=SaveResultResponse)
+async def save_dataset_result(
+    dataset_id: int,
+    payload: SaveResultRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+
+    snapshot = payload.data_snapshot or dataset.current_snapshot
+    if snapshot is None:
+        from fastapi import HTTPException, status
+
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No saved result is available.")
+
+    if payload.replace_current:
+        version = await create_dataset_version(
+            db,
+            dataset,
+            CreateDatasetVersionRequest(operation_type="result", replace_current=True, data_snapshot=snapshot),
+        )
+        updated_dataset = await get_owned_dataset(db, dataset.id, owner)
+        return {"message": "Result replaced the current dataset.", "dataset": updated_dataset}
+
+    dataset_name = (payload.dataset_name or "").strip()
+    if not dataset_name:
+        from fastapi import HTTPException, status
+
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset name is required.")
+
+    created_dataset = await create_dataset_from_snapshot(
+        db=db,
+        owner=owner,
+        name=dataset_name,
+        file_type=dataset.file_type,
+        description=payload.description or dataset.description,
+        snapshot=snapshot,
+        action_type="result",
+        action_input_params={"source_dataset_id": dataset.id, "source_dataset_name": dataset.name},
+    )
+    return {"message": "Result saved as a new dataset.", "dataset": created_dataset}

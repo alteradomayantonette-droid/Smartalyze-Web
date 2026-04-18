@@ -9,9 +9,9 @@ import {
   CleaningOperation,
   CleanApplyResponse,
   CleanDetectResponse,
-  createDatasetVersion,
   DatasetWorkspace,
   getDatasetWorkspace,
+  saveDatasetResult,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
@@ -153,6 +153,26 @@ function areCleaningOperationsEqual(left: CleaningOperation, right: CleaningOper
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function buildSnapshotFromDataset(dataset: DatasetWorkspace["dataset"]): Record<string, unknown> {
+  const summary = (dataset.summary_json ?? {}) as Record<string, unknown>;
+
+  return {
+    source_name: dataset.original_filename,
+    file_type: dataset.file_format,
+    size_bytes: dataset.size_bytes,
+    records: dataset.preview_json ?? [],
+    columns: dataset.columns_json ?? [],
+    preview: dataset.preview_json ?? [],
+    summary: dataset.summary_json ?? {
+      row_count: dataset.row_count ?? 0,
+      column_count: dataset.column_count ?? 0,
+      missing_cells: Number(summary.missing_cells ?? 0),
+      duplicate_rows: Number(summary.duplicate_rows ?? 0),
+      size_bytes: dataset.size_bytes,
+    },
+  };
+}
+
 const demoInsightRows = [
   { label: "Average Sales", value: "1,050", note: "Simple summary from the current dataset." },
   { label: "Most common Region", value: "Davao", note: "Useful for quick reporting." },
@@ -175,14 +195,15 @@ export default function DatasetWorkspacePage() {
   const [workspace, setWorkspace] = useState<DatasetWorkspace | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [token, setToken] = useState<string | null>(null);
-  const [operationType, setOperationType] = useState("cleaned");
-  const [replaceCurrent, setReplaceCurrent] = useState(false);
   const [aggregationGroupBy, setAggregationGroupBy] = useState("Region");
   const [aggregationOperation, setAggregationOperation] = useState("average");
   const [aggregationResult, setAggregationResult] = useState<Array<Record<string, string>>>([]);
   const [predictionInputColumn, setPredictionInputColumn] = useState("Sales");
   const [predictionTargetColumn, setPredictionTargetColumn] = useState("Profit");
   const [predictionResult, setPredictionResult] = useState<Array<Record<string, string>>>([]);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveMode, setSaveMode] = useState<"replace" | "new">("replace");
+  const [newDatasetName, setNewDatasetName] = useState("");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
   const [loading, setLoading] = useState(true);
@@ -225,7 +246,7 @@ export default function DatasetWorkspacePage() {
   const cleaningIssues = cleaningDetection?.issues ?? [];
 
   function getSourceVersionId(): number | null {
-    return workspace?.dataset.current_version_id ?? workspace?.versions.at(-1)?.id ?? null;
+    return cleaningDetection?.dataset_version_id ?? null;
   }
 
   function hasQueuedOperation(operation: CleaningOperation): boolean {
@@ -293,44 +314,47 @@ export default function DatasetWorkspacePage() {
     }
   }
 
-  async function handleSaveVersion() {
+  async function handleSaveResult() {
     if (!workspace || !token) {
       return;
     }
+
+    if (saveMode === "new" && !newDatasetName.trim()) {
+      setFeedback("Please enter a dataset name.", "warning");
+      return;
+    }
+
+    const resultSnapshot = cleaningResult?.data_snapshot ?? buildSnapshotFromDataset(workspace.dataset);
 
     setSaving(true);
     setFeedback("");
 
     try {
-      const version = await createDatasetVersion(
+      const response = await saveDatasetResult(
         workspace.dataset.id,
         {
-          operation_type: operationType,
-          replace_current: replaceCurrent,
-          data_snapshot: cleaningResult?.data_snapshot ?? null,
+          replace_current: saveMode === "replace",
+          dataset_name: newDatasetName.trim() || null,
+          description: workspace.dataset.description,
+          data_snapshot: resultSnapshot,
         },
         token,
       );
 
-      setWorkspace({
-        ...workspace,
-        dataset:
-          replaceCurrent && cleaningResult
-            ? {
-                ...workspace.dataset,
-                current_version_id: version.id,
-                row_count: Number(cleaningResult.summary.row_count ?? workspace.dataset.row_count),
-                column_count: Number(cleaningResult.summary.column_count ?? workspace.dataset.column_count),
-                preview_json: cleaningResult.preview,
-                summary_json: cleaningResult.summary,
-                size_bytes: Number(cleaningResult.summary.size_bytes ?? workspace.dataset.size_bytes),
-              }
-            : workspace.dataset,
-        versions: [...workspace.versions, version].sort((left, right) => left.version_number - right.version_number),
-      });
-      setFeedback("Version saved.", "success");
+      setShowSaveModal(false);
+
+      if (saveMode === "replace") {
+        setWorkspace({
+          ...workspace,
+          dataset: response.dataset,
+        });
+        setFeedback("Result replaced the current dataset.", "success");
+      } else {
+        setFeedback("Result saved as a new dataset.", "success");
+        router.replace(`/dataset/${response.dataset.id}`);
+      }
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not save version.", "error");
+      setFeedback(error instanceof Error ? error.message : "Could not save result.", "error");
     } finally {
       setSaving(false);
     }
@@ -676,32 +700,15 @@ export default function DatasetWorkspacePage() {
           </div>
 
           <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="font-semibold text-slate-950">Save Version</h3>
-            <p className="text-sm text-slate-600">Save the cleaned result as a new dataset version.</p>
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Operation type</span>
-              <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
-                value={operationType}
-                onChange={(event) => setOperationType(event.target.value)}
-              >
-                <option value="cleaned">Cleaned result</option>
-                <option value="analyzed">Analysis result</option>
-                <option value="aggregated">Aggregation result</option>
-                <option value="predicted">Prediction result</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={replaceCurrent} onChange={(event) => setReplaceCurrent(event.target.checked)} />
-              Replace current dataset preview with this result
-            </label>
+            <h3 className="font-semibold text-slate-950">Save Result</h3>
+            <p className="text-sm text-slate-600">Choose whether to replace the current dataset or create a new one.</p>
             <button
               type="button"
-              className="w-full rounded-xl border border-green-200 bg-green-50 px-4 py-3 font-medium text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={saving}
-              onClick={handleSaveVersion}
+              className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={saving || !cleaningResult}
+              onClick={() => setShowSaveModal(true)}
             >
-              {saving ? "Saving..." : "Save as new version"}
+              Save Result
             </button>
           </div>
         </div>
@@ -1018,7 +1025,7 @@ export default function DatasetWorkspacePage() {
             <div>
               <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Dataset workspace</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight">{workspace.dataset.original_filename}</h1>
-              <p className="text-sm text-slate-600">Versioned workspace for previewing, cleaning, analyzing, and exporting data.</p>
+              <p className="text-sm text-slate-600">Workspace for previewing, cleaning, analyzing, and saving results.</p>
             </div>
             <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href="/dashboard">
               Back to dashboard
@@ -1047,60 +1054,86 @@ export default function DatasetWorkspacePage() {
           </div>
 
           <aside className="space-y-6">
-            {activeTab !== "cleaning" ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-950">Save result</h2>
-                <p className="mt-1 text-sm text-slate-600">Use this after an action to create a new version of the current dataset.</p>
-                <label className="mt-4 block">
-                  <span className="mb-2 block text-sm font-medium text-slate-900">Operation type</span>
-                  <input
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
-                    value={operationType}
-                    onChange={(event) => setOperationType(event.target.value)}
-                  />
-                </label>
-                <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={replaceCurrent} onChange={(event) => setReplaceCurrent(event.target.checked)} />
-                  Replace current dataset preview with this result
-                </label>
-                <button
-                  type="button"
-                  className="mt-4 w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-                  disabled={saving}
-                  onClick={handleSaveVersion}
-                >
-                  {saving ? "Saving..." : "Save as new version"}
-                </button>
-                {message ? <p className={`mt-3 rounded-xl border px-3 py-2 text-sm ${getFeedbackClasses(messageTone)}`}>{message}</p> : null}
-              </div>
-            ) : null}
-
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Versions</h2>
-              <div className="mt-4 space-y-3">
-                {workspace.versions.map((version) => (
-                  <div key={version.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-slate-950">Version {version.version_number}</span>
-                      <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs uppercase tracking-[0.2em] text-indigo-700">{version.operation_type}</span>
-                    </div>
-                    <p className="mt-2 text-slate-600">{new Date(version.created_at).toLocaleString()}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Next actions</h2>
-              <div className="mt-4 space-y-3 text-sm text-slate-600">
-                <p>1. Save the result as a new dataset.</p>
-                <p>2. Save the result as a new version.</p>
-                <p>3. Replace the current dataset.</p>
-                <p>4. Export the result as CSV or insights.</p>
+              <h2 className="text-lg font-semibold text-slate-950">Current result</h2>
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm">
+                  <p className="font-medium text-slate-950">Ready to save</p>
+                  <p className="mt-1 text-slate-600">Use the save button to keep the current result or make a new dataset.</p>
+                </div>
+                <div className="rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-800">
+                  <p className="font-medium">Result summary</p>
+                  <p className="mt-1">Rows: {String(cleaningResult?.summary.row_count ?? workspace.dataset.row_count ?? "-")}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                  <p className="font-medium text-slate-950">Dataset name</p>
+                  <p className="mt-1">{workspace.dataset.original_filename}</p>
+                </div>
               </div>
             </div>
           </aside>
         </section>
+
+        {showSaveModal ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+            <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Save Result</p>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Choose how to save</h2>
+                </div>
+                <button type="button" className="rounded-full px-3 py-1 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowSaveModal(false)}>
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "replace" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
+                  <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "replace"} onChange={() => setSaveMode("replace")} />
+                  <div>
+                    <p className="font-medium text-slate-950">Replace current dataset</p>
+                    <p className="mt-1 text-sm text-slate-600">Keep the same dataset and update it with this result.</p>
+                  </div>
+                </label>
+
+                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "new" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
+                  <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "new"} onChange={() => setSaveMode("new")} />
+                  <div className="w-full">
+                    <p className="font-medium text-slate-950">Save as new dataset</p>
+                    <p className="mt-1 text-sm text-slate-600">Create a separate dataset from this result.</p>
+
+                    {saveMode === "new" ? (
+                      <label className="mt-4 block">
+                        <span className="mb-2 block text-sm font-medium text-slate-900">Dataset Name</span>
+                        <input
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500"
+                          value={newDatasetName}
+                          onChange={(event) => setNewDatasetName(event.target.value)}
+                          placeholder="Enter a dataset name"
+                          required
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </label>
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button type="button" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => setShowSaveModal(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                  onClick={handleSaveResult}
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );

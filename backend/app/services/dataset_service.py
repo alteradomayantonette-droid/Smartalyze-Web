@@ -233,10 +233,33 @@ async def create_dataset_from_upload(
         size_bytes=len(file_bytes),
     )
 
-    dataset = Dataset(
-        user_id=owner.id,
+    return await create_dataset_from_snapshot(
+        db=db,
+        owner=owner,
         name=original_filename,
         file_type=file_format,
+        description=description,
+        snapshot=snapshot,
+        action_type="original",
+        action_input_params={"source_name": original_filename, "file_type": file_format},
+    )
+
+
+async def create_dataset_from_snapshot(
+    db: AsyncSession,
+    owner: User,
+    *,
+    name: str,
+    file_type: str,
+    description: str | None,
+    snapshot: dict,
+    action_type: str = "result",
+    action_input_params: dict | None = None,
+) -> Dataset:
+    dataset = Dataset(
+        user_id=owner.id,
+        name=name,
+        file_type=file_type,
         description=description,
     )
 
@@ -246,7 +269,7 @@ async def create_dataset_from_upload(
     version = DatasetVersion(
         dataset_id=dataset.id,
         version_number=1,
-        operation_type="original",
+        operation_type=action_type,
         data_snapshot=snapshot,
     )
     db.add(version)
@@ -256,8 +279,8 @@ async def create_dataset_from_upload(
     db.add(
         DatasetAction(
             dataset_id=dataset.id,
-            action_type="original",
-            input_params={"source_name": original_filename, "file_type": file_format},
+            action_type=action_type,
+            input_params=action_input_params or {"source_name": name, "file_type": file_type},
             result_summary=snapshot["summary"],
         )
     )

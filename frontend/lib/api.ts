@@ -15,7 +15,6 @@ export type AuthResponse = {
 export type Dataset = {
   id: number;
   owner_user_id: number;
-  current_version_id: number | null;
   original_filename: string;
   stored_filename: string;
   file_path: string;
@@ -48,7 +47,6 @@ export type DatasetVersion = {
 
 export type DatasetWorkspace = {
   dataset: Dataset;
-  versions: DatasetVersion[];
   warnings: Array<{ scope: string; severity: string; message: string }>;
   suggestions: Array<{ scope: string; message: string }>;
 };
@@ -86,6 +84,18 @@ export type CleanApplyResponse = CleanDetectResponse & {
   preview: Array<Record<string, unknown>>;
   summary: Record<string, unknown>;
   data_snapshot: Record<string, unknown>;
+};
+
+export type SaveResultRequest = {
+  replace_current: boolean;
+  dataset_name?: string | null;
+  description?: string | null;
+  data_snapshot?: Record<string, unknown> | null;
+};
+
+export type SaveResultResponse = {
+  message: string;
+  dataset: Dataset;
 };
 
 const REQUEST_TIMEOUT_MS = 15000;
@@ -193,6 +203,18 @@ export function applyCleaningOperations(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null, cleaning_operations: cleaningOperations }),
+    },
+    token,
+  );
+}
+
+export function saveDatasetResult(datasetId: number, payload: SaveResultRequest, token: string): Promise<SaveResultResponse> {
+  return request<SaveResultResponse>(
+    `/dataset/${datasetId}/result`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     },
     token,
   );
