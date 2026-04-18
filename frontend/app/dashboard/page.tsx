@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Dataset, getCurrentUser, listDatasets, uploadDataset } from "@/lib/api";
+import { Dataset, deleteDataset, getCurrentUser, listDatasets, uploadDataset } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
 type FeedbackTone = "neutral" | "success" | "warning" | "error";
@@ -141,6 +141,8 @@ export default function DashboardPage() {
   const [uploading, setUploading] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
+  const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -168,12 +170,13 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
-  async function refreshDatasets() {
-    if (!token) {
+  async function refreshDatasets(currentToken?: string) {
+    const effectiveToken = currentToken ?? token;
+    if (!effectiveToken) {
       return;
     }
 
-    const datasetList = await listDatasets(token);
+    const datasetList = await listDatasets(effectiveToken);
     setDatasets(datasetList);
   }
 
@@ -195,12 +198,44 @@ export default function DashboardPage() {
     try {
       await uploadDataset(selectedFile, "Dashboard upload", currentToken);
       event.target.value = "";
-      await refreshDatasets();
+      await refreshDatasets(currentToken);
       setFeedback("Dataset uploaded successfully.", "success");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Upload failed.", "error");
     } finally {
       setUploading(false);
+    }
+  }
+
+  function openDeleteModal(dataset: Dataset) {
+    setDeleteTarget(dataset);
+  }
+
+  function closeDeleteModal() {
+    if (deleting) {
+      return;
+    }
+    setDeleteTarget(null);
+  }
+
+  async function handleConfirmDelete() {
+    const currentToken = token ?? getStoredToken();
+    if (!currentToken || !deleteTarget) {
+      return;
+    }
+
+    setDeleting(true);
+    setFeedback("");
+
+    try {
+      await deleteDataset(deleteTarget.id, currentToken);
+      await refreshDatasets(currentToken);
+      setFeedback(`Deleted ${deleteTarget.original_filename}.`, "success");
+      setDeleteTarget(null);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Delete failed.", "error");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -377,9 +412,18 @@ export default function DashboardPage() {
                           <p className="text-sm text-slate-600">{dataset.description ?? "No description provided."}</p>
                         </div>
 
-                        <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href={`/dataset/${dataset.id}`}>
-                          Open workspace
-                        </Link>
+                        <div className="flex items-center gap-3">
+                          <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href={`/dataset/${dataset.id}`}>
+                            Open workspace
+                          </Link>
+                          <button
+                            className="text-sm font-medium text-red-700 underline decoration-red-300 underline-offset-4"
+                            type="button"
+                            onClick={() => openDeleteModal(dataset)}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
 
                       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -408,6 +452,36 @@ export default function DashboardPage() {
           </div>
         </section>
       </div>
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" role="dialog" aria-modal="true">
+            <h3 className="text-lg font-semibold text-slate-950">Delete dataset?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              You are about to delete <span className="font-medium text-slate-900">{deleteTarget.original_filename}</span>. This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-xl border border-red-200 bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting..." : "Delete dataset"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

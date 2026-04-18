@@ -91,3 +91,7 @@ class SaveResultRequest(BaseModel):
 class SaveResultResponse(BaseModel):
     message: str
     dataset: DatasetRead
+
+
+class DeleteDatasetResponse(BaseModel):
+    message: str

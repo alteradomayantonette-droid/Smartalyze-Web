@@ -51,6 +51,10 @@ export type DatasetWorkspace = {
   suggestions: Array<{ scope: string; message: string }>;
 };
 
+export type DeleteDatasetResponse = {
+  message: string;
+};
+
 export type CleaningIssue = {
   kind: string;
   severity: "info" | "warning" | "error";
@@ -157,6 +161,15 @@ export function listDatasets(token: string): Promise<Dataset[]> {
 
 export function getDatasetWorkspace(datasetId: number, token: string): Promise<DatasetWorkspace> {
   return request<DatasetWorkspace>(`/dataset/${datasetId}`, {}, token);
+}
+
+export function deleteDataset(datasetId: number, token: string): Promise<DeleteDatasetResponse> {
+  return request<DeleteDatasetResponse>(`/dataset/${datasetId}`,
+    {
+      method: "DELETE",
+    },
+    token,
+  );
 }
 
 export function createDatasetVersion(

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.schemas.dataset import (
     CreateDatasetVersionRequest,
+    DeleteDatasetResponse,
     DatasetRead,
     DatasetUploadResponse,
     DatasetVersionRead,
@@ -16,6 +17,7 @@ from app.services.dataset_service import (
     create_dataset_from_upload,
     create_dataset_from_snapshot,
     create_dataset_version,
+    delete_owned_dataset,
     get_owned_dataset,
     get_workspace_guidance,
     list_user_datasets,
@@ -60,6 +62,15 @@ async def list_datasets(authorization: str | None = Header(default=None), db: As
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     return await list_user_datasets(db, owner)
+
+
+@router.delete("/dataset/{dataset_id}", response_model=DeleteDatasetResponse)
+async def delete_dataset(dataset_id: int, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+    await delete_owned_dataset(db, dataset)
+    return {"message": "Dataset deleted successfully."}
 
 
 @router.post("/dataset/{dataset_id}/versions", response_model=DatasetVersionRead)

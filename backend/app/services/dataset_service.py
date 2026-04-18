@@ -326,6 +326,11 @@ async def get_dataset_versions(db: AsyncSession, dataset: Dataset) -> list[Datas
     return list(result.scalars().all())
 
 
+async def delete_owned_dataset(db: AsyncSession, dataset: Dataset) -> None:
+    await db.delete(dataset)
+    await db.commit()
+
+
 def get_workspace_guidance(dataset: Dataset) -> tuple[list[dict], list[dict]]:
     return _build_workspace_guidance(dataset)
 
