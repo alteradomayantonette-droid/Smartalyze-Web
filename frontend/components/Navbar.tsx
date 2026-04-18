@@ -1,21 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
-const navigationLinks = [
-  { href: "/#features", label: "Features" },
-  { href: "/#about", label: "About" },
-  { href: "/#contact", label: "Contact" },
-];
+import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
 export default function Navbar() {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
+  const token = getStoredToken();
 
-  const hideOnRoute = pathname.startsWith("/dashboard") || pathname.startsWith("/dataset");
+  const showOnRoute = pathname.startsWith("/dashboard") || pathname.startsWith("/dataset");
 
-  if (hideOnRoute) {
+  if (!showOnRoute || !token) {
     return null;
+  }
+
+  function handleLogout() {
+    clearStoredToken();
+    router.replace("/login");
   }
 
   return (
@@ -25,21 +28,17 @@ export default function Navbar() {
           Smartalyze
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
-          {navigationLinks.map((link) => (
-            <a key={link.href} href={link.href} className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
-              {link.label}
-            </a>
-          ))}
-        </nav>
-
         <div className="flex items-center gap-3">
-          <Link href="/login" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
-            Login
+          <Link href="/dashboard" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+            Dashboard
           </Link>
-          <Link href="/register" className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800">
-            Get Started
-          </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+          >
+            Logout
+          </button>
         </div>
       </div>
     </header>

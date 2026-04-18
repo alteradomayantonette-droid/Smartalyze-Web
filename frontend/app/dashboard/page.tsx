@@ -171,7 +171,7 @@ export default function DashboardPage() {
                 type="submit"
                 disabled={uploading}
               >
-                {uploading ? "Uploading..." : "Upload dataset"}
+                {uploading ? "Uploading..." : "Upload Dataset"}
               </button>
             </form>
           </div>
@@ -182,9 +182,6 @@ export default function DashboardPage() {
                 <h2 className="text-lg font-semibold text-slate-950">Datasets</h2>
                 <p className="mt-1 text-sm text-slate-600">Recent uploads and metadata summary.</p>
               </div>
-              <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href="/register">
-                Create another account
-              </Link>
             </div>
 
             <div className="mt-5 grid gap-4">

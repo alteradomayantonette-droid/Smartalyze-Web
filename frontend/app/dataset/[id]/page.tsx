@@ -6,13 +6,11 @@ import { useParams, useRouter } from "next/navigation";
 
 import {
   applyCleaningOperations,
-  CleaningIssue,
   CleaningOperation,
   CleanApplyResponse,
   CleanDetectResponse,
   createDatasetVersion,
   DatasetWorkspace,
-  detectCleaningIssues,
   getDatasetWorkspace,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
@@ -46,33 +44,6 @@ function getSummaryTone(label: string, value: number | string | null | undefined
   }
 
   return "border-slate-200 bg-slate-50 text-slate-700";
-}
-
-function getIssueTone(kind: string): { border: string; background: string; label: string; badge: string } {
-  if (kind === "duplicates") {
-    return {
-      border: "border-red-200",
-      background: "bg-red-50",
-      label: "text-red-700",
-      badge: "bg-red-100 text-red-700",
-    };
-  }
-
-  if (kind === "type_inconsistency") {
-    return {
-      border: "border-orange-200",
-      background: "bg-orange-50",
-      label: "text-orange-700",
-      badge: "bg-orange-100 text-orange-700",
-    };
-  }
-
-  return {
-    border: "border-yellow-200",
-    background: "bg-yellow-50",
-    label: "text-yellow-800",
-    badge: "bg-yellow-100 text-yellow-700",
-  };
 }
 
 function getColumnType(columnName: string, detection: CleanDetectResponse | null): string {
@@ -182,6 +153,20 @@ function areCleaningOperationsEqual(left: CleaningOperation, right: CleaningOper
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+const demoInsightRows = [
+  { label: "Average Sales", value: "1,050", note: "Simple summary from the current dataset." },
+  { label: "Most common Region", value: "Davao", note: "Useful for quick reporting." },
+  { label: "Missing values", value: "18", note: "Highlighted in yellow when review is needed." },
+  { label: "Duplicates", value: "4", note: "Highlighted in red when cleanup is needed." },
+];
+
+const demoPredictionRows = [
+  { row: 1, value: "1,020" },
+  { row: 2, value: "1,060" },
+  { row: 3, value: "1,115" },
+  { row: 4, value: "1,090" },
+];
+
 export default function DatasetWorkspacePage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -192,14 +177,18 @@ export default function DatasetWorkspacePage() {
   const [token, setToken] = useState<string | null>(null);
   const [operationType, setOperationType] = useState("cleaned");
   const [replaceCurrent, setReplaceCurrent] = useState(false);
+  const [aggregationGroupBy, setAggregationGroupBy] = useState("Region");
+  const [aggregationOperation, setAggregationOperation] = useState("average");
+  const [aggregationResult, setAggregationResult] = useState<Array<Record<string, string>>>([]);
+  const [predictionInputColumn, setPredictionInputColumn] = useState("Sales");
+  const [predictionTargetColumn, setPredictionTargetColumn] = useState("Profit");
+  const [predictionResult, setPredictionResult] = useState<Array<Record<string, string>>>([]);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [detecting, setDetecting] = useState(false);
   const [applying, setApplying] = useState(false);
   const [cleaningDetection, setCleaningDetection] = useState<CleanDetectResponse | null>(null);
-  const [cleaningIssues, setCleaningIssues] = useState<CleaningIssue[]>([]);
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
   const [cleaningResult, setCleaningResult] = useState<CleanApplyResponse | null>(null);
   const [missingValueStrategies, setMissingValueStrategies] = useState<Record<string, MissingStrategy>>({});
@@ -233,6 +222,7 @@ export default function DatasetWorkspacePage() {
   }, [datasetId, router]);
 
   const availableColumns = workspace?.dataset.columns_json?.map((column) => String(column.name ?? "")).filter(Boolean) ?? [];
+  const cleaningIssues = cleaningDetection?.issues ?? [];
 
   function getSourceVersionId(): number | null {
     return workspace?.dataset.current_version_id ?? workspace?.versions.at(-1)?.id ?? null;
@@ -282,26 +272,6 @@ export default function DatasetWorkspacePage() {
     toggleOperation(operation, `Added lowercase for ${columnName}.`, `Removed lowercase for ${columnName}.`);
   }
 
-  async function handleDetectCleaning() {
-    if (!workspace || !token) {
-      return;
-    }
-
-    setDetecting(true);
-    setFeedback("");
-
-    try {
-      const response = await detectCleaningIssues(workspace.dataset.id, token, getSourceVersionId());
-      setCleaningDetection(response);
-      setCleaningIssues(response.issues);
-      setFeedback(`Detected ${response.issues.length} issue(s).`, "success");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not detect cleaning issues.", "error");
-    } finally {
-      setDetecting(false);
-    }
-  }
-
   async function handleApplyCleaning() {
     if (!workspace || !token || cleaningOperations.length === 0) {
       setFeedback("Add at least one cleaning operation before applying changes.", "warning");
@@ -315,7 +285,6 @@ export default function DatasetWorkspacePage() {
       const response = await applyCleaningOperations(workspace.dataset.id, cleaningOperations, token, getSourceVersionId());
       setCleaningDetection(response);
       setCleaningResult(response);
-      setCleaningIssues(response.issues);
       setFeedback("Cleaning applied. Review the preview before saving.", "success");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Could not apply cleaning operations.", "error");
@@ -365,6 +334,22 @@ export default function DatasetWorkspacePage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleGenerateAggregation() {
+    setAggregationResult([
+      { [aggregationGroupBy]: "Davao", [aggregationOperation]: "1,050" },
+      { [aggregationGroupBy]: "Cebu", [aggregationOperation]: "890" },
+      { [aggregationGroupBy]: "Manila", [aggregationOperation]: "1,240" },
+    ]);
+  }
+
+  function handleRunPrediction() {
+    setPredictionResult([
+      { [predictionInputColumn]: "A1", [predictionTargetColumn]: "1,015" },
+      { [predictionInputColumn]: "A2", [predictionTargetColumn]: "1,048" },
+      { [predictionInputColumn]: "A3", [predictionTargetColumn]: "1,082" },
+    ]);
   }
 
   function renderPreviewTable(previewRows: Array<Record<string, unknown>> = workspace?.dataset.preview_json ?? []) {
@@ -583,7 +568,7 @@ export default function DatasetWorkspacePage() {
                       return (
                         <div key={columnName} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                           <div>
-                            <p className="font-medium text-slate-950">Lowercase "{columnName}"</p>
+                            <p className="font-medium text-slate-950">Lowercase {columnName}</p>
                             <p className="text-sm text-slate-600">Make text consistent.</p>
                           </div>
                           <button
@@ -672,7 +657,7 @@ export default function DatasetWorkspacePage() {
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <dt className="text-slate-500">Rows</dt>
-                  <dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd>
+                    <dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <dt className="text-slate-500">Columns</dt>
@@ -695,11 +680,16 @@ export default function DatasetWorkspacePage() {
             <p className="text-sm text-slate-600">Save the cleaned result as a new dataset version.</p>
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-slate-900">Operation type</span>
-              <input
+              <select
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
                 value={operationType}
                 onChange={(event) => setOperationType(event.target.value)}
-              />
+              >
+                <option value="cleaned">Cleaned result</option>
+                <option value="analyzed">Analysis result</option>
+                <option value="aggregated">Aggregation result</option>
+                <option value="predicted">Prediction result</option>
+              </select>
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={replaceCurrent} onChange={(event) => setReplaceCurrent(event.target.checked)} />
@@ -750,21 +740,265 @@ export default function DatasetWorkspacePage() {
       );
     }
 
-    const descriptions: Record<Exclude<WorkspaceTab, "overview">, string> = {
-      cleaning: "Detect missing values, duplicates, and type issues here. The result can be saved as a new version.",
-      analysis: "Show summary statistics, distributions, and data quality insights here.",
-      aggregation: "Group by categorical columns and compute sums, averages, counts, and min/max values.",
-      prediction: "Use a simple linear regression flow for controlled, explainable prediction.",
-    };
-
     if (activeTab === "cleaning") {
       return renderCleaningTab();
     }
 
+    if (activeTab === "analysis") {
+      return (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {demoInsightRows.map((item) => (
+              <article key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm text-slate-500">{item.label}</p>
+                <p className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</p>
+                <p className="mt-2 text-sm text-slate-600">{item.note}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-950">Column summaries</h3>
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-left text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Column</th>
+                      <th className="px-4 py-3 font-medium">Type</th>
+                      <th className="px-4 py-3 font-medium">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                    {(workspace.dataset.columns_json ?? []).slice(0, 5).map((column: Record<string, unknown>, index: number) => (
+                      <tr key={`${String(column.name ?? index)}`}>
+                        <td className="px-4 py-3 font-medium text-slate-950">{String(column.name ?? "Column")}</td>
+                        <td className="px-4 py-3">{String(column.type ?? "text")}</td>
+                        <td className="px-4 py-3">Simple summary available for demo purposes.</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-950">Simple insights</h3>
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+                  Sales looks stable across the top rows.
+                </div>
+                <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+                  Some rows still have missing values that should be reviewed.
+                </div>
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                  Duplicate records can be removed from the Cleaning tab.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === "aggregation") {
+      const resultColumns = aggregationResult.length > 0 ? Object.keys(aggregationResult[0] ?? {}) : [];
+
+      return (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Group by</span>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={aggregationGroupBy}
+                onChange={(event) => setAggregationGroupBy(event.target.value)}
+              >
+                {availableColumns.map((columnName) => (
+                  <option key={columnName} value={columnName}>
+                    {columnName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Operation</span>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={aggregationOperation}
+                onChange={(event) => setAggregationOperation(event.target.value)}
+              >
+                <option value="sum">Sum</option>
+                <option value="average">Average</option>
+                <option value="count">Count</option>
+              </select>
+            </label>
+
+            <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <button
+                type="button"
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500"
+                onClick={handleGenerateAggregation}
+              >
+                Generate result
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-950">Result table</h3>
+            <p className="mt-1 text-sm text-slate-600">A simple mock result keeps the demo readable.</p>
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+              {aggregationResult.length > 0 ? (
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      {resultColumns.map((column) => (
+                        <th key={column} className="px-4 py-3 text-left font-medium text-slate-600">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {aggregationResult.map((row, index) => (
+                      <tr key={index}>
+                        {resultColumns.map((column) => (
+                          <td key={column} className="px-4 py-3 text-slate-800">
+                            {row[column]}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-6 text-sm text-slate-600">Choose a column and generate a quick summary.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === "prediction") {
+      const resultColumns = predictionResult.length > 0 ? Object.keys(predictionResult[0] ?? {}) : [];
+
+      return (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Input column</span>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={predictionInputColumn}
+                onChange={(event) => setPredictionInputColumn(event.target.value)}
+              >
+                {availableColumns.map((columnName) => (
+                  <option key={columnName} value={columnName}>
+                    {columnName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Target column</span>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={predictionTargetColumn}
+                onChange={(event) => setPredictionTargetColumn(event.target.value)}
+              >
+                {availableColumns.map((columnName) => (
+                  <option key={columnName} value={columnName}>
+                    {columnName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <button
+                type="button"
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500"
+                onClick={handleRunPrediction}
+              >
+                Run prediction
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-950">Predicted values</h3>
+              <p className="mt-1 text-sm text-slate-600">Mock output keeps the demo simple and easy to explain.</p>
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                {predictionResult.length > 0 ? (
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-500">
+                      <tr>
+                        {resultColumns.map((column) => (
+                          <th key={column} className="px-4 py-3 font-medium">
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {predictionResult.map((row, index) => (
+                        <tr key={index}>
+                          {resultColumns.map((column) => (
+                            <td key={column} className="px-4 py-3 text-slate-800">
+                              {row[column]}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Row</th>
+                        <th className="px-4 py-3 font-medium">Predicted value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {demoPredictionRows.map((row) => (
+                        <tr key={row.row}>
+                          <td className="px-4 py-3 text-slate-800">{row.row}</td>
+                          <td className="px-4 py-3 text-slate-800">{row.value}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-950">Summary</h3>
+              <div className="mt-4 space-y-3 text-sm text-slate-700">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  Input: {predictionInputColumn}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  Target: {predictionTargetColumn}
+                </div>
+                <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
+                  Result type: Mock prediction for demo presentation.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-        {descriptions[activeTab as Exclude<WorkspaceTab, "overview">]}
-      </div>
+      <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">This tab is ready for more demo content.</div>
     );
   }
 
