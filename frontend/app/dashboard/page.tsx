@@ -26,11 +26,13 @@ type SummaryCardProps = {
   value: string;
   detail: string;
   classes: string;
+  accent: string;
 };
 
-function SummaryCard({ title, value, detail, classes }: SummaryCardProps) {
+function SummaryCard({ title, value, detail, classes, accent }: SummaryCardProps) {
   return (
     <article className={`rounded-3xl border bg-white p-5 shadow-sm ${classes}`}>
+      <div className={`mb-4 h-1.5 w-16 rounded-full ${accent}`} />
       <p className="text-sm font-medium text-slate-600">{title}</p>
       <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
       <p className="mt-2 text-sm text-slate-600">{detail}</p>
@@ -229,24 +231,28 @@ export default function DashboardPage() {
       value: String(visibleDatasets.length),
       detail: "All uploads in one place.",
       classes: "border-indigo-100",
+      accent: "bg-indigo-600",
     },
     {
       title: "Datasets with no issues",
       value: String(datasetsWithNoIssues),
       detail: "No missing values or duplicates detected.",
       classes: "border-green-100",
+      accent: "bg-green-500",
     },
     {
       title: "Datasets with warnings",
       value: String(datasetsWithWarnings),
       detail: "Items that need quick review.",
       classes: "border-amber-100",
+      accent: "bg-yellow-400",
     },
     {
       title: "Total rows",
       value: totalRows > 0 ? totalRows.toLocaleString() : "0",
       detail: "Across the visible datasets.",
       classes: "border-slate-200",
+      accent: "bg-sky-500",
     },
   ];
 
@@ -298,7 +304,7 @@ export default function DashboardPage() {
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {summaryCards.map((card) => (
-            <SummaryCard key={card.title} title={card.title} value={card.value} detail={card.detail} classes={card.classes} />
+            <SummaryCard key={card.title} title={card.title} value={card.value} detail={card.detail} classes={card.classes} accent={card.accent} />
           ))}
         </section>
 
@@ -322,11 +328,18 @@ export default function DashboardPage() {
                   <Link key={issue.id} href={issue.href} className={`block rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${issue.classes}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-slate-950">{issue.datasetName}</p>
-                        <p className="mt-1 text-sm text-slate-700">{issue.label}</p>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${
+                              issue.type === "missing" ? "bg-yellow-500" : issue.type === "duplicate" ? "bg-red-500" : "bg-orange-500"
+                            }`}
+                          />
+                          <p className="font-semibold text-slate-950">{issue.datasetName}</p>
+                        </div>
+                        <p className="mt-1 text-sm font-medium text-slate-700">{issue.label}</p>
                         <p className="mt-1 text-xs text-slate-500">Open the dataset workspace to review this issue.</p>
                       </div>
-                      <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-slate-700">{issue.count}</span>
+                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">{issue.count}</span>
                     </div>
                   </Link>
                 ))
@@ -370,7 +383,7 @@ export default function DashboardPage() {
                       </div>
 
                       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
                           <dt className="text-slate-500">Rows</dt>
                           <dd className="font-medium text-slate-950">{dataset.row_count ?? "-"}</dd>
                         </div>
@@ -382,9 +395,9 @@ export default function DashboardPage() {
                           <dt className="text-slate-500">Last updated</dt>
                           <dd className="font-medium text-slate-950">{formatDate(dataset.created_at)}</dd>
                         </div>
-                        <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className={`rounded-xl border p-3 ${issueCount > 0 ? "border-yellow-100 bg-yellow-50" : "border-green-100 bg-green-50"}`}>
                           <dt className="text-slate-500">Issues</dt>
-                          <dd className="font-medium text-slate-950">{issueCount}</dd>
+                          <dd className={`font-medium ${issueCount > 0 ? "text-yellow-800" : "text-green-700"}`}>{issueCount}</dd>
                         </div>
                       </dl>
                     </article>

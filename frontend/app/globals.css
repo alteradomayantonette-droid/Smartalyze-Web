@@ -3,6 +3,15 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-muted: #f1f5f9;
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-soft: #eef2ff;
+  --warning: #facc15;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --invalid: #f97316;
 }
 
 @theme inline {
@@ -13,11 +22,18 @@
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at top, rgba(79, 70, 229, 0.08), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, var(--background) 42%, #eef2ff 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 a {
   text-decoration: none;
+}
+
+::selection {
+  background: rgba(79, 70, 229, 0.16);
+  color: #1e1b4b;
 }

@@ -42,10 +42,11 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">
+    <main className="min-h-screen bg-linear-to-b from-white via-indigo-50/20 to-slate-50 px-4 py-10 text-slate-900">
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md flex-col justify-center">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Smartalyze</p>
+        <div className="rounded-3xl border border-indigo-100 bg-white p-8 shadow-xl shadow-indigo-100/40">
+          <div className="mb-6 h-1.5 w-16 rounded-full bg-indigo-600" />
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Smartalyze</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Login</h1>
           <p className="mt-2 text-sm text-slate-600">Access your datasets and analysis tools.</p>
 
@@ -53,7 +54,7 @@ export default function LoginPage() {
             <label className="block">
               <span className="mb-2 block text-sm font-medium">Username</span>
               <input
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-indigo-500"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 required
@@ -64,7 +65,7 @@ export default function LoginPage() {
             <label className="block">
               <span className="mb-2 block text-sm font-medium">Password</span>
               <input
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-indigo-500"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -73,10 +74,10 @@ export default function LoginPage() {
               />
             </label>
 
-            {message ? <p className="text-sm text-red-600">{message}</p> : null}
+            {message ? <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p> : null}
 
             <button
-              className="w-full rounded-xl bg-slate-900 px-4 py-3 font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+              className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
               type="submit"
               disabled={loading}
             >
@@ -85,7 +86,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-sm text-slate-600">
-            No account yet? <Link className="font-medium text-slate-900 underline" href="/register">Register</Link>
+            No account yet? <Link className="font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href="/register">Register</Link>
           </p>
         </div>
       </div>

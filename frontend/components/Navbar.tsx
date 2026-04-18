@@ -22,14 +22,14 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-indigo-100 bg-white/95 backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-        <Link href="/" className="text-lg font-semibold tracking-tight text-slate-950">
+        <Link href="/" className="text-lg font-semibold tracking-tight text-indigo-700">
           Smartalyze
         </Link>
 
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+          <Link href="/dashboard" className="rounded-xl border border-indigo-200 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50">
             Dashboard
           </Link>
           <button
