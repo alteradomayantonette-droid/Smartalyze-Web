@@ -113,8 +113,9 @@ def snapshot_to_export_bytes(
 ) -> tuple[bytes, str, str]:
     """Convert a snapshot into a downloadable file payload.
 
-Returns (bytes, media_type, file_extension).
-"""
+    Returns:
+        (bytes, media_type, file_extension)
+    """
 
     frame = snapshot_to_dataframe(snapshot)
 

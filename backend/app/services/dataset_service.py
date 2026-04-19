@@ -19,7 +19,7 @@ from io import BytesIO
 
 import pandas as pd
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -382,23 +382,34 @@ async def create_dataset_version(
 If payload.replace_current is True, the dataset's `current_version_id` is moved to
 the new version.
     """
+    # Use an aggregate to safely retrieve a single value even when a dataset
+    # has multiple versions.
     result = await db.execute(
-        select(DatasetVersion.version_number)
-        .where(DatasetVersion.dataset_id == dataset.id)
-        .order_by(DatasetVersion.version_number.desc())
+        select(func.max(DatasetVersion.version_number)).where(DatasetVersion.dataset_id == dataset.id)
     )
-    latest_version_number = result.scalar_one_or_none()
+    latest_version_number = result.scalar_one()
     version_number = (latest_version_number or 0) + 1
 
-    source_snapshot = payload.data_snapshot or dataset.current_snapshot or {
-        "source_name": dataset.name,
-        "file_type": dataset.file_type,
-        "size_bytes": 0,
-        "records": [],
-        "columns": [],
-        "preview": [],
-        "summary": {"row_count": 0, "column_count": 0, "missing_cells": 0, "duplicate_rows": 0, "size_bytes": 0},
-    }
+    if payload.data_snapshot is not None:
+        source_snapshot = payload.data_snapshot
+    elif dataset.current_snapshot is not None:
+        source_snapshot = dataset.current_snapshot
+    else:
+        source_snapshot = {
+            "source_name": dataset.name,
+            "file_type": dataset.file_type,
+            "size_bytes": 0,
+            "records": [],
+            "columns": [],
+            "preview": [],
+            "summary": {
+                "row_count": 0,
+                "column_count": 0,
+                "missing_cells": 0,
+                "duplicate_rows": 0,
+                "size_bytes": 0,
+            },
+        }
 
     version = DatasetVersion(
         dataset_id=dataset.id,

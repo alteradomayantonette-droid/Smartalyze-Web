@@ -2,15 +2,32 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
 export default function Navbar() {
   const pathname = usePathname() ?? "";
   const router = useRouter();
-  const token = getStoredToken();
+  const [token, setToken] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setHydrated(true);
+      setToken(getStoredToken());
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pathname]);
 
   const showOnRoute = pathname.startsWith("/dashboard") || pathname.startsWith("/dataset");
+
+  // Avoid hydration mismatches: SSR cannot read localStorage, so we delay rendering
+  // until the client has mounted and we can safely read the auth token.
+  if (!hydrated) {
+    return null;
+  }
 
   if (!showOnRoute || !token) {
     return null;
@@ -18,6 +35,7 @@ export default function Navbar() {
 
   function handleLogout() {
     clearStoredToken();
+    setToken(null);
     router.replace("/login");
   }
 

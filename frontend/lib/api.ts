@@ -111,6 +111,9 @@ export type SaveResultResponse = {
 
 const REQUEST_TIMEOUT_MS = 15000;
 
+// Note: `fetch()` throws a TypeError for network-level failures (backend down, CORS blocked, DNS, etc.).
+// We map that to a friendlier message so UI toasts are actionable.
+
 async function request<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -134,6 +137,12 @@ async function request<T>(path: string, options?: RequestInit, token?: string): 
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Request timed out. Please try again.");
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error(
+        `Could not reach the API at ${API_BASE_URL}. Make sure the backend is running and CORS allows your frontend origin.`,
+      );
     }
 
     throw error;
@@ -171,7 +180,8 @@ export function getDatasetWorkspace(datasetId: number, token: string): Promise<D
 }
 
 export function deleteDataset(datasetId: number, token: string): Promise<DeleteDatasetResponse> {
-  return request<DeleteDatasetResponse>(`/dataset/${datasetId}`,
+  return request<DeleteDatasetResponse>(
+    `/dataset/${datasetId}`,
     {
       method: "DELETE",
     },
@@ -203,24 +213,45 @@ export async function exportDataset(
   token: string,
 ): Promise<{ blob: Blob; filename: string }>
 {
-  const response = await fetch(`${API_BASE_URL}/dataset/${datasetId}/export`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  // Export returns a Blob (not JSON), so we bypass the generic request<T>() helper.
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    throw new Error(errorBody?.detail ?? "Export failed.");
+  try {
+    const response = await fetch(`${API_BASE_URL}/dataset/${datasetId}/export`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      throw new Error(errorBody?.detail ?? "Export failed.");
+    }
+
+    const blob = await response.blob();
+    const headerFilename = parseFilenameFromContentDisposition(response.headers.get("content-disposition"));
+    const fallbackFilename = `dataset-${datasetId}.${payload.format}`;
+    return { blob, filename: headerFilename ?? fallbackFilename };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error(
+        `Could not reach the API at ${API_BASE_URL}. Make sure the backend is running and CORS allows your frontend origin.`,
+      );
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
   }
-
-  const blob = await response.blob();
-  const headerFilename = parseFilenameFromContentDisposition(response.headers.get("content-disposition"));
-  const fallbackFilename = `dataset-${datasetId}.${payload.format}`;
-  return { blob, filename: headerFilename ?? fallbackFilename };
 }
 
 export function createDatasetVersion(

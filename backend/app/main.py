@@ -29,6 +29,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Route registration: each router owns a feature area.
@@ -45,6 +46,7 @@ If you later add Alembic migrations, this should typically be removed in product
     """
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+
 
 @app.get("/")
 def root():

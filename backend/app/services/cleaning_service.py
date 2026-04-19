@@ -12,6 +12,7 @@ Flow used by the API routes:
 - Convert DataFrame -> snapshot for returning to the client
 """
 
+import warnings
 from typing import Any
 
 import pandas as pd
@@ -38,7 +39,15 @@ def _infer_column_type(series: pd.Series) -> str:
         return "unknown"
 
     numeric_ratio = pd.to_numeric(non_null, errors="coerce").notna().mean()
-    datetime_ratio = pd.to_datetime(non_null, errors="coerce").notna().mean()
+    # This heuristic intentionally tries best-effort datetime parsing.
+    # Pandas can emit a noisy warning when it falls back to element-wise parsing.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Could not infer format, so each element will be parsed individually*",
+            category=UserWarning,
+        )
+        datetime_ratio = pd.to_datetime(non_null, errors="coerce").notna().mean()
 
     if numeric_ratio >= 0.8:
         return "numeric_string"
