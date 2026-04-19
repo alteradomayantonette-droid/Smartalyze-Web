@@ -1,3 +1,8 @@
+"""DatasetAction ORM model.
+
+Lightweight audit/event log for dataset operations (upload, cleaning result, etc.).
+"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
@@ -8,6 +13,7 @@ from app.db.base import Base
 
 
 class DatasetAction(Base):
+    """Audit/event record for an action performed on a dataset."""
     __tablename__ = "dataset_actions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

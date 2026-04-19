@@ -1,3 +1,10 @@
+"""Auth ORM models.
+
+Tables:
+- users: account credentials (password hash)
+- auth_sessions: hashed tokens + expiry/revocation for Bearer auth
+"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
@@ -7,6 +14,7 @@ from app.db.base import Base
 
 
 class User(Base):
+    """User account."""
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -22,6 +30,7 @@ class User(Base):
 
 
 class AuthSession(Base):
+    """Server-side session identified by a random token (stored hashed)."""
     __tablename__ = "auth_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

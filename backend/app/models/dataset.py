@@ -1,3 +1,15 @@
+"""Dataset ORM model.
+
+`Dataset` is the user-owned container.
+
+Data is stored as snapshots (see `DatasetVersion.data_snapshot`). `current_version_id`
+points at the snapshot that should be treated as "current" in the UI.
+
+Cascade behavior:
+- versions/actions are deleted when a dataset is deleted (delete-orphan + FK CASCADE)
+- current_version_id is set to NULL if the referenced version is deleted
+"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
@@ -8,6 +20,7 @@ from app.db.base import Base
 
 
 class Dataset(Base):
+    """User-owned dataset container."""
     __tablename__ = "datasets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""Authentication service.
+
+Responsibilities:
+- Register users (hash password)
+- Login users (verify password)
+- Create/retrieve server-side sessions identified by a random token
+
+Important design choice: session tokens are stored hashed in the DB (AuthSession.token_hash)
+so raw tokens are only ever shown once to the client.
+"""
+
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -19,6 +30,7 @@ SESSION_DAYS = 7
 
 
 async def _create_session(db: AsyncSession, user: User) -> str:
+    """Create an AuthSession row and return the *raw* token for the client."""
     token = generate_auth_token()
     session = AuthSession(
         user_id=user.id,
@@ -31,6 +43,7 @@ async def _create_session(db: AsyncSession, user: User) -> str:
 
 
 async def register_user(db: AsyncSession, payload: RegisterRequest) -> tuple[User, str]:
+    """Create a new user account and return (user, session_token)."""
     username = payload.username.strip()
     result = await db.execute(select(User).where(User.username == username))
     existing_user = result.scalar_one_or_none()
@@ -53,6 +66,7 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> tuple[Use
 
 
 async def login_user(db: AsyncSession, payload: LoginRequest) -> tuple[User, str]:
+    """Validate credentials and return (user, new_session_token)."""
     username = payload.username.strip()
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
@@ -68,6 +82,7 @@ async def login_user(db: AsyncSession, payload: LoginRequest) -> tuple[User, str
 
 
 async def get_user_by_token(db: AsyncSession, token: str) -> User:
+    """Resolve a Bearer token into a User, enforcing session expiry/revocation."""
     token_hash = hash_auth_token(token)
     result = await db.execute(select(AuthSession).where(AuthSession.token_hash == token_hash))
     auth_session = result.scalar_one_or_none()

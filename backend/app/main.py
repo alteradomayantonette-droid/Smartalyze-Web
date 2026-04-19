@@ -1,3 +1,15 @@
+"""Smartalyze FastAPI application entrypoint.
+
+High-level structure ("layers"):
+- app/routes/*: HTTP endpoints (FastAPI routers). Very thin; validates auth and calls services.
+- app/schemas/*: Pydantic models that define request/response contracts.
+- app/services/*: business logic + DB operations (create/list/update datasets, cleaning analysis, auth).
+- app/models/*: SQLAlchemy ORM models (tables + relationships).
+- app/db/*: engine/session wiring.
+
+This file wires middleware + routers and (for local/dev convenience) creates tables on startup.
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,24 +24,29 @@ app = FastAPI(title="Smartalyze API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    #Added this cors valueee to match any testing grounds for nowww like wtfff bro i forgot to add this shit earlier and struggling to find a bug thats not even on production
+    # CORS is configured for local dev (Next.js running on :3000).
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Route registration: each router owns a feature area.
 app.include_router(datasets_router)
-app.include_router(cleaning_router) #Added cleaning router
+app.include_router(cleaning_router)
 app.include_router(auth_router)
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    """Create tables on startup (development convenience).
+
+If you later add Alembic migrations, this should typically be removed in production.
+    """
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-#Made it so if I go to local host it automatically jumps me at the landing page
 @app.get("/")
 def root():
+    """Lightweight health check endpoint."""
     return {"message": "Smartalyze API is running"}

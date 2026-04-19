@@ -10,6 +10,8 @@ import {
   CleanApplyResponse,
   CleanDetectResponse,
   DatasetWorkspace,
+  exportDataset,
+  ExportDatasetFormat,
   getDatasetWorkspace,
   saveDatasetResult,
 } from "@/lib/api";
@@ -209,6 +211,8 @@ export default function DatasetWorkspacePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportDatasetFormat>("csv");
+  const [exporting, setExporting] = useState(false);
   const [cleaningDetection, setCleaningDetection] = useState<CleanDetectResponse | null>(null);
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
   const [cleaningResult, setCleaningResult] = useState<CleanApplyResponse | null>(null);
@@ -357,6 +361,40 @@ export default function DatasetWorkspacePage() {
       setFeedback(error instanceof Error ? error.message : "Could not save result.", "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleExportResult() {
+    if (!workspace || !token) {
+      return;
+    }
+
+    setExporting(true);
+    setFeedback("");
+
+    try {
+      // Prefer exporting the most recent unsaved session result when available.
+      const sessionSnapshot = (cleaningResult?.data_snapshot ?? null) as Record<string, unknown> | null;
+      const { blob, filename } = await exportDataset(
+        workspace.dataset.id,
+        { format: exportFormat, data_snapshot: sessionSnapshot },
+        token,
+      );
+
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+
+      setFeedback("Export started.", "success");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Could not export dataset.", "error");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -1069,6 +1107,36 @@ export default function DatasetWorkspacePage() {
                   <p className="font-medium text-slate-950">Dataset name</p>
                   <p className="mt-1">{workspace.dataset.original_filename}</p>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-950">Export</h2>
+              <p className="mt-1 text-sm text-slate-600">Download the current result as CSV, Excel, or JSON.</p>
+
+              <div className="mt-4 grid gap-3">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-900">Format</span>
+                  <select
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500"
+                    value={exportFormat}
+                    onChange={(event) => setExportFormat(event.target.value as ExportDatasetFormat)}
+                    disabled={exporting}
+                  >
+                    <option value="csv">CSV</option>
+                    <option value="xlsx">XLSX</option>
+                    <option value="json">JSON</option>
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                  onClick={handleExportResult}
+                  disabled={exporting}
+                >
+                  {exporting ? "Exporting..." : "Export"}
+                </button>
               </div>
             </div>
           </aside>

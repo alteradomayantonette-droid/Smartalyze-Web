@@ -1,4 +1,13 @@
-#This is the cleaning.py in route api in the backend
+"""Cleaning routes.
+
+These endpoints run "analysis" on a dataset snapshot and apply cleaning operations.
+The backend stores datasets as snapshots (JSON) and converts snapshots <-> DataFrames
+as needed for operations.
+
+Endpoints:
+- POST /clean/detect: compute missing values, duplicates, inferred types, and issues
+- POST /clean/apply: apply cleaning operations and return a new snapshot (not auto-saved)
+"""
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +28,7 @@ router = APIRouter(prefix="/clean", tags=["cleaning"])
 
 
 def _get_current_token(authorization: str | None) -> str:
+    """Extract a Bearer token from the Authorization header."""
     if not authorization or not authorization.startswith("Bearer "):
         from fastapi import HTTPException, status
 
@@ -33,6 +43,7 @@ async def detect_cleaning(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    """Analyze a dataset snapshot and return detected data quality issues."""
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
@@ -57,6 +68,11 @@ async def apply_cleaning(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    """Apply cleaning operations and return the cleaned snapshot.
+
+This does not persist anything by itself; the frontend can later call the save-result
+endpoint to replace the dataset or save as a new dataset.
+    """
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)

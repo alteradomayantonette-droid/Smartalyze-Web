@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+"""Cleaning service.
+
+This module contains the "business logic" for detecting issues in a dataset snapshot
+and applying cleaning operations.
+
+Flow used by the API routes:
+- Resolve a dataset version (explicit `dataset_version_id` or dataset.current_version)
+- Convert snapshot -> DataFrame
+- Detect issues / apply operations
+- Convert DataFrame -> snapshot for returning to the client
+"""
+
 from typing import Any
 
 import pandas as pd
@@ -162,6 +174,11 @@ async def get_dataset_source_version(
     dataset: Dataset,
     dataset_version_id: int | None = None,
 ) -> DatasetVersion:
+    """Pick the snapshot/version to operate on.
+
+If `dataset_version_id` is provided, it must belong to the dataset.
+Otherwise we fall back to the dataset's current version (or latest version).
+    """
     if dataset_version_id is not None:
         result = await db.execute(
             select(DatasetVersion).where(
@@ -193,6 +210,7 @@ async def detect_cleaning_issues(
     dataset: Dataset,
     dataset_version_id: int | None = None,
 ) -> tuple[DatasetVersion, dict[str, int], int, dict[str, str], list[CleaningIssue]]:
+    """Return (version, missing_values, duplicates, column_types, issues) for a snapshot."""
     version = await get_dataset_source_version(db, dataset, dataset_version_id)
     frame = snapshot_to_dataframe(version.data_snapshot)
     missing_values, duplicates, column_types, issues = _build_detection(frame)
@@ -286,6 +304,7 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
 
 
 def apply_cleaning_operations(frame: pd.DataFrame, operations: list[CleaningOperation]) -> tuple[pd.DataFrame, list[CleaningOperation]]:
+    """Apply operations sequentially, returning the cleaned DataFrame and operations applied."""
     working_frame = frame.copy()
     applied_operations: list[CleaningOperation] = []
 
@@ -303,6 +322,7 @@ def build_cleaning_result_snapshot(
     file_type: str,
     size_bytes: int,
 ) -> dict:
+    """Build a JSON snapshot for a cleaned DataFrame (used as API output)."""
     return build_snapshot(
         frame,
         source_name=source_name,
@@ -312,5 +332,6 @@ def build_cleaning_result_snapshot(
 
 
 def analyze_cleaning_frame(frame: pd.DataFrame) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue]]:
+    """Re-run detection on an updated DataFrame (used after cleaning)."""
     return _build_detection(frame)
 

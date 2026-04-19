@@ -1,5 +1,20 @@
 from __future__ import annotations
 
+"""Dataset service.
+
+This module owns dataset business logic and DB operations.
+
+Key concepts:
+- Dataset: user-owned container (a "file" in the UI)
+- DatasetVersion: stored snapshot of the dataset content (JSON)
+- DatasetAction: lightweight audit log entry
+
+Typical request flow:
+- Routes validate Bearer token -> `get_user_by_token()`
+- Routes enforce ownership -> `get_owned_dataset()`
+- Routes call the appropriate service function (create/list/save/delete)
+"""
+
 from io import BytesIO
 
 import pandas as pd
@@ -208,6 +223,11 @@ async def create_dataset_from_upload(
     owner: User,
     description: str | None = None,
 ) -> Dataset:
+    """Create a dataset from an uploaded file.
+
+Reads the uploaded bytes into a DataFrame, builds a snapshot, and delegates to
+`create_dataset_from_snapshot()` to persist Dataset + initial DatasetVersion.
+    """
     settings = get_settings()
     original_filename = upload_file.filename or "dataset"
     file_bytes = await upload_file.read()
@@ -256,6 +276,15 @@ async def create_dataset_from_snapshot(
     action_type: str = "result",
     action_input_params: dict | None = None,
 ) -> Dataset:
+    """Create a dataset from a pre-built snapshot.
+
+Persists:
+- Dataset row
+- initial DatasetVersion (version_number=1)
+- a DatasetAction record describing the action
+
+Returns the dataset reloaded with its current_version relationship.
+    """
     dataset = Dataset(
         user_id=owner.id,
         name=name,
@@ -296,6 +325,7 @@ async def create_dataset_from_snapshot(
 
 
 async def list_user_datasets(db: AsyncSession, owner: User) -> list[Dataset]:
+    """Return all datasets owned by the given user (most recent first)."""
     result = await db.execute(
         select(Dataset)
         .options(selectinload(Dataset.current_version))
@@ -306,6 +336,7 @@ async def list_user_datasets(db: AsyncSession, owner: User) -> list[Dataset]:
 
 
 async def get_owned_dataset(db: AsyncSession, dataset_id: int, owner: User) -> Dataset:
+    """Fetch a dataset by id and enforce that it belongs to the given user."""
     result = await db.execute(
         select(Dataset)
         .options(selectinload(Dataset.current_version), selectinload(Dataset.versions))
@@ -318,6 +349,7 @@ async def get_owned_dataset(db: AsyncSession, dataset_id: int, owner: User) -> D
 
 
 async def get_dataset_versions(db: AsyncSession, dataset: Dataset) -> list[DatasetVersion]:
+    """Return all stored snapshots/versions for a dataset (ascending version_number)."""
     result = await db.execute(
         select(DatasetVersion)
         .where(DatasetVersion.dataset_id == dataset.id)
@@ -327,11 +359,16 @@ async def get_dataset_versions(db: AsyncSession, dataset: Dataset) -> list[Datas
 
 
 async def delete_owned_dataset(db: AsyncSession, dataset: Dataset) -> None:
+    """Delete a dataset and commit.
+
+Dependent rows (versions/actions) are deleted via ORM cascades + FK ON DELETE CASCADE.
+    """
     await db.delete(dataset)
     await db.commit()
 
 
 def get_workspace_guidance(dataset: Dataset) -> tuple[list[dict], list[dict]]:
+    """Compute warnings/suggestions shown in the dataset workspace UI."""
     return _build_workspace_guidance(dataset)
 
 
@@ -340,6 +377,11 @@ async def create_dataset_version(
     dataset: Dataset,
     payload: CreateDatasetVersionRequest,
 ) -> DatasetVersion:
+    """Create a new DatasetVersion snapshot.
+
+If payload.replace_current is True, the dataset's `current_version_id` is moved to
+the new version.
+    """
     result = await db.execute(
         select(DatasetVersion.version_number)
         .where(DatasetVersion.dataset_id == dataset.id)

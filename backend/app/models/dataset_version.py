@@ -1,3 +1,9 @@
+"""DatasetVersion ORM model.
+
+Represents a stored snapshot of a dataset at a point in time.
+The `data_snapshot` JSON holds the full table representation + preview + summary.
+"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
@@ -8,6 +14,7 @@ from app.db.base import Base
 
 
 class DatasetVersion(Base):
+    """Immutable-ish dataset snapshot row."""
     __tablename__ = "dataset_versions"
     __table_args__ = (
         UniqueConstraint("dataset_id", "version_number", name="uq_dataset_versions_dataset_id_version_number"),

@@ -55,6 +55,13 @@ export type DeleteDatasetResponse = {
   message: string;
 };
 
+export type ExportDatasetFormat = "csv" | "xlsx" | "json";
+
+export type ExportDatasetRequest = {
+  format: ExportDatasetFormat;
+  data_snapshot?: Record<string, unknown> | null;
+};
+
 export type CleaningIssue = {
   kind: string;
   severity: "info" | "warning" | "error";
@@ -170,6 +177,50 @@ export function deleteDataset(datasetId: number, token: string): Promise<DeleteD
     },
     token,
   );
+}
+
+function parseFilenameFromContentDisposition(headerValue: string | null): string | null {
+  if (!headerValue) {
+    return null;
+  }
+
+  const match = /filename\*=UTF-8''([^;]+)|filename="?([^;"]+)"?/i.exec(headerValue);
+  const value = match?.[1] ?? match?.[2] ?? null;
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export async function exportDataset(
+  datasetId: number,
+  payload: ExportDatasetRequest,
+  token: string,
+): Promise<{ blob: Blob; filename: string }>
+{
+  const response = await fetch(`${API_BASE_URL}/dataset/${datasetId}/export`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new Error(errorBody?.detail ?? "Export failed.");
+  }
+
+  const blob = await response.blob();
+  const headerFilename = parseFilenameFromContentDisposition(response.headers.get("content-disposition"));
+  const fallbackFilename = `dataset-${datasetId}.${payload.format}`;
+  return { blob, filename: headerFilename ?? fallbackFilename };
 }
 
 export function createDatasetVersion(

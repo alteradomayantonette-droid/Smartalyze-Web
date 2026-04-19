@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+"""Cleaning API schemas (Pydantic).
+
+The frontend uses these to:
+- request a cleaning detection run
+- submit a list of cleaning operations to apply
+- receive a cleaned snapshot + summary back
+"""
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-#This is the current cleaning operations we can add more features here later LOLLLLLLsss
+# Supported cleaning operations. Add new operation types here and handle them in
+# `app/services/cleaning_service.py::_apply_operation`.
 CleaningOperationType = Literal[
     "fill_mean",
     "fill_median",
@@ -20,6 +29,7 @@ CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "bo
 
 
 class CleaningIssue(BaseModel):
+    """A single detected issue (missing values, duplicates, type inconsistency, etc.)."""
     kind: str
     severity: Literal["info", "warning", "error"] = "warning"
     column: str | None = None
@@ -29,6 +39,7 @@ class CleaningIssue(BaseModel):
 
 
 class CleaningOperation(BaseModel):
+    """An operation request from the client (e.g., fill mean, drop rows, convert type)."""
     operation_type: CleaningOperationType
     columns: list[str] = Field(default_factory=list)
     column: str | None = None
@@ -38,11 +49,13 @@ class CleaningOperation(BaseModel):
 
 
 class CleanDetectRequest(BaseModel):
+    """Request body for POST /clean/detect."""
     dataset_id: int
     dataset_version_id: int | None = None
 
 
 class CleanDetectResponse(BaseModel):
+    """Response body for POST /clean/detect."""
     dataset_id: int
     dataset_version_id: int
     missing_values: dict[str, int]
@@ -52,12 +65,17 @@ class CleanDetectResponse(BaseModel):
 
 
 class CleanApplyRequest(BaseModel):
+    """Request body for POST /clean/apply."""
     dataset_id: int
     dataset_version_id: int | None = None
     cleaning_operations: list[CleaningOperation] = Field(default_factory=list)
 
-#This is the results output dataset scheme
 class CleanApplyResponse(BaseModel):
+    """Response body for POST /clean/apply.
+
+Includes the cleaned snapshot (`data_snapshot`) which can later be persisted via the
+save-result endpoint.
+    """
     dataset_id: int
     dataset_version_id: int
     source_version_id: int

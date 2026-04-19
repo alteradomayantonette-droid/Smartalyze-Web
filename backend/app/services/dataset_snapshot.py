@@ -1,7 +1,19 @@
 from __future__ import annotations
 
+"""Snapshot helpers.
+
+The app stores dataset content as a JSON "snapshot" so it can be:
+- saved in the database (DatasetVersion.data_snapshot)
+- converted to a pandas DataFrame for cleaning/analysis
+- served to the frontend for previews/summary widgets
+
+Snapshot shape (high-level):
+{ source_name, file_type, size_bytes, records, columns, preview, summary }
+"""
+
+import json
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -9,6 +21,7 @@ PREVIEW_ROWS = 10
 
 
 def normalize_value(value: Any) -> Any:
+    """Convert pandas/numpy scalar values into JSON-friendly Python types."""
     if pd.isna(value):
         return None
     if hasattr(value, "item"):
@@ -59,6 +72,7 @@ def build_snapshot(
     file_type: str,
     size_bytes: int,
 ) -> dict:
+    """Build a snapshot dict from a DataFrame (records + preview + metadata)."""
     summary = build_summary(frame, size_bytes=size_bytes)
     return {
         "source_name": source_name,
@@ -75,6 +89,11 @@ def build_snapshot(
 
 
 def snapshot_to_dataframe(snapshot: dict | None) -> pd.DataFrame:
+    """Convert a stored snapshot back into a DataFrame.
+
+If `records` exist, we build the frame from them. Otherwise we return an empty frame
+with the known columns.
+    """
     if not snapshot:
         return pd.DataFrame()
 
@@ -85,3 +104,37 @@ def snapshot_to_dataframe(snapshot: dict | None) -> pd.DataFrame:
     columns = snapshot.get("columns") or []
     column_names = [str(column.get("name")) for column in columns if column.get("name")]
     return pd.DataFrame(columns=column_names)
+
+
+def snapshot_to_export_bytes(
+    snapshot: dict,
+    *,
+    export_format: Literal["csv", "xlsx", "json"],
+) -> tuple[bytes, str, str]:
+    """Convert a snapshot into a downloadable file payload.
+
+Returns (bytes, media_type, file_extension).
+"""
+
+    frame = snapshot_to_dataframe(snapshot)
+
+    if export_format == "json":
+        records = snapshot.get("records")
+        if not isinstance(records, list):
+            records = frame.to_dict(orient="records")
+
+        payload = json.dumps(records, ensure_ascii=False, default=str)
+        return payload.encode("utf-8"), "application/json", "json"
+
+    if export_format == "csv":
+        csv_text = frame.to_csv(index=False)
+        return csv_text.encode("utf-8"), "text/csv", "csv"
+
+    if export_format == "xlsx":
+        buffer = BytesIO()
+        # Pandas will use openpyxl (already in requirements) for .xlsx.
+        frame.to_excel(buffer, index=False, sheet_name="data")
+        return buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+
+    # Should be unreachable due to typing, but kept as a safe guardrail.
+    raise ValueError(f"Unsupported export format: {export_format}")
