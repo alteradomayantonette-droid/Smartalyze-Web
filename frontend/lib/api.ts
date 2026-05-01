@@ -1,9 +1,12 @@
+// Set NEXT_PUBLIC_API_BASE_URL in .env.local to override for production.
+declare const process: { env: Record<string, string | undefined> };
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export type AuthUser = {
   id: number;
   username: string;
   created_at: string;
+  avatar?: string | null;
 };
 
 export type AuthResponse = {
@@ -95,6 +98,73 @@ export type CleanApplyResponse = CleanDetectResponse & {
   preview: Array<Record<string, unknown>>;
   summary: Record<string, unknown>;
   data_snapshot: Record<string, unknown>;
+};
+
+export type TopValue = { value: unknown; count: number };
+
+export type ColumnStat = {
+  name: string;
+  dtype: "numeric" | "text" | "datetime" | "boolean";
+  count: number;
+  missing: number;
+  missing_pct: number;
+  unique: number;
+  top_values: TopValue[];
+  mean?: number | null;
+  median?: number | null;
+  std?: number | null;
+  min?: number | null;
+  max?: number | null;
+  q25?: number | null;
+  q75?: number | null;
+};
+
+export type AnalyzeStatsResponse = {
+  column_stats: ColumnStat[];
+  row_count: number;
+  col_count: number;
+};
+
+export type GroupResult = { group: string; value: number };
+
+export type GroupByResponse = {
+  group_by: string;
+  aggregate_column: string;
+  aggregate_func: string;
+  results: GroupResult[];
+};
+
+export type ChartPoint = { x: number; y: number };
+
+export type ColumnTrendResult = {
+  column: string;
+  direction: "increasing" | "decreasing" | "stable" | "volatile";
+  slope: number;
+  r_squared: number;
+  min: number;
+  max: number;
+  mean: number;
+  count: number;
+  chart_points: ChartPoint[];
+  trend_line: ChartPoint[];
+};
+
+export type TrendResponse = { columns: ColumnTrendResult[] };
+
+export type ColumnAnomalyResult = {
+  column: string;
+  outlier_count: number;
+  total_count: number;
+  outlier_pct: number;
+  lower_fence: number;
+  upper_fence: number;
+  sample_outliers: unknown[];
+};
+
+export type AnomalyResponse = {
+  total_flagged_rows: number;
+  columns_analyzed: number;
+  columns: ColumnAnomalyResult[];
 };
 
 export type SaveResultRequest = {
@@ -313,6 +383,86 @@ export function saveDatasetResult(datasetId: number, payload: SaveResultRequest,
     },
     token,
   );
+}
+
+export function analyzeStats(
+  datasetId: number,
+  token: string,
+  datasetVersionId?: number | null,
+): Promise<AnalyzeStatsResponse> {
+  return request<AnalyzeStatsResponse>(
+    "/analysis/stats",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+    },
+    token,
+  );
+}
+
+export function groupDataset(
+  datasetId: number,
+  payload: { group_by: string; aggregate_column: string; aggregate_func: string; dataset_version_id?: number | null },
+  token: string,
+): Promise<GroupByResponse> {
+  return request<GroupByResponse>(
+    "/analysis/group",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_id: datasetId, ...payload }),
+    },
+    token,
+  );
+}
+
+export function updateUsername(token: string, newUsername: string, password: string): Promise<AuthUser> {
+  return request<AuthUser>("/me/username", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_username: newUsername, password }),
+  }, token);
+}
+
+export function updatePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+  return request<void>("/me/password", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  }, token);
+}
+
+export function updateAvatar(token: string, avatar: string | null): Promise<AuthUser> {
+  return request<AuthUser>("/me/avatar", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ avatar }),
+  }, token);
+}
+
+export function deleteAccount(token: string, password: string): Promise<void> {
+  return request<void>("/me", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  }, token);
+}
+
+export function getTrends(datasetId: number, token: string, datasetVersionId?: number | null): Promise<TrendResponse> {
+  return request<TrendResponse>("/analysis/trend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+  }, token);
+}
+
+export function getAnomalies(datasetId: number, token: string, datasetVersionId?: number | null): Promise<AnomalyResponse> {
+  return request<AnomalyResponse>("/analysis/anomaly", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+  }, token);
 }
 
 export async function uploadDataset(file: File, description: string, token?: string): Promise<{ message: string; dataset: Dataset }> {

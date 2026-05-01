@@ -12,8 +12,25 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserRead
-from app.services.auth_service import get_user_by_token, login_user, register_user
+from app.schemas.auth import (
+    AuthResponse,
+    DeleteAccountRequest,
+    LoginRequest,
+    RegisterRequest,
+    UpdateAvatarRequest,
+    UpdatePasswordRequest,
+    UpdateUsernameRequest,
+    UserRead,
+)
+from app.services.auth_service import (
+    delete_user,
+    get_user_by_token,
+    login_user,
+    register_user,
+    update_avatar,
+    update_password,
+    update_username,
+)
 
 router = APIRouter()
 
@@ -41,14 +58,66 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     return _auth_response("Login successful.", token, user)
 
 
+def _require_token(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
+    return authorization.removeprefix("Bearer ").strip()
+
+
 @router.get("/me", response_model=UserRead)
 async def me(authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
     """Return the current user for the provided Bearer token."""
-    if not authorization or not authorization.startswith("Bearer "):
-        from fastapi import HTTPException, status
-
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
-
-    token = authorization.removeprefix("Bearer ").strip()
+    token = _require_token(authorization)
     user = await get_user_by_token(db, token)
     return UserRead.model_validate(user).model_dump()
+
+
+@router.put("/me/username", response_model=UserRead)
+async def change_username(
+    payload: UpdateUsernameRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the authenticated user's username."""
+    token = _require_token(authorization)
+    user = await get_user_by_token(db, token)
+    updated = await update_username(db, user, payload.new_username, payload.password)
+    return UserRead.model_validate(updated).model_dump()
+
+
+@router.put("/me/password", status_code=204)
+async def change_password(
+    payload: UpdatePasswordRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the authenticated user's password."""
+    token = _require_token(authorization)
+    user = await get_user_by_token(db, token)
+    await update_password(db, user, payload.current_password, payload.new_password)
+
+
+@router.put("/me/avatar", response_model=UserRead)
+async def change_avatar(
+    payload: UpdateAvatarRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the authenticated user's avatar (base64 data URL)."""
+    token = _require_token(authorization)
+    user = await get_user_by_token(db, token)
+    updated = await update_avatar(db, user, payload.avatar)
+    return UserRead.model_validate(updated).model_dump()
+
+
+@router.delete("/me", status_code=204)
+async def delete_account(
+    payload: DeleteAccountRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete the authenticated user's account."""
+    token = _require_token(authorization)
+    user = await get_user_by_token(db, token)
+    await delete_user(db, user, payload.password)

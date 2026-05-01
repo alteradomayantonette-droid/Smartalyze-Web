@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models  # noqa: F401
 from app.db.base import Base
 from app.db.session import engine
+from app.routes.analysis import router as analysis_router
 from app.routes.cleaning import router as cleaning_router
 from app.routes.auth import router as auth_router
 from app.routes.datasets import router as datasets_router
@@ -35,6 +36,7 @@ app.add_middleware(
 # Route registration: each router owns a feature area.
 app.include_router(datasets_router)
 app.include_router(cleaning_router)
+app.include_router(analysis_router)
 app.include_router(auth_router)
 
 

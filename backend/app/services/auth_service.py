@@ -81,6 +81,54 @@ async def login_user(db: AsyncSession, payload: LoginRequest) -> tuple[User, str
     return user, token
 
 
+async def update_username(db: AsyncSession, user: User, new_username: str, password: str) -> User:
+    """Change a user's username after verifying their current password."""
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password.")
+
+    new_username = new_username.strip()
+    if len(new_username) < 3:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username must be at least 3 characters.")
+
+    result = await db.execute(select(User).where(User.username == new_username, User.id != user.id))
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken.")
+
+    user.username = new_username
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def update_password(db: AsyncSession, user: User, current_password: str, new_password: str) -> None:
+    """Change a user's password after verifying their current password."""
+    if not verify_password(current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect current password.")
+
+    if len(new_password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters.")
+
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+
+
+async def update_avatar(db: AsyncSession, user: User, avatar: str | None) -> User:
+    """Update a user's avatar (base64 data URL or None to clear)."""
+    user.avatar = avatar
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def delete_user(db: AsyncSession, user: User, password: str) -> None:
+    """Permanently delete a user account after verifying their password."""
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password.")
+
+    await db.delete(user)
+    await db.commit()
+
+
 async def get_user_by_token(db: AsyncSession, token: str) -> User:
     """Resolve a Bearer token into a User, enforcing session expiry/revocation."""
     token_hash = hash_auth_token(token)

@@ -42,6 +42,7 @@ class UserRead(BaseModel):
     id: int
     username: str
     created_at: datetime
+    avatar: str | None = None
 
 
 class AuthResponse(BaseModel):
@@ -49,3 +50,21 @@ class AuthResponse(BaseModel):
     message: str
     token: str
     user: UserRead
+
+
+class UpdateUsernameRequest(BaseModel):
+    new_username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=1)
+
+
+class UpdatePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class UpdateAvatarRequest(BaseModel):
+    avatar: str | None = None
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1)

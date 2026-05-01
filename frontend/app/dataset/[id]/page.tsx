@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import {
+  analyzeStats,
+  AnalyzeStatsResponse,
+  AnomalyResponse,
   applyCleaningOperations,
   CleaningOperation,
   CleanApplyResponse,
@@ -12,12 +15,17 @@ import {
   DatasetWorkspace,
   exportDataset,
   ExportDatasetFormat,
+  getAnomalies,
   getDatasetWorkspace,
+  getTrends,
+  groupDataset,
+  GroupByResponse,
   saveDatasetResult,
+  TrendResponse,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
-type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "prediction";
+type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "trends" | "anomaly" | "prediction";
 type FeedbackTone = "neutral" | "success" | "warning" | "error";
 type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
 
@@ -175,13 +183,6 @@ function buildSnapshotFromDataset(dataset: DatasetWorkspace["dataset"]): Record<
   };
 }
 
-const demoInsightRows = [
-  { label: "Average Sales", value: "1,050", note: "Simple summary from the current dataset." },
-  { label: "Most common Region", value: "Davao", note: "Useful for quick reporting." },
-  { label: "Missing values", value: "18", note: "Highlighted in yellow when review is needed." },
-  { label: "Duplicates", value: "4", note: "Highlighted in red when cleanup is needed." },
-];
-
 const demoPredictionRows = [
   { row: 1, value: "1,020" },
   { row: 2, value: "1,060" },
@@ -197,9 +198,8 @@ export default function DatasetWorkspacePage() {
   const [workspace, setWorkspace] = useState<DatasetWorkspace | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [token, setToken] = useState<string | null>(null);
-  const [aggregationGroupBy, setAggregationGroupBy] = useState("Region");
-  const [aggregationOperation, setAggregationOperation] = useState("average");
-  const [aggregationResult, setAggregationResult] = useState<Array<Record<string, string>>>([]);
+  const [aggregationGroupBy, setAggregationGroupBy] = useState("");
+  const [aggregationOperation, setAggregationOperation] = useState("sum");
   const [predictionInputColumn, setPredictionInputColumn] = useState("Sales");
   const [predictionTargetColumn, setPredictionTargetColumn] = useState("Profit");
   const [predictionResult, setPredictionResult] = useState<Array<Record<string, string>>>([]);
@@ -217,6 +217,16 @@ export default function DatasetWorkspacePage() {
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
   const [cleaningResult, setCleaningResult] = useState<CleanApplyResponse | null>(null);
   const [missingValueStrategies, setMissingValueStrategies] = useState<Record<string, MissingStrategy>>({});
+  const [analysisStats, setAnalysisStats] = useState<AnalyzeStatsResponse | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [aggregateColumn, setAggregateColumn] = useState("");
+  const [groupResult, setGroupResult] = useState<GroupByResponse | null>(null);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [trendData, setTrendData] = useState<TrendResponse | null>(null);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [selectedTrendColumn, setSelectedTrendColumn] = useState("");
+  const [anomalyData, setAnomalyData] = useState<AnomalyResponse | null>(null);
+  const [anomalyLoading, setAnomalyLoading] = useState(false);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -238,13 +248,54 @@ export default function DatasetWorkspacePage() {
     }
 
     getDatasetWorkspace(datasetId, storedToken)
-      .then(setWorkspace)
+      .then((ws) => {
+        setWorkspace(ws);
+        const firstCol = ws.dataset.columns_json?.[0];
+        const firstName = firstCol ? String(firstCol.name ?? "") : "";
+        if (firstName) {
+          setAggregationGroupBy(firstName);
+          setAggregateColumn(firstName);
+        }
+      })
       .catch(() => {
         clearStoredToken();
         router.replace("/login");
       })
       .finally(() => setLoading(false));
   }, [datasetId, router]);
+
+  useEffect(() => {
+    if (activeTab !== "trends" || !workspace || !token || trendData) return;
+    setTrendLoading(true);
+    getTrends(workspace.dataset.id, token)
+      .then((data) => {
+        setTrendData(data);
+        if (data.columns[0]) setSelectedTrendColumn(data.columns[0].column);
+      })
+      .catch(() => { setMessage("Could not load trend data."); setMessageTone("error"); })
+      .finally(() => setTrendLoading(false));
+  }, [activeTab, workspace, token, trendData]);
+
+  useEffect(() => {
+    if (activeTab !== "anomaly" || !workspace || !token || anomalyData) return;
+    setAnomalyLoading(true);
+    getAnomalies(workspace.dataset.id, token)
+      .then(setAnomalyData)
+      .catch(() => { setMessage("Could not load anomaly data."); setMessageTone("error"); })
+      .finally(() => setAnomalyLoading(false));
+  }, [activeTab, workspace, token, anomalyData]);
+
+  useEffect(() => {
+    if (activeTab !== "analysis" || !workspace || !token || analysisStats) return;
+    setAnalysisLoading(true);
+    analyzeStats(workspace.dataset.id, token)
+      .then(setAnalysisStats)
+      .catch(() => {
+        setMessage("Could not load column statistics.");
+        setMessageTone("error");
+      })
+      .finally(() => setAnalysisLoading(false));
+  }, [activeTab, workspace, token, analysisStats]);
 
   const availableColumns = workspace?.dataset.columns_json?.map((column) => String(column.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
@@ -398,12 +449,22 @@ export default function DatasetWorkspacePage() {
     }
   }
 
-  function handleGenerateAggregation() {
-    setAggregationResult([
-      { [aggregationGroupBy]: "Davao", [aggregationOperation]: "1,050" },
-      { [aggregationGroupBy]: "Cebu", [aggregationOperation]: "890" },
-      { [aggregationGroupBy]: "Manila", [aggregationOperation]: "1,240" },
-    ]);
+  async function handleGenerateAggregation() {
+    if (!workspace || !token) return;
+    setGroupLoading(true);
+    setFeedback("");
+    try {
+      const result = await groupDataset(
+        workspace.dataset.id,
+        { group_by: aggregationGroupBy, aggregate_column: aggregateColumn, aggregate_func: aggregationOperation },
+        token,
+      );
+      setGroupResult(result);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Could not generate aggregation.", "error");
+    } finally {
+      setGroupLoading(false);
+    }
   }
 
   function handleRunPrediction() {
@@ -790,56 +851,116 @@ export default function DatasetWorkspacePage() {
     }
 
     if (activeTab === "analysis") {
+      if (analysisLoading) {
+        return <p className="text-sm text-slate-600">Loading column statistics...</p>;
+      }
+
+      const stats = analysisStats;
+      const numericCols = stats?.column_stats.filter((c) => c.dtype === "numeric") ?? [];
+      const colsWithMissing = stats?.column_stats.filter((c) => c.missing > 0) ?? [];
+      const mostMissingCol = colsWithMissing.sort((a, b) => b.missing_pct - a.missing_pct)[0] ?? null;
+
       return (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {demoInsightRows.map((item) => (
-              <article key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-slate-500">{item.label}</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</p>
-                <p className="mt-2 text-sm text-slate-600">{item.note}</p>
-              </article>
-            ))}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Total rows</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{stats?.row_count ?? workspace.dataset.row_count ?? "-"}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Total columns</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{stats?.col_count ?? workspace.dataset.column_count ?? "-"}</p>
+            </div>
+            <div className={`rounded-2xl border p-4 shadow-sm ${colsWithMissing.length > 0 ? "border-yellow-200 bg-yellow-50 text-yellow-800" : "border-green-200 bg-green-50 text-green-800"}`}>
+              <p className="text-sm text-slate-500">Columns with missing</p>
+              <p className="mt-1 text-2xl font-semibold">{stats ? colsWithMissing.length : "-"}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Numeric columns</p>
+              <p className="mt-1 text-2xl font-semibold text-indigo-600">{stats ? numericCols.length : "-"}</p>
+            </div>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="text-lg font-semibold text-slate-950">Column summaries</h3>
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Column</th>
-                      <th className="px-4 py-3 font-medium">Type</th>
-                      <th className="px-4 py-3 font-medium">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                    {(workspace.dataset.columns_json ?? []).slice(0, 5).map((column: Record<string, unknown>, index: number) => (
-                      <tr key={`${String(column.name ?? index)}`}>
-                        <td className="px-4 py-3 font-medium text-slate-950">{String(column.name ?? "Column")}</td>
-                        <td className="px-4 py-3">{String(column.type ?? "text")}</td>
-                        <td className="px-4 py-3">Simple summary available for demo purposes.</td>
+              {stats ? (
+                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Column</th>
+                        <th className="px-4 py-3 font-medium">Type</th>
+                        <th className="px-4 py-3 font-medium">Non-null</th>
+                        <th className="px-4 py-3 font-medium">Missing %</th>
+                        <th className="px-4 py-3 font-medium">Unique</th>
+                        <th className="px-4 py-3 font-medium">Mean / Min / Max</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                      {stats.column_stats.map((col) => (
+                        <tr key={col.name}>
+                          <td className="px-4 py-3 font-medium text-slate-950">{col.name}</td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              col.dtype === "numeric" ? "bg-indigo-100 text-indigo-700" :
+                              col.dtype === "datetime" ? "bg-purple-100 text-purple-700" :
+                              col.dtype === "boolean" ? "bg-orange-100 text-orange-700" :
+                              "bg-slate-100 text-slate-600"
+                            }`}>
+                              {col.dtype}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">{col.count}</td>
+                          <td className={`px-4 py-3 font-medium ${col.missing_pct > 0 ? "text-yellow-700" : "text-green-700"}`}>
+                            {col.missing_pct > 0 ? `${col.missing_pct}%` : "—"}
+                          </td>
+                          <td className="px-4 py-3">{col.unique}</td>
+                          <td className="px-4 py-3 text-slate-500">
+                            {col.dtype === "numeric" && col.mean != null
+                              ? `${col.mean} / ${col.min ?? "?"} / ${col.max ?? "?"}`
+                              : col.top_values[0] != null
+                              ? String(col.top_values[0].value)
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-slate-600">Switch to this tab to load statistics.</p>
+              )}
             </div>
 
             <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Simple insights</h3>
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-                  Sales looks stable across the top rows.
+              <h3 className="text-lg font-semibold text-slate-950">Insights</h3>
+              {stats ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-800">
+                    {numericCols.length > 0
+                      ? `${numericCols.length} numeric column${numericCols.length === 1 ? "" : "s"} detected. Use the Aggregation tab to summarize them.`
+                      : "No numeric columns detected in this dataset."}
+                  </div>
+                  {colsWithMissing.length > 0 ? (
+                    <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+                      {colsWithMissing.length} column{colsWithMissing.length === 1 ? "" : "s"} have missing values.
+                      {mostMissingCol ? ` Highest: "${mostMissingCol.name}" (${mostMissingCol.missing_pct}%).` : ""}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+                      No missing values detected across all columns.
+                    </div>
+                  )}
+                  {(workspace.dataset.summary_json?.duplicate_rows as number) > 0 ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                      {String(workspace.dataset.summary_json?.duplicate_rows)} duplicate rows found. Clean them in the Cleaning tab.
+                    </div>
+                  ) : null}
                 </div>
-                <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-                  Some rows still have missing values that should be reviewed.
-                </div>
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                  Duplicate records can be removed from the Cleaning tab.
-                </div>
-              </div>
+              ) : (
+                <p className="text-sm text-slate-600">Insights will appear once statistics are loaded.</p>
+              )}
             </div>
           </div>
         </div>
@@ -847,11 +968,11 @@ export default function DatasetWorkspacePage() {
     }
 
     if (activeTab === "aggregation") {
-      const resultColumns = aggregationResult.length > 0 ? Object.keys(aggregationResult[0] ?? {}) : [];
-
       return (
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
+          {message ? <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${getFeedbackClasses(messageTone)}`}>{message}</div> : null}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <span className="mb-2 block text-sm font-medium text-slate-900">Group by</span>
               <select
@@ -868,61 +989,285 @@ export default function DatasetWorkspacePage() {
             </label>
 
             <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Operation</span>
+              <span className="mb-2 block text-sm font-medium text-slate-900">Aggregate column</span>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={aggregateColumn}
+                onChange={(event) => setAggregateColumn(event.target.value)}
+              >
+                {availableColumns.map((columnName) => (
+                  <option key={columnName} value={columnName}>
+                    {columnName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Function</span>
               <select
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
                 value={aggregationOperation}
                 onChange={(event) => setAggregationOperation(event.target.value)}
               >
                 <option value="sum">Sum</option>
-                <option value="average">Average</option>
+                <option value="mean">Average (mean)</option>
                 <option value="count">Count</option>
+                <option value="min">Min</option>
+                <option value="max">Max</option>
               </select>
             </label>
 
             <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <button
                 type="button"
-                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500"
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
                 onClick={handleGenerateAggregation}
+                disabled={groupLoading || availableColumns.length === 0}
               >
-                Generate result
+                {groupLoading ? "Generating..." : "Generate result"}
               </button>
             </div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-950">Result table</h3>
-            <p className="mt-1 text-sm text-slate-600">A simple mock result keeps the demo readable.</p>
+            {groupResult ? (
+              <p className="mt-1 text-sm text-slate-600">
+                {aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1)} of <strong>{groupResult.aggregate_column}</strong> grouped by <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by value.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-slate-600">Choose columns and a function, then click Generate result.</p>
+            )}
             <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-              {aggregationResult.length > 0 ? (
+              {groupResult && groupResult.results.length > 0 ? (
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      {resultColumns.map((column) => (
-                        <th key={column} className="px-4 py-3 text-left font-medium text-slate-600">
-                          {column}
-                        </th>
-                      ))}
+                      <th className="px-4 py-3 text-left font-medium text-slate-600">{groupResult.group_by}</th>
+                      <th className="px-4 py-3 text-left font-medium text-slate-600">
+                        {aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1)} of {groupResult.aggregate_column}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {aggregationResult.map((row, index) => (
+                    {groupResult.results.map((row, index) => (
                       <tr key={index}>
-                        {resultColumns.map((column) => (
-                          <td key={column} className="px-4 py-3 text-slate-800">
-                            {row[column]}
-                          </td>
-                        ))}
+                        <td className="px-4 py-3 font-medium text-slate-950">{row.group}</td>
+                        <td className="px-4 py-3 text-slate-800">{row.value.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               ) : (
-                <div className="p-6 text-sm text-slate-600">Choose a column and generate a quick summary.</div>
+                <div className="p-6 text-sm text-slate-600">
+                  {groupResult ? "No groups found in the selected column." : "Results will appear here after you generate."}
+                </div>
               )}
             </div>
           </div>
+        </div>
+      );
+    }
+
+    if (activeTab === "trends") {
+      if (trendLoading) return <p className="text-sm text-slate-600">Loading trend analysis...</p>;
+
+      const numericCols = trendData?.columns ?? [];
+      const activeTrend = numericCols.find((c) => c.column === selectedTrendColumn) ?? numericCols[0] ?? null;
+
+      function directionBadge(dir: string) {
+        const map: Record<string, string> = {
+          increasing: "bg-green-100 text-green-700",
+          decreasing: "bg-red-100 text-red-700",
+          stable: "bg-yellow-100 text-yellow-700",
+          volatile: "bg-orange-100 text-orange-700",
+        };
+        return map[dir] ?? "bg-slate-100 text-slate-600";
+      }
+
+      function renderTrendChart(trend: typeof activeTrend) {
+        if (!trend || trend.chart_points.length < 2) {
+          return <p className="text-sm text-slate-500">Not enough data points to render chart.</p>;
+        }
+        const W = 560;
+        const H = 180;
+        const PAD = 32;
+        const pts = trend.chart_points;
+        const minY = Math.min(...pts.map((p) => p.y));
+        const maxY = Math.max(...pts.map((p) => p.y));
+        const rangeY = maxY - minY || 1;
+        const maxX = pts[pts.length - 1]?.x ?? 1;
+
+        function px(p: { x: number; y: number }) {
+          return {
+            cx: PAD + (p.x / maxX) * (W - 2 * PAD),
+            cy: H - PAD - ((p.y - minY) / rangeY) * (H - 2 * PAD),
+          };
+        }
+
+        const dataPath = pts.map((p, i) => {
+          const { cx, cy } = px(p);
+          return `${i === 0 ? "M" : "L"} ${cx.toFixed(1)} ${cy.toFixed(1)}`;
+        }).join(" ");
+
+        const tl = trend.trend_line;
+        const tl0 = px(tl[0]!);
+        const tl1 = px(tl[1]!);
+        const isUp = trend.direction === "increasing";
+
+        return (
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+            <polyline
+              points={pts.map((p) => { const { cx, cy } = px(p); return `${cx.toFixed(1)},${cy.toFixed(1)}`; }).join(" ")}
+              fill="none" stroke="#6366f1" strokeWidth="2" strokeLinejoin="round"
+            />
+            <line
+              x1={tl0.cx} y1={tl0.cy} x2={tl1.cx} y2={tl1.cy}
+              stroke={isUp ? "#22c55e" : "#ef4444"} strokeWidth="1.5" strokeDasharray="6 4"
+            />
+            <text x={PAD} y={PAD - 8} fontSize="10" fill="#94a3b8">{maxY.toFixed(1)}</text>
+            <text x={PAD} y={H - PAD + 14} fontSize="10" fill="#94a3b8">{minY.toFixed(1)}</text>
+          </svg>
+        );
+      }
+
+      return (
+        <div className="space-y-6">
+          {numericCols.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+              No numeric columns found. Upload a dataset with numeric data to see trends.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-slate-900">Column</span>
+                  <select
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                    value={selectedTrendColumn}
+                    onChange={(e) => setSelectedTrendColumn(e.target.value)}
+                  >
+                    {numericCols.map((c) => (
+                      <option key={c.column} value={c.column}>{c.column}</option>
+                    ))}
+                  </select>
+                </label>
+                {activeTrend ? (
+                  <span className={`mt-5 rounded-full px-3 py-1 text-xs font-semibold capitalize ${directionBadge(activeTrend.direction)}`}>
+                    {activeTrend.direction}
+                  </span>
+                ) : null}
+              </div>
+
+              {activeTrend ? (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
+                    {[
+                      { label: "Min", value: activeTrend.min },
+                      { label: "Max", value: activeTrend.max },
+                      { label: "Mean", value: activeTrend.mean },
+                      { label: "Slope", value: activeTrend.slope },
+                      { label: "R²", value: activeTrend.r_squared },
+                      { label: "Points", value: activeTrend.count },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-sm text-slate-500">{label}</p>
+                        <p className="mt-1 text-lg font-semibold text-slate-950">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h3 className="text-sm font-semibold text-slate-950 mb-3">
+                      Trend chart — <span className="text-indigo-600">{activeTrend.column}</span>
+                      <span className="ml-2 text-xs text-slate-400">(blue = data, dashed = trend line)</span>
+                    </h3>
+                    {renderTrendChart(activeTrend)}
+                  </div>
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (activeTab === "anomaly") {
+      if (anomalyLoading) return <p className="text-sm text-slate-600">Running anomaly detection...</p>;
+
+      const anomaly = anomalyData;
+
+      return (
+        <div className="space-y-6">
+          {!anomaly ? (
+            <p className="text-sm text-slate-600">Switch to this tab to run anomaly detection.</p>
+          ) : anomaly.columns_analyzed === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+              No numeric columns found. Anomaly detection requires at least one numeric column.
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-sm text-slate-500">Columns analyzed</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-950">{anomaly.columns_analyzed}</p>
+                </div>
+                <div className={`rounded-2xl border p-4 shadow-sm ${anomaly.total_flagged_rows > 0 ? "border-orange-200 bg-orange-50" : "border-green-200 bg-green-50"}`}>
+                  <p className="text-sm text-slate-500">Total flagged rows</p>
+                  <p className={`mt-1 text-2xl font-semibold ${anomaly.total_flagged_rows > 0 ? "text-orange-700" : "text-green-700"}`}>{anomaly.total_flagged_rows}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-sm text-slate-500">Columns with outliers</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-950">{anomaly.columns.filter((c) => c.outlier_count > 0).length}</p>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-950">Outliers per column</h3>
+                <p className="mt-1 text-sm text-slate-600">IQR method — values outside [Q1 − 1.5·IQR, Q3 + 1.5·IQR] are flagged.</p>
+
+                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Column</th>
+                        <th className="px-4 py-3 font-medium">Outliers</th>
+                        <th className="px-4 py-3 font-medium">%</th>
+                        <th className="px-4 py-3 font-medium">Lower fence</th>
+                        <th className="px-4 py-3 font-medium">Upper fence</th>
+                        <th className="px-4 py-3 font-medium">Samples</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {anomaly.columns.map((col) => (
+                        <tr key={col.column}>
+                          <td className="px-4 py-3 font-medium text-slate-950">{col.column}</td>
+                          <td className="px-4 py-3">
+                            <span className={col.outlier_count > 0 ? "font-semibold text-orange-700" : "text-slate-400"}>{col.outlier_count}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className={`h-full rounded-full ${col.outlier_pct > 10 ? "bg-red-500" : col.outlier_pct > 3 ? "bg-orange-400" : "bg-yellow-400"}`}
+                                  style={{ width: `${Math.min(col.outlier_pct, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-slate-500">{col.outlier_pct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{col.lower_fence}</td>
+                          <td className="px-4 py-3 text-slate-600">{col.upper_fence}</td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">{col.sample_outliers.slice(0, 3).map(String).join(", ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       );
     }
@@ -1074,7 +1419,7 @@ export default function DatasetWorkspacePage() {
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
-              {(["overview", "cleaning", "analysis", "aggregation", "prediction"] as WorkspaceTab[]).map((tab) => (
+              {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "prediction"] as WorkspaceTab[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"
