@@ -167,6 +167,23 @@ export type AnomalyResponse = {
   columns: ColumnAnomalyResult[];
 };
 
+export type PredictPoint = {
+  step: number;
+  predicted_value: number;
+  lower_bound: number;
+  upper_bound: number;
+};
+
+export type PredictResponse = {
+  input_column: string;
+  target_column: string;
+  future_steps: number;
+  slope: number;
+  intercept: number;
+  r_squared: number;
+  predictions: PredictPoint[];
+};
+
 export type SaveResultRequest = {
   replace_current: boolean;
   dataset_name?: string | null;
@@ -462,6 +479,18 @@ export function getAnomalies(datasetId: number, token: string, datasetVersionId?
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+  }, token);
+}
+
+export function predictDataset(
+  datasetId: number,
+  payload: { input_column: string; target_column: string; future_steps: number; dataset_version_id?: number | null },
+  token: string,
+): Promise<PredictResponse> {
+  return request<PredictResponse>("/analysis/predict", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, ...payload }),
   }, token);
 }
 

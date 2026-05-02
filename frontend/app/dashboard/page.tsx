@@ -252,6 +252,15 @@ export default function DashboardPage() {
   const totalRows = visibleDatasets.reduce((sum, dataset) => sum + Number(dataset.row_count ?? 0), 0);
   const recentDataset = visibleDatasets[0] ?? null;
 
+  const activityData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const label = d.toLocaleDateString(undefined, { weekday: "short" });
+    const count = datasets.filter((ds) => new Date(ds.created_at).toDateString() === d.toDateString()).length;
+    return { label, count };
+  });
+  const activityMax = Math.max(...activityData.map((d) => d.count), 1);
+
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">
@@ -341,6 +350,23 @@ export default function DashboardPage() {
           {summaryCards.map((card) => (
             <SummaryCard key={card.title} title={card.title} value={card.value} detail={card.detail} classes={card.classes} accent={card.accent} />
           ))}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Activity</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Uploads — last 7 days</h2>
+          <div className="mt-5 flex h-24 items-end gap-2">
+            {activityData.map(({ label, count }) => (
+              <div key={label} className="flex flex-1 flex-col items-center gap-1">
+                <span className="text-xs font-medium text-slate-600">{count > 0 ? count : ""}</span>
+                <div
+                  className="w-full rounded-t-lg bg-indigo-500 transition-all"
+                  style={{ height: `${Math.max((count / activityMax) * 100, count > 0 ? 8 : 2)}%` }}
+                />
+                <span className="text-xs text-slate-500">{label}</span>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_0.9fr]">

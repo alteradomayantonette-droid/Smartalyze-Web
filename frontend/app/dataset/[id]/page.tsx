@@ -13,6 +13,7 @@ import {
   CleanApplyResponse,
   CleanDetectResponse,
   DatasetWorkspace,
+  detectCleaningIssues,
   exportDataset,
   ExportDatasetFormat,
   getAnomalies,
@@ -20,8 +21,11 @@ import {
   getTrends,
   groupDataset,
   GroupByResponse,
+  predictDataset,
+  PredictResponse,
   saveDatasetResult,
   TrendResponse,
+  uploadDataset,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
@@ -110,6 +114,15 @@ function buildTrimWhitespaceOperation(columns: string[]): CleaningOperation {
   };
 }
 
+function buildConvertTypeOperation(columnName: string, targetType: "numeric" | "datetime"): CleaningOperation {
+  return {
+    operation_type: "convert_column_type",
+    column: columnName,
+    target_type: targetType,
+    errors: "coerce",
+  };
+}
+
 function buildLowercaseOperation(columnName: string): CleaningOperation {
   return {
     operation_type: "lowercase_column",
@@ -183,12 +196,6 @@ function buildSnapshotFromDataset(dataset: DatasetWorkspace["dataset"]): Record<
   };
 }
 
-const demoPredictionRows = [
-  { row: 1, value: "1,020" },
-  { row: 2, value: "1,060" },
-  { row: 3, value: "1,115" },
-  { row: 4, value: "1,090" },
-];
 
 export default function DatasetWorkspacePage() {
   const router = useRouter();
@@ -200,9 +207,11 @@ export default function DatasetWorkspacePage() {
   const [token, setToken] = useState<string | null>(null);
   const [aggregationGroupBy, setAggregationGroupBy] = useState("");
   const [aggregationOperation, setAggregationOperation] = useState("sum");
-  const [predictionInputColumn, setPredictionInputColumn] = useState("Sales");
-  const [predictionTargetColumn, setPredictionTargetColumn] = useState("Profit");
-  const [predictionResult, setPredictionResult] = useState<Array<Record<string, string>>>([]);
+  const [predictionInputColumn, setPredictionInputColumn] = useState("");
+  const [predictionTargetColumn, setPredictionTargetColumn] = useState("");
+  const [predictionSteps, setPredictionSteps] = useState(5);
+  const [predictionResult, setPredictionResult] = useState<PredictResponse | null>(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveMode, setSaveMode] = useState<"replace" | "new">("replace");
   const [newDatasetName, setNewDatasetName] = useState("");
@@ -214,6 +223,7 @@ export default function DatasetWorkspacePage() {
   const [exportFormat, setExportFormat] = useState<ExportDatasetFormat>("csv");
   const [exporting, setExporting] = useState(false);
   const [cleaningDetection, setCleaningDetection] = useState<CleanDetectResponse | null>(null);
+  const [cleaningDetecting, setCleaningDetecting] = useState(false);
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
   const [cleaningResult, setCleaningResult] = useState<CleanApplyResponse | null>(null);
   const [missingValueStrategies, setMissingValueStrategies] = useState<Record<string, MissingStrategy>>({});
@@ -222,6 +232,9 @@ export default function DatasetWorkspacePage() {
   const [aggregateColumn, setAggregateColumn] = useState("");
   const [groupResult, setGroupResult] = useState<GroupByResponse | null>(null);
   const [groupLoading, setGroupLoading] = useState(false);
+  const [saveGroupAsOpen, setSaveGroupAsOpen] = useState(false);
+  const [saveGroupAsName, setSaveGroupAsName] = useState("");
+  const [saveGroupAsSaving, setSaveGroupAsSaving] = useState(false);
   const [trendData, setTrendData] = useState<TrendResponse | null>(null);
   const [trendLoading, setTrendLoading] = useState(false);
   const [selectedTrendColumn, setSelectedTrendColumn] = useState("");
@@ -255,6 +268,8 @@ export default function DatasetWorkspacePage() {
         if (firstName) {
           setAggregationGroupBy(firstName);
           setAggregateColumn(firstName);
+          setPredictionInputColumn(firstName);
+          setPredictionTargetColumn(firstName);
         }
       })
       .catch(() => {
@@ -296,6 +311,15 @@ export default function DatasetWorkspacePage() {
       })
       .finally(() => setAnalysisLoading(false));
   }, [activeTab, workspace, token, analysisStats]);
+
+  useEffect(() => {
+    if (activeTab !== "cleaning" || !workspace || !token || cleaningDetection) return;
+    setCleaningDetecting(true);
+    detectCleaningIssues(workspace.dataset.id, token)
+      .then(setCleaningDetection)
+      .catch(() => setFeedback("Could not detect cleaning issues.", "error"))
+      .finally(() => setCleaningDetecting(false));
+  }, [activeTab, workspace, token, cleaningDetection]);
 
   const availableColumns = workspace?.dataset.columns_json?.map((column) => String(column.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
@@ -346,6 +370,15 @@ export default function DatasetWorkspacePage() {
   function toggleLowercaseColumn(columnName: string) {
     const operation = buildLowercaseOperation(columnName);
     toggleOperation(operation, `Added lowercase for ${columnName}.`, `Removed lowercase for ${columnName}.`);
+  }
+
+  function toggleConvertType(columnName: string, targetType: "numeric" | "datetime") {
+    const operation = buildConvertTypeOperation(columnName, targetType);
+    toggleOperation(
+      operation,
+      `Added: convert "${columnName}" to ${targetType}.`,
+      `Removed convert "${columnName}" from the queue.`,
+    );
   }
 
   async function handleApplyCleaning() {
@@ -467,12 +500,58 @@ export default function DatasetWorkspacePage() {
     }
   }
 
-  function handleRunPrediction() {
-    setPredictionResult([
-      { [predictionInputColumn]: "A1", [predictionTargetColumn]: "1,015" },
-      { [predictionInputColumn]: "A2", [predictionTargetColumn]: "1,048" },
-      { [predictionInputColumn]: "A3", [predictionTargetColumn]: "1,082" },
-    ]);
+  function handleExportGroupCSV() {
+    if (!groupResult) return;
+    const opLabel = aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1);
+    const header = `"${groupResult.group_by}","${opLabel} of ${groupResult.aggregate_column}"`;
+    const rows = groupResult.results.map((r) => `"${String(r.group).replace(/"/g, '""')}",${r.value}`);
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${groupResult.group_by}_${aggregationOperation}_${groupResult.aggregate_column}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleSaveGroupAsDataset() {
+    if (!groupResult || !token) return;
+    const name = saveGroupAsName.trim() || `${groupResult.group_by} ${aggregationOperation} ${groupResult.aggregate_column}`;
+    const opLabel = aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1);
+    const header = `"${groupResult.group_by}","${opLabel} of ${groupResult.aggregate_column}"`;
+    const rows = groupResult.results.map((r) => `"${String(r.group).replace(/"/g, '""')}",${r.value}`);
+    const csv = [header, ...rows].join("\n");
+    const file = new File([csv], `${name}.csv`, { type: "text/csv" });
+    setSaveGroupAsSaving(true);
+    try {
+      await uploadDataset(file, `Aggregation: ${opLabel} of ${groupResult.aggregate_column} grouped by ${groupResult.group_by}`, token);
+      setFeedback(`Saved "${name}" as a new dataset.`, "success");
+      setSaveGroupAsOpen(false);
+      setSaveGroupAsName("");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Could not save dataset.", "error");
+    } finally {
+      setSaveGroupAsSaving(false);
+    }
+  }
+
+  async function handleRunPrediction() {
+    if (!workspace || !token) return;
+    setPredictionLoading(true);
+    setFeedback("");
+    try {
+      const result = await predictDataset(
+        workspace.dataset.id,
+        { input_column: predictionInputColumn, target_column: predictionTargetColumn, future_steps: predictionSteps },
+        token,
+      );
+      setPredictionResult(result);
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : "Could not run prediction.", "error");
+    } finally {
+      setPredictionLoading(false);
+    }
   }
 
   function renderPreviewTable(previewRows: Array<Record<string, unknown>> = workspace?.dataset.preview_json ?? []) {
@@ -510,6 +589,14 @@ export default function DatasetWorkspacePage() {
   }
 
   function renderCleaningTab() {
+    if (cleaningDetecting) {
+      return (
+        <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+          Detecting cleaning issues...
+        </div>
+      );
+    }
+
     const duplicateCount = cleaningDetection?.duplicates ?? 0;
     const missingIssues = cleaningIssues.filter((issue) => issue.kind === "missing_values" && issue.column);
     const textColumns = getTextColumns(cleaningDetection, availableColumns);
@@ -713,6 +800,64 @@ export default function DatasetWorkspacePage() {
               </div>
             </section>
 
+            <section className="rounded-2xl border border-purple-200 bg-white p-5 shadow-sm">
+              {(() => {
+                const typeIssues = cleaningIssues.filter((issue) => issue.kind === "type_inconsistency" && issue.column);
+                return (
+                  <>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
+                          <h3 className="text-lg font-semibold text-slate-950">Type Inconsistencies</h3>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">Columns stored as the wrong data type. Converting allows aggregation and analysis.</p>
+                      </div>
+                      <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-700">
+                        {typeIssues.length > 0 ? `${typeIssues.length} column${typeIssues.length !== 1 ? "s" : ""}` : "None detected"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {typeIssues.length > 0 ? (
+                        typeIssues.map((issue) => {
+                          const columnName = issue.column ?? "";
+                          const inferredType = String(issue.details?.inferred_type ?? "");
+                          const targetType: "numeric" | "datetime" = inferredType === "datetime_string" ? "datetime" : "numeric";
+                          const operation = buildConvertTypeOperation(columnName, targetType);
+                          const queued = hasQueuedOperation(operation);
+
+                          return (
+                            <div key={columnName} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div>
+                                <p className="font-medium text-slate-950">Column: {columnName}</p>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  Stored as text — looks like{" "}
+                                  <span className="font-medium text-purple-700">{targetType}</span>.
+                                  Non-convertible values will become empty.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-purple-600 text-white hover:bg-purple-500"}`}
+                                onClick={() => toggleConvertType(columnName, targetType)}
+                              >
+                                {queued ? "Added" : `Convert to ${targetType}`}
+                              </button>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                          No type inconsistencies detected.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </section>
+
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -724,7 +869,7 @@ export default function DatasetWorkspacePage() {
             </section>
           </div>
 
-          <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-6 h-fit">
+          <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-18 h-fit">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-slate-950">Selected Operations</h3>
@@ -1065,6 +1210,58 @@ export default function DatasetWorkspacePage() {
                 </div>
               )}
             </div>
+
+            {groupResult && groupResult.results.length > 0 && (
+              <div className="mt-4 space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportGroupCSV}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSaveGroupAsOpen((v) => !v); setSaveGroupAsName(""); }}
+                    className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100"
+                  >
+                    Save as new dataset
+                  </button>
+                </div>
+
+                {saveGroupAsOpen && (
+                  <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+                    <p className="mb-3 text-sm font-medium text-slate-800">Save aggregation as a new dataset</p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <input
+                        type="text"
+                        placeholder={`${groupResult.group_by} ${aggregationOperation} ${groupResult.aggregate_column}`}
+                        value={saveGroupAsName}
+                        onChange={(e) => setSaveGroupAsName(e.target.value)}
+                        className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveGroupAsDataset}
+                        disabled={saveGroupAsSaving}
+                        className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-70"
+                      >
+                        {saveGroupAsSaving ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSaveGroupAsOpen(false)}
+                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Leave the name blank to use the default. The dataset will appear in your dashboard.</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -1105,11 +1302,6 @@ export default function DatasetWorkspacePage() {
             cy: H - PAD - ((p.y - minY) / rangeY) * (H - 2 * PAD),
           };
         }
-
-        const dataPath = pts.map((p, i) => {
-          const { cx, cy } = px(p);
-          return `${i === 0 ? "M" : "L"} ${cx.toFixed(1)} ${cy.toFixed(1)}`;
-        }).join(" ");
 
         const tl = trend.trend_line;
         const tl0 = px(tl[0]!);
@@ -1273,116 +1465,197 @@ export default function DatasetWorkspacePage() {
     }
 
     if (activeTab === "prediction") {
-      const resultColumns = predictionResult.length > 0 ? Object.keys(predictionResult[0] ?? {}) : [];
+      function getPredictionConfidence(rSquared: number): { label: "High" | "Medium" | "Low"; badgeClasses: string } {
+        if (rSquared >= 0.7) return { label: "High", badgeClasses: "bg-green-100 text-green-700" };
+        if (rSquared >= 0.4) return { label: "Medium", badgeClasses: "bg-yellow-100 text-yellow-700" };
+        return { label: "Low", badgeClasses: "bg-red-100 text-red-700" };
+      }
+
+      function getPredictionTrend(slope: number): { label: "Trending Up" | "Trending Down" | "Stable"; badgeClasses: string } {
+        if (slope > 0.01) return { label: "Trending Up", badgeClasses: "bg-green-100 text-green-700" };
+        if (slope < -0.01) return { label: "Trending Down", badgeClasses: "bg-red-100 text-red-700" };
+        return { label: "Stable", badgeClasses: "bg-slate-100 text-slate-600" };
+      }
+
+      const W = 560, H = 140, PAD = 32;
+      let chartEl: React.ReactNode = null;
+      if (predictionResult && predictionResult.predictions.length > 0) {
+        const pts = predictionResult.predictions;
+        const allY = pts.flatMap((p) => [p.lower_bound, p.upper_bound]);
+        const yMin = Math.min(...allY);
+        const yMax = Math.max(...allY);
+        const yRange = yMax - yMin || 1;
+        const px = (i: number) => PAD + (i / (pts.length - 1 || 1)) * (W - PAD * 2);
+        const py = (v: number) => PAD + (1 - (v - yMin) / yRange) * (H - PAD * 2);
+
+        const bandPoints = [
+          ...pts.map((p, i) => `${px(i)},${py(p.upper_bound)}`),
+          ...[...pts].reverse().map((p, i) => `${px(pts.length - 1 - i)},${py(p.lower_bound)}`),
+        ].join(" ");
+        const linePoints = pts.map((p, i) => `${px(i)},${py(p.predicted_value)}`).join(" ");
+
+        chartEl = (
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 140 }}>
+            <polygon points={bandPoints} fill="#6366f1" fillOpacity={0.12} />
+            <polyline points={linePoints} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" />
+            {pts.map((p, i) => (
+              <circle key={i} cx={px(i)} cy={py(p.predicted_value)} r={3} fill="#6366f1" />
+            ))}
+          </svg>
+        );
+      }
 
       return (
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Input column</span>
+              <span className="mb-1 block text-sm font-medium text-slate-900">Time / label column</span>
+              <span className="mb-2 block text-xs text-slate-400">(optional — used to label the x-axis)</span>
               <select
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
                 value={predictionInputColumn}
                 onChange={(event) => setPredictionInputColumn(event.target.value)}
               >
                 {availableColumns.map((columnName) => (
-                  <option key={columnName} value={columnName}>
-                    {columnName}
-                  </option>
+                  <option key={columnName} value={columnName}>{columnName}</option>
                 ))}
               </select>
             </label>
 
             <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Target column</span>
+              <span className="mb-2 block text-sm font-medium text-slate-900">Column to forecast</span>
               <select
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
                 value={predictionTargetColumn}
                 onChange={(event) => setPredictionTargetColumn(event.target.value)}
               >
                 {availableColumns.map((columnName) => (
-                  <option key={columnName} value={columnName}>
-                    {columnName}
-                  </option>
+                  <option key={columnName} value={columnName}>{columnName}</option>
                 ))}
               </select>
+            </label>
+
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Steps ahead</span>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={predictionSteps}
+                onChange={(e) => setPredictionSteps(Math.max(1, Math.min(20, Number(e.target.value))))}
+              />
             </label>
 
             <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <button
                 type="button"
-                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500"
+                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-70"
                 onClick={handleRunPrediction}
+                disabled={predictionLoading}
               >
-                Run prediction
+                {predictionLoading ? "Running..." : "Run prediction"}
               </button>
             </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Predicted values</h3>
-              <p className="mt-1 text-sm text-slate-600">Mock output keeps the demo simple and easy to explain.</p>
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-                {predictionResult.length > 0 ? (
+          {predictionResult && (() => {
+            const lastPrediction = predictionResult.predictions[predictionResult.predictions.length - 1];
+            const lastValue = lastPrediction ? lastPrediction.predicted_value : null;
+            const confidence = getPredictionConfidence(predictionResult.r_squared);
+            const trend = getPredictionTrend(predictionResult.slope);
+            return (
+              <div className="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${trend.badgeClasses}`}>{trend.label}</span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${confidence.badgeClasses}`}>{confidence.label} confidence</span>
+                </div>
+                <p className="mt-3 text-sm text-slate-700">
+                  If this continues,{" "}
+                  <span className="font-semibold text-slate-950">{predictionResult.target_column}</span>{" "}
+                  is expected to reach approximately{" "}
+                  <span className="font-semibold text-indigo-700">
+                    {lastValue !== null ? lastValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"}
+                  </span>{" "}
+                  in <span className="font-semibold text-slate-950">{predictionResult.future_steps}</span>{" "}
+                  {predictionResult.future_steps === 1 ? "step" : "steps"}.
+                </p>
+              </div>
+            );
+          })()}
+
+          {predictionResult && (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-950">Forecast — {predictionResult.target_column}</h3>
+                <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50 text-left text-slate-500">
                       <tr>
-                        {resultColumns.map((column) => (
-                          <th key={column} className="px-4 py-3 font-medium">
-                            {column}
-                          </th>
-                        ))}
+                        <th className="px-4 py-3 font-medium">Period</th>
+                        <th className="px-4 py-3 font-medium">Expected</th>
+                        <th className="px-4 py-3 font-medium">Est. Range</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {predictionResult.map((row, index) => (
-                        <tr key={index}>
-                          {resultColumns.map((column) => (
-                            <td key={column} className="px-4 py-3 text-slate-800">
-                              {row[column]}
-                            </td>
-                          ))}
+                      {predictionResult.predictions.map((p) => (
+                        <tr key={p.step}>
+                          <td className="px-4 py-3 font-medium text-slate-700">Period {p.step}</td>
+                          <td className="px-4 py-3 font-semibold text-indigo-700">
+                            {p.predicted_value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {p.lower_bound.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            {" – "}
+                            {p.upper_bound.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                ) : (
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Row</th>
-                        <th className="px-4 py-3 font-medium">Predicted value</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {demoPredictionRows.map((row) => (
-                        <tr key={row.row}>
-                          <td className="px-4 py-3 text-slate-800">{row.row}</td>
-                          <td className="px-4 py-3 text-slate-800">{row.value}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                </div>
+                {chartEl && (
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                    {chartEl}
+                  </div>
                 )}
               </div>
-            </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Summary</h3>
-              <div className="mt-4 space-y-3 text-sm text-slate-700">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  Input: {predictionInputColumn}
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  Target: {predictionTargetColumn}
-                </div>
-                <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
-                  Result type: Mock prediction for demo presentation.
-                </div>
-              </div>
+              {(() => {
+                const confidence = getPredictionConfidence(predictionResult.r_squared);
+                const slopeAbs = Math.abs(predictionResult.slope);
+                const slopeSign = predictionResult.slope >= 0 ? "+" : "−";
+                return (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h3 className="text-lg font-semibold text-slate-950">Model</h3>
+                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                      <div className="flex justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <span className="text-slate-500">Trend rate</span>
+                        <span className={`font-semibold ${predictionResult.slope >= 0 ? "text-green-700" : "text-red-700"}`}>
+                          {slopeSign}{slopeAbs.toFixed(1)} per period
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <span className="text-slate-500">Forecast confidence</span>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${confidence.badgeClasses}`}>
+                          {confidence.label}
+                        </span>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                        Forecast uses a linear trend model. Accuracy improves with more data.
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-          </div>
+          )}
+
+          {!predictionResult && !predictionLoading && (
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+              Choose a column to forecast and the number of steps ahead, then click <span className="font-medium text-slate-700">Run prediction</span>.
+            </div>
+          )}
         </div>
       );
     }

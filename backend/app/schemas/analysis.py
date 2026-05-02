@@ -108,3 +108,30 @@ class AnomalyResponse(BaseModel):
     total_flagged_rows: int
     columns_analyzed: int
     columns: list[ColumnAnomalyResult]
+
+
+# ── Prediction ────────────────────────────────────────────────────────────────
+
+class PredictRequest(BaseModel):
+    dataset_id: int
+    dataset_version_id: int | None = None
+    input_column: str
+    target_column: str
+    future_steps: int = 5
+
+
+class PredictPoint(BaseModel):
+    step: int
+    predicted_value: float
+    lower_bound: float
+    upper_bound: float
+
+
+class PredictResponse(BaseModel):
+    input_column: str
+    target_column: str
+    future_steps: int
+    slope: float
+    intercept: float
+    r_squared: float
+    predictions: list[PredictPoint]

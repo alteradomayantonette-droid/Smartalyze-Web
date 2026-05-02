@@ -8,6 +8,8 @@ from fastapi import HTTPException, status
 
 from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
+from sklearn.linear_model import LinearRegression
+
 from app.schemas.analysis import (
     AnomalyResponse,
     AnalyzeStatsResponse,
@@ -17,6 +19,8 @@ from app.schemas.analysis import (
     ColumnTrendResult,
     GroupByResponse,
     GroupResult,
+    PredictPoint,
+    PredictResponse,
     TopValue,
     TrendResponse,
 )
@@ -220,6 +224,64 @@ def anomaly_detection(dataset: Dataset, version_id: int | None = None) -> Anomal
         total_flagged_rows=len(all_outlier_indices),
         columns_analyzed=len(col_results),
         columns=col_results,
+    )
+
+
+def predict_column(
+    dataset: Dataset,
+    input_column: str,
+    target_column: str,
+    future_steps: int,
+    version_id: int | None = None,
+) -> PredictResponse:
+    """Predict future values for a numeric target column using linear regression."""
+    version = _get_version(dataset, version_id)
+    df = snapshot_to_dataframe(version.data_snapshot)
+
+    if input_column not in df.columns:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Column '{input_column}' not found.")
+    if target_column not in df.columns:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Column '{target_column}' not found.")
+
+    y_series = pd.to_numeric(df[target_column], errors="coerce").dropna()
+    if len(y_series) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Column '{target_column}' has too few numeric values to predict (need at least 2).",
+        )
+
+    x = np.arange(len(y_series)).reshape(-1, 1)
+    y = y_series.to_numpy(dtype=float)
+
+    model = LinearRegression().fit(x, y)
+    slope = float(model.coef_[0])
+    intercept = float(model.intercept_)
+
+    y_pred_train = model.predict(x)
+    ss_res = float(np.sum((y - y_pred_train) ** 2))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r_squared = round(1.0 - ss_res / ss_tot, 4) if ss_tot > 1e-10 else 0.0
+    std_error = float(np.sqrt(ss_res / max(len(y) - 2, 1)))
+
+    n = len(y_series)
+    predictions = [
+        PredictPoint(
+            step=i,
+            predicted_value=round(float(model.predict([[n + i - 1]])[0]), 4),
+            lower_bound=round(float(model.predict([[n + i - 1]])[0]) - std_error, 4),
+            upper_bound=round(float(model.predict([[n + i - 1]])[0]) + std_error, 4),
+        )
+        for i in range(1, future_steps + 1)
+    ]
+
+    return PredictResponse(
+        input_column=input_column,
+        target_column=target_column,
+        future_steps=future_steps,
+        slope=round(slope, 6),
+        intercept=round(intercept, 4),
+        r_squared=r_squared,
+        predictions=predictions,
     )
 
 

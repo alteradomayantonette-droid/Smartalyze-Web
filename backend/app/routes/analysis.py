@@ -16,10 +16,12 @@ from app.schemas.analysis import (
     AnalyzeStatsResponse,
     GroupByRequest,
     GroupByResponse,
+    PredictRequest,
+    PredictResponse,
     TrendRequest,
     TrendResponse,
 )
-from app.services.analysis_service import analyze_stats, anomaly_detection, group_dataset, trend_analysis
+from app.services.analysis_service import analyze_stats, anomaly_detection, group_dataset, predict_column, trend_analysis
 from app.services.auth_service import get_user_by_token
 from app.services.dataset_service import get_owned_dataset
 
@@ -92,3 +94,16 @@ async def anomaly(
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
     return anomaly_detection(dataset, payload.dataset_version_id)
+
+
+@router.post("/predict", response_model=PredictResponse)
+async def predict(
+    payload: PredictRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Predict future values for a numeric column using linear regression."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, payload.dataset_id, owner)
+    return predict_column(dataset, payload.input_column, payload.target_column, payload.future_steps, payload.dataset_version_id)
