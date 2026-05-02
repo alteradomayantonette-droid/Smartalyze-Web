@@ -14,11 +14,13 @@ Notes:
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.dataset_version import DatasetVersion
 from app.schemas.dataset import (
     CreateDatasetVersionRequest,
     DeleteDatasetResponse,
@@ -200,3 +202,34 @@ Two modes:
         action_input_params={"source_dataset_id": dataset.id, "source_dataset_name": dataset.name},
     )
     return {"message": "Result saved as a new dataset.", "dataset": created_dataset}
+
+
+@router.get("/dataset/{dataset_id}/rows")
+async def get_dataset_rows(
+    dataset_id: int,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a paginated slice of the full dataset rows."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+
+    version = await db.scalar(
+        select(DatasetVersion)
+        .where(DatasetVersion.dataset_id == dataset.id)
+        .order_by(DatasetVersion.version_number.desc())
+        .limit(1)
+    )
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No version found for this dataset.")
+
+    records: list[dict] = (version.data_snapshot or {}).get("records", [])
+    return {
+        "rows": records[offset : offset + limit],
+        "total": len(records),
+        "offset": offset,
+        "limit": limit,
+    }

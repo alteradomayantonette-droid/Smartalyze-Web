@@ -91,19 +91,39 @@ def build_snapshot(
 def snapshot_to_dataframe(snapshot: dict | None) -> pd.DataFrame:
     """Convert a stored snapshot back into a DataFrame.
 
-If `records` exist, we build the frame from them. Otherwise we return an empty frame
-with the known columns.
+    Rebuilds the frame from `records` and restores column dtypes from the stored
+    `columns[*].data_type` metadata so datetime/numeric columns don't degrade to
+    `object` after a JSON round-trip (JSON has no native datetime/numeric types).
     """
     if not snapshot:
         return pd.DataFrame()
 
     records = snapshot.get("records") or []
-    if records:
-        return pd.DataFrame(records)
+    columns_meta = snapshot.get("columns") or []
 
-    columns = snapshot.get("columns") or []
-    column_names = [str(column.get("name")) for column in columns if column.get("name")]
-    return pd.DataFrame(columns=column_names)
+    if not records:
+        column_names = [str(column.get("name")) for column in columns_meta if column.get("name")]
+        return pd.DataFrame(columns=column_names)
+
+    frame = pd.DataFrame(records)
+
+    for column in columns_meta:
+        name = column.get("name")
+        dtype = str(column.get("data_type") or "")
+        if not name or name not in frame.columns or not dtype:
+            continue
+        series = frame[name]
+        try:
+            if dtype.startswith("datetime64"):
+                frame[name] = pd.to_datetime(series, errors="coerce")
+            elif dtype.startswith(("int", "float")) and not pd.api.types.is_numeric_dtype(series):
+                frame[name] = pd.to_numeric(series, errors="coerce")
+            elif dtype == "bool" and not pd.api.types.is_bool_dtype(series):
+                frame[name] = series.astype("boolean")
+        except Exception:
+            continue
+
+    return frame
 
 
 def snapshot_to_export_bytes(

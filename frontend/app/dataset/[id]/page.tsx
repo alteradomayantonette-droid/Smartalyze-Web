@@ -17,6 +17,7 @@ import {
   exportDataset,
   ExportDatasetFormat,
   getAnomalies,
+  getDatasetRows,
   getDatasetWorkspace,
   getTrends,
   groupDataset,
@@ -240,6 +241,9 @@ export default function DatasetWorkspacePage() {
   const [selectedTrendColumn, setSelectedTrendColumn] = useState("");
   const [anomalyData, setAnomalyData] = useState<AnomalyResponse | null>(null);
   const [anomalyLoading, setAnomalyLoading] = useState(false);
+  const [overviewExtraRows, setOverviewExtraRows] = useState<Record<string, unknown>[]>([]);
+  const [overviewTotalRows, setOverviewTotalRows] = useState<number | null>(null);
+  const [overviewLoadingMore, setOverviewLoadingMore] = useState(false);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -299,6 +303,11 @@ export default function DatasetWorkspacePage() {
       .catch(() => { setMessage("Could not load anomaly data."); setMessageTone("error"); })
       .finally(() => setAnomalyLoading(false));
   }, [activeTab, workspace, token, anomalyData]);
+
+  useEffect(() => {
+    setOverviewExtraRows([]);
+    setOverviewTotalRows(null);
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== "analysis" || !workspace || !token || analysisStats) return;
@@ -394,6 +403,7 @@ export default function DatasetWorkspacePage() {
       const response = await applyCleaningOperations(workspace.dataset.id, cleaningOperations, token, getSourceVersionId());
       setCleaningDetection(response);
       setCleaningResult(response);
+      setCleaningOperations([]);
       setFeedback("Cleaning applied. Review the preview before saving.", "success");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Could not apply cleaning operations.", "error");
@@ -445,6 +455,22 @@ export default function DatasetWorkspacePage() {
       setFeedback(error instanceof Error ? error.message : "Could not save result.", "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleLoadMoreOverviewRows() {
+    if (!token || !workspace) return;
+    const initialRows = workspace.dataset.preview_json ?? [];
+    const loaded = initialRows.length + overviewExtraRows.length;
+    setOverviewLoadingMore(true);
+    try {
+      const res = await getDatasetRows(workspace.dataset.id, loaded, 10, token);
+      setOverviewExtraRows((prev) => [...prev, ...res.rows]);
+      setOverviewTotalRows(res.total);
+    } catch {
+      setFeedback("Could not load more rows.", "error");
+    } finally {
+      setOverviewLoadingMore(false);
     }
   }
 
@@ -966,6 +992,10 @@ export default function DatasetWorkspacePage() {
     }
 
     if (activeTab === "overview") {
+      const allOverviewRows = [...(workspace.dataset.preview_json ?? []), ...overviewExtraRows];
+      const overviewTotal = overviewTotalRows ?? workspace.dataset.row_count ?? 0;
+      const overviewLoaded = allOverviewRows.length;
+      const canLoadMore = overviewLoaded < overviewTotal;
       return (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -986,7 +1016,18 @@ export default function DatasetWorkspacePage() {
               <p className="mt-1 text-2xl font-semibold">{String(workspace.dataset.summary_json?.duplicate_rows ?? "-")}</p>
             </div>
           </div>
-          {renderPreviewTable()}
+          {renderPreviewTable(allOverviewRows)}
+          {canLoadMore ? (
+            <button
+              onClick={handleLoadMoreOverviewRows}
+              disabled={overviewLoadingMore}
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {overviewLoadingMore ? "Loading…" : `Load 10 more (${overviewLoaded} of ${overviewTotal} shown)`}
+            </button>
+          ) : overviewLoaded > 10 ? (
+            <p className="text-center text-xs text-slate-400">All {overviewTotal} rows shown</p>
+          ) : null}
         </div>
       );
     }
@@ -1211,6 +1252,33 @@ export default function DatasetWorkspacePage() {
               )}
             </div>
 
+            {groupResult && groupResult.results.length > 0 && (() => {
+              const W = 560, BAR_H = 26, GAP = 8, LABEL_W = 130, PAD = 16, VALUE_W = 72;
+              const bars = groupResult.results.slice(0, 15);
+              const H = PAD * 2 + bars.length * (BAR_H + GAP) - GAP;
+              const maxVal = Math.max(...bars.map((r) => Math.abs(r.value)), 1);
+              const availW = W - LABEL_W - PAD - VALUE_W;
+              return (
+                <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+                    {bars.map((row, i) => {
+                      const y = PAD + i * (BAR_H + GAP);
+                      const barW = Math.max((Math.abs(row.value) / maxVal) * availW, 2);
+                      const label = row.group.length > 17 ? row.group.slice(0, 16) + "…" : row.group;
+                      const valLabel = row.value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+                      return (
+                        <g key={i}>
+                          <text x={LABEL_W - 8} y={y + BAR_H / 2 + 4} textAnchor="end" fontSize="12" fill="#64748b">{label}</text>
+                          <rect x={LABEL_W} y={y} width={barW} height={BAR_H} fill="#6366f1" rx="4" />
+                          <text x={LABEL_W + barW + 6} y={y + BAR_H / 2 + 4} fontSize="12" fill="#4f46e5" fontWeight="600">{valLabel}</text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              );
+            })()}
+
             {groupResult && groupResult.results.length > 0 && (
               <div className="mt-4 space-y-3">
                 <div className="flex flex-wrap gap-2">
@@ -1414,6 +1482,37 @@ export default function DatasetWorkspacePage() {
                   <p className="mt-1 text-2xl font-semibold text-slate-950">{anomaly.columns.filter((c) => c.outlier_count > 0).length}</p>
                 </div>
               </div>
+
+              {anomaly.columns.length > 0 && (() => {
+                const W = 560, BAR_H = 26, GAP = 8, LABEL_W = 130, PAD = 16, VALUE_W = 72;
+                const cols = anomaly.columns;
+                const H = PAD * 2 + cols.length * (BAR_H + GAP) - GAP;
+                const maxPct = Math.max(...cols.map((c) => c.outlier_pct), 1);
+                const availW = W - LABEL_W - PAD - VALUE_W;
+                return (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h3 className="text-lg font-semibold text-slate-950">Outlier rate by column</h3>
+                    <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+                        {cols.map((col, i) => {
+                          const y = PAD + i * (BAR_H + GAP);
+                          const barW = Math.max((col.outlier_pct / maxPct) * availW, 2);
+                          const label = col.column.length > 17 ? col.column.slice(0, 16) + "…" : col.column;
+                          const pctLabel = `${col.outlier_pct.toFixed(1)}%`;
+                          const barColor = col.outlier_pct >= 10 ? "#ef4444" : col.outlier_pct >= 5 ? "#f59e0b" : "#6366f1";
+                          return (
+                            <g key={i}>
+                              <text x={LABEL_W - 8} y={y + BAR_H / 2 + 4} textAnchor="end" fontSize="12" fill="#64748b">{label}</text>
+                              <rect x={LABEL_W} y={y} width={barW} height={BAR_H} fill={barColor} rx="4" />
+                              <text x={LABEL_W + barW + 6} y={y + BAR_H / 2 + 4} fontSize="12" fill={barColor} fontWeight="600">{pctLabel}</text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-lg font-semibold text-slate-950">Outliers per column</h3>

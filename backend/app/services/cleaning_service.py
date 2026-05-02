@@ -39,7 +39,7 @@ def _infer_column_type(series: pd.Series) -> str:
         return "unknown"
 
     numeric_ratio = pd.to_numeric(non_null, errors="coerce").notna().mean()
-    # This heuristic intentionally tries best-effort datetime parsing.
+    # Try both month-first and day-first to handle mixed/ambiguous date formats.
     # Pandas can emit a noisy warning when it falls back to element-wise parsing.
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -47,11 +47,13 @@ def _infer_column_type(series: pd.Series) -> str:
             message="Could not infer format, so each element will be parsed individually*",
             category=UserWarning,
         )
-        datetime_ratio = pd.to_datetime(non_null, errors="coerce").notna().mean()
+        dt_mf = pd.to_datetime(non_null, errors="coerce", dayfirst=False).notna().mean()
+        dt_df = pd.to_datetime(non_null, errors="coerce", dayfirst=True).notna().mean()
+        datetime_ratio = max(dt_mf, dt_df)
 
     if numeric_ratio >= 0.8:
         return "numeric_string"
-    if datetime_ratio >= 0.8:
+    if datetime_ratio >= 0.5:
         return "datetime_string"
 
     unique_ratio = series.nunique(dropna=True) / max(len(non_null), 1)

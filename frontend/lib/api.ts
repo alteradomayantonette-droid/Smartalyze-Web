@@ -494,6 +494,15 @@ export function predictDataset(
   }, token);
 }
 
+export function getDatasetRows(
+  datasetId: number,
+  offset: number,
+  limit: number,
+  token: string,
+): Promise<{ rows: Record<string, unknown>[]; total: number; offset: number; limit: number }> {
+  return request(`/dataset/${datasetId}/rows?offset=${offset}&limit=${limit}`, {}, token);
+}
+
 export async function uploadDataset(file: File, description: string, token?: string): Promise<{ message: string; dataset: Dataset }> {
   const formData = new FormData();
   formData.append("file", file);
