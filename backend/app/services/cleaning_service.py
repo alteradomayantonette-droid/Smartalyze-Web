@@ -12,10 +12,12 @@ Flow used by the API routes:
 - Convert DataFrame -> snapshot for returning to the client
 """
 
+import re
 import warnings
 from typing import Any
 
 import pandas as pd
+from dateutil import parser as dateutil_parser
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,6 +174,140 @@ def _convert_column_type(series: pd.Series, target_type: str, errors: str) -> pd
     )
 
 
+_DATE_OUTPUT_FORMATS = {
+    "iso": "%Y-%m-%d",
+    "us": "%m/%d/%Y",
+    "eu": "%d/%m/%Y",
+}
+# Tokenization for "thin input" rejection: anything that's not alphanumeric is a separator.
+# A bare "5" yields one token; "Jan 7 24" yields three. dateutil happily fills missing parts
+# with today's date, so we refuse to call it on inputs with fewer than 3 tokens.
+_DATE_TOKEN_RE = re.compile(r"[A-Za-z]+|\d+")
+# Year-first ISO-like pattern: YYYY[-/.]M[D][-/.]D[D] (optionally followed by a time part).
+# These are unambiguous regardless of dayfirst, so we treat the regex match as "this is ISO,
+# do not let dayfirst flip the day/month." Failure inside this branch is final — we don't
+# fall through to a permissive parser that would mis-rescue invalid dates like 2024-13-01.
+_ISO_DATE_RE = re.compile(r"^\s*\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[\sT].*)?\s*$")
+# Year-last numeric pattern A[sep]B[sep]Y — used to count "decisive" votes
+# (a > 12 means A must be the day; b > 12 means B must be the day).
+_DAY_MONTH_RE = re.compile(r"^\s*(\d{1,2})[/\-.](\d{1,2})[/\-.]\d{2,4}(?:[\sT].*)?\s*$")
+
+
+def _infer_dayfirst(series: pd.Series, sample_size: int = 200) -> bool:
+    non_null = series.dropna().astype(str).str.strip()
+    non_null = non_null[non_null != ""]
+    if non_null.empty:
+        return False
+
+    # ISO-like values are unambiguous and should not influence the day/month vote —
+    # otherwise an invalid month like "2024-13-01" can only parse under dayfirst=True
+    # (pandas falls back to DD-MM-YYYY) and tips the inference for the whole column.
+    ambiguous = non_null[~non_null.str.match(_ISO_DATE_RE)]
+    if ambiguous.empty:
+        return False
+
+    # Strong evidence: count values where one position is > 12 (and so MUST be the day).
+    day_first_votes = 0
+    month_first_votes = 0
+    for value in ambiguous.head(sample_size):
+        match = _DAY_MONTH_RE.match(value)
+        if not match:
+            continue
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 and second <= 12:
+            day_first_votes += 1
+        elif first <= 12 and second > 12:
+            month_first_votes += 1
+    if day_first_votes != month_first_votes:
+        return day_first_votes > month_first_votes
+
+    # No decisive evidence → fall back to "which flag parses more cells."
+    sample = ambiguous.head(sample_size)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        mf_hits = pd.to_datetime(sample, errors="coerce", dayfirst=False).notna().sum()
+        df_hits = pd.to_datetime(sample, errors="coerce", dayfirst=True).notna().sum()
+
+    # Tie or month-first wins → False (matches existing default behavior elsewhere).
+    return bool(df_hits > mf_hits)
+
+
+def _parse_one_date(value: Any, dayfirst: bool) -> pd.Timestamp | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return None if pd.isna(value) else value
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(_DATE_TOKEN_RE.findall(text)) < 3:
+        return None
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        # ISO-looking inputs are parsed strictly with dayfirst=False. If the strict parse
+        # fails (e.g. month=13), we return None instead of falling through, since a permissive
+        # fallback would silently rescue invalid dates by swapping day/month.
+        if _ISO_DATE_RE.match(text):
+            try:
+                return pd.to_datetime(text, errors="raise", dayfirst=False)
+            except (ValueError, TypeError, OverflowError):
+                return None
+
+        try:
+            return pd.to_datetime(text, errors="raise", dayfirst=dayfirst)
+        except (ValueError, TypeError, OverflowError):
+            pass
+
+    try:
+        return pd.Timestamp(dateutil_parser.parse(text, dayfirst=dayfirst))
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _standardize_dates(
+    series: pd.Series,
+    output_format: str,
+    dayfirst_hint: str,
+    unparseable_action: str,
+) -> tuple[pd.Series, list[dict[str, Any]]]:
+    strftime_fmt = _DATE_OUTPUT_FORMATS.get(output_format)
+    if strftime_fmt is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported output_format: {output_format}",
+        )
+
+    if dayfirst_hint == "day":
+        dayfirst = True
+    elif dayfirst_hint == "month":
+        dayfirst = False
+    else:
+        dayfirst = _infer_dayfirst(series)
+
+    unparseable: list[dict[str, Any]] = []
+    new_values: list[Any] = []
+    for row_idx, original in series.items():
+        if original is None or (isinstance(original, float) and pd.isna(original)):
+            new_values.append(original)
+            continue
+
+        parsed = _parse_one_date(original, dayfirst)
+        if parsed is None:
+            unparseable.append({"row": int(row_idx), "original": str(original)})
+            if unparseable_action == "null":
+                new_values.append(None)
+            else:
+                new_values.append(original)
+        else:
+            new_values.append(parsed.strftime(strftime_fmt))
+
+    return pd.Series(new_values, index=series.index, dtype="object"), unparseable
+
+
 def _text_columns(frame: pd.DataFrame, columns: list[str] | None = None) -> list[str]:
     if columns is not None:
         _ensure_columns(frame, columns)
@@ -296,6 +432,27 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
             frame[column] = frame[column].astype("string").str.strip()
         return frame
 
+    if operation.operation_type == "standardize_dates":
+        if not operation.column:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="standardize_dates requires a column name.",
+            )
+        _ensure_columns(frame, [operation.column])
+        output_format = operation.output_format or "iso"
+        new_series, unparseable_rows = _standardize_dates(
+            frame[operation.column],
+            output_format,
+            operation.dayfirst_hint,
+            operation.unparseable_action,
+        )
+        frame[operation.column] = new_series
+        # Stash for the route to surface in the response summary. frame.attrs is a
+        # pandas-native side-channel that survives column assignments on the same frame.
+        unparseable_map = frame.attrs.setdefault("_standardize_dates_unparseable", {})
+        unparseable_map[operation.column] = unparseable_rows
+        return frame
+
     if operation.operation_type == "lowercase_column":
         columns = operation.columns or ([operation.column] if operation.column else [])
         if not columns:
@@ -314,16 +471,27 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
     )
 
 
-def apply_cleaning_operations(frame: pd.DataFrame, operations: list[CleaningOperation]) -> tuple[pd.DataFrame, list[CleaningOperation]]:
-    """Apply operations sequentially, returning the cleaned DataFrame and operations applied."""
+def apply_cleaning_operations(
+    frame: pd.DataFrame, operations: list[CleaningOperation]
+) -> tuple[pd.DataFrame, list[CleaningOperation], dict[str, list[dict[str, Any]]]]:
+    """Apply operations sequentially.
+
+    Returns the cleaned DataFrame, the list of applied operations, and a dict
+    mapping column name -> list of unparseable rows from any standardize_dates ops.
+    """
     working_frame = frame.copy()
     applied_operations: list[CleaningOperation] = []
+    unparseable_dates: dict[str, list[dict[str, Any]]] = {}
 
     for operation in operations:
         working_frame = _apply_operation(working_frame, operation)
         applied_operations.append(operation)
+        # Drain any unparseable info the operation stashed on the frame.
+        stashed = working_frame.attrs.pop("_standardize_dates_unparseable", None)
+        if stashed:
+            unparseable_dates.update(stashed)
 
-    return working_frame, applied_operations
+    return working_frame, applied_operations, unparseable_dates
 
 
 def build_cleaning_result_snapshot(

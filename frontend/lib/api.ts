@@ -74,14 +74,32 @@ export type CleaningIssue = {
   details: Record<string, unknown> | null;
 };
 
+export type DateOutputFormat = "iso" | "us" | "eu";
+export type DayFirstHint = "auto" | "day" | "month";
+export type UnparseableAction = "keep_original" | "null";
+
 export type CleaningOperation = {
-  operation_type: "fill_mean" | "fill_median" | "fill_mode" | "drop_rows" | "remove_all_duplicates" | "convert_column_type" | "trim_whitespace" | "lowercase_column";
+  operation_type:
+    | "fill_mean"
+    | "fill_median"
+    | "fill_mode"
+    | "drop_rows"
+    | "remove_all_duplicates"
+    | "convert_column_type"
+    | "trim_whitespace"
+    | "lowercase_column"
+    | "standardize_dates";
   columns?: string[];
   column?: string | null;
   target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;
   drop_all_missing?: boolean;
   errors?: "raise" | "coerce" | "ignore";
+  output_format?: DateOutputFormat | null;
+  dayfirst_hint?: DayFirstHint;
+  unparseable_action?: UnparseableAction;
 };
+
+export type UnparseableDateRow = { row: number; original: string };
 
 export type CleanDetectResponse = {
   dataset_id: number;

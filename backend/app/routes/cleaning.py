@@ -83,7 +83,9 @@ endpoint to replace the dataset or save as a new dataset.
     )
 
     frame = snapshot_to_dataframe(version.data_snapshot)
-    cleaned_frame, applied_operations = apply_cleaning_operations(frame, payload.cleaning_operations)
+    cleaned_frame, applied_operations, unparseable_dates = apply_cleaning_operations(
+        frame, payload.cleaning_operations
+    )
     cleaned_snapshot = build_cleaning_result_snapshot(
         cleaned_frame,
         source_name=dataset.name,
@@ -92,6 +94,9 @@ endpoint to replace the dataset or save as a new dataset.
     )
 
     cleaned_missing_values, cleaned_duplicates, cleaned_column_types, cleaned_issues = analyze_cleaning_frame(cleaned_frame)
+    summary = dict(cleaned_snapshot["summary"])
+    if unparseable_dates:
+        summary["unparseable_dates"] = unparseable_dates
     return {
         "dataset_id": dataset.id,
         "dataset_version_id": version.id,
@@ -102,6 +107,6 @@ endpoint to replace the dataset or save as a new dataset.
         "column_types": cleaned_column_types,
         "issues": cleaned_issues,
         "preview": cleaned_snapshot["preview"],
-        "summary": cleaned_snapshot["summary"],
+        "summary": summary,
         "data_snapshot": cleaned_snapshot,
     }

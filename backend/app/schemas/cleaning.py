@@ -23,9 +23,14 @@ CleaningOperationType = Literal[
     "convert_column_type",
     "trim_whitespace",
     "lowercase_column",
+    "standardize_dates",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]
+
+DateOutputFormat = Literal["iso", "us", "eu"]
+DayFirstHint = Literal["auto", "day", "month"]
+UnparseableAction = Literal["keep_original", "null"]
 
 
 class CleaningIssue(BaseModel):
@@ -46,6 +51,10 @@ class CleaningOperation(BaseModel):
     target_type: CleaningTargetType | None = None
     drop_all_missing: bool = True
     errors: Literal["raise", "coerce", "ignore"] = "coerce"
+    # Fields below only apply to operation_type == "standardize_dates".
+    output_format: DateOutputFormat | None = None
+    dayfirst_hint: DayFirstHint = "auto"
+    unparseable_action: UnparseableAction = "keep_original"
 
 
 class CleanDetectRequest(BaseModel):

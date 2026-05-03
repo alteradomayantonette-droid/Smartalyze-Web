@@ -12,7 +12,9 @@ import {
   CleaningOperation,
   CleanApplyResponse,
   CleanDetectResponse,
+  DateOutputFormat,
   DatasetWorkspace,
+  DayFirstHint,
   detectCleaningIssues,
   exportDataset,
   ExportDatasetFormat,
@@ -26,6 +28,7 @@ import {
   PredictResponse,
   saveDatasetResult,
   TrendResponse,
+  UnparseableDateRow,
   uploadDataset,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
@@ -135,6 +138,36 @@ function buildLowercaseOperation(columnName: string): CleaningOperation {
   };
 }
 
+function buildStandardizeDatesOperation(
+  columnName: string,
+  outputFormat: DateOutputFormat,
+  dayfirstHint: DayFirstHint,
+): CleaningOperation {
+  return {
+    operation_type: "standardize_dates",
+    columns: [],
+    column: columnName,
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+    output_format: outputFormat,
+    dayfirst_hint: dayfirstHint,
+    unparseable_action: "keep_original",
+  };
+}
+
+const DATE_FORMAT_LABELS: Record<DateOutputFormat, string> = {
+  iso: "ISO (2024-01-08)",
+  us: "US (01/08/2024)",
+  eu: "EU (08/01/2024)",
+};
+
+const DAYFIRST_LABELS: Record<DayFirstHint, string> = {
+  auto: "Auto-detect",
+  day: "Day-first",
+  month: "Month-first",
+};
+
 function getOperationLabel(operation: CleaningOperation): string {
   switch (operation.operation_type) {
     case "remove_all_duplicates":
@@ -153,6 +186,8 @@ function getOperationLabel(operation: CleaningOperation): string {
       return operation.column ? `Lowercase "${operation.column}"` : "Lowercase text";
     case "convert_column_type":
       return operation.column ? `Convert "${operation.column}"` : "Convert column type";
+    case "standardize_dates":
+      return operation.column ? `Standardize dates in "${operation.column}"` : "Standardize dates";
     default:
       return "Cleaning action";
   }
@@ -168,6 +203,11 @@ function getOperationDetail(operation: CleaningOperation): string {
       return operation.column ? `Column: ${operation.column}` : "Lowercase a text column.";
     case "convert_column_type":
       return operation.column ? `Column: ${operation.column}` : "Convert a column to another type.";
+    case "standardize_dates": {
+      const fmt = operation.output_format ? DATE_FORMAT_LABELS[operation.output_format] : DATE_FORMAT_LABELS.iso;
+      const hint = operation.dayfirst_hint ? DAYFIRST_LABELS[operation.dayfirst_hint] : DAYFIRST_LABELS.auto;
+      return operation.column ? `Format ${fmt} • ${hint}` : `Format ${fmt}`;
+    }
     default:
       return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "";
   }
@@ -228,6 +268,8 @@ export default function DatasetWorkspacePage() {
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
   const [cleaningResult, setCleaningResult] = useState<CleanApplyResponse | null>(null);
   const [missingValueStrategies, setMissingValueStrategies] = useState<Record<string, MissingStrategy>>({});
+  const [dateFormatChoices, setDateFormatChoices] = useState<Record<string, DateOutputFormat>>({});
+  const [dayfirstChoices, setDayfirstChoices] = useState<Record<string, DayFirstHint>>({});
   const [analysisStats, setAnalysisStats] = useState<AnalyzeStatsResponse | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [aggregateColumn, setAggregateColumn] = useState("");
@@ -387,6 +429,17 @@ export default function DatasetWorkspacePage() {
       operation,
       `Added: convert "${columnName}" to ${targetType}.`,
       `Removed convert "${columnName}" from the queue.`,
+    );
+  }
+
+  function toggleStandardizeDates(columnName: string) {
+    const outputFormat = dateFormatChoices[columnName] ?? "iso";
+    const dayfirstHint = dayfirstChoices[columnName] ?? "auto";
+    const operation = buildStandardizeDatesOperation(columnName, outputFormat, dayfirstHint);
+    toggleOperation(
+      operation,
+      `Added: standardize dates in "${columnName}" (${DATE_FORMAT_LABELS[outputFormat]}).`,
+      `Removed standardize dates for "${columnName}" from the queue.`,
     );
   }
 
@@ -876,6 +929,120 @@ export default function DatasetWorkspacePage() {
                       ) : (
                         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
                           No type inconsistencies detected.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </section>
+
+            <section className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+              {(() => {
+                const dateColumns = availableColumns.filter((columnName) => {
+                  const columnType = getColumnType(columnName, cleaningDetection);
+                  return columnType === "datetime" || columnType === "datetime_string";
+                });
+                const unparseableMap = (cleaningResult?.summary.unparseable_dates ?? {}) as Record<string, UnparseableDateRow[]>;
+
+                return (
+                  <>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                          <h3 className="text-lg font-semibold text-slate-950">Date Standardization</h3>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Rewrite messy date strings (e.g. <span className="font-mono">Jan 07 2024</span>) to a single uniform format.
+                          Cells that can&apos;t be parsed are kept as-is and flagged below.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                        {dateColumns.length > 0 ? `${dateColumns.length} column${dateColumns.length !== 1 ? "s" : ""}` : "None detected"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {dateColumns.length > 0 ? (
+                        dateColumns.map((columnName) => {
+                          const outputFormat = dateFormatChoices[columnName] ?? "iso";
+                          const dayfirstHint = dayfirstChoices[columnName] ?? "auto";
+                          const queuedOperation = buildStandardizeDatesOperation(columnName, outputFormat, dayfirstHint);
+                          const queued = hasQueuedOperation(queuedOperation);
+                          const unparseable = unparseableMap[columnName] ?? [];
+
+                          return (
+                            <div key={columnName} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="font-medium text-slate-950">Column: {columnName}</p>
+                                <button
+                                  type="button"
+                                  className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-amber-600 text-white hover:bg-amber-500"}`}
+                                  onClick={() => toggleStandardizeDates(columnName)}
+                                >
+                                  {queued ? "Added" : "Standardize"}
+                                </button>
+                              </div>
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                                  Output format
+                                  <select
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none"
+                                    value={outputFormat}
+                                    onChange={(event) =>
+                                      setDateFormatChoices((current) => ({
+                                        ...current,
+                                        [columnName]: event.target.value as DateOutputFormat,
+                                      }))
+                                    }
+                                  >
+                                    <option value="iso">{DATE_FORMAT_LABELS.iso}</option>
+                                    <option value="us">{DATE_FORMAT_LABELS.us}</option>
+                                    <option value="eu">{DATE_FORMAT_LABELS.eu}</option>
+                                  </select>
+                                </label>
+                                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                                  Day/Month order
+                                  <select
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none"
+                                    value={dayfirstHint}
+                                    onChange={(event) =>
+                                      setDayfirstChoices((current) => ({
+                                        ...current,
+                                        [columnName]: event.target.value as DayFirstHint,
+                                      }))
+                                    }
+                                  >
+                                    <option value="auto">{DAYFIRST_LABELS.auto}</option>
+                                    <option value="day">{DAYFIRST_LABELS.day}</option>
+                                    <option value="month">{DAYFIRST_LABELS.month}</option>
+                                  </select>
+                                </label>
+                              </div>
+                              {unparseable.length > 0 ? (
+                                <div className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-900">
+                                  <p className="font-semibold">
+                                    {unparseable.length} cell{unparseable.length === 1 ? "" : "s"} could not be parsed — original values preserved.
+                                  </p>
+                                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                                    {unparseable.slice(0, 5).map((row) => (
+                                      <li key={row.row}>
+                                        Row {row.row}: <span className="font-mono">{row.original === "" ? "(empty)" : row.original}</span>
+                                      </li>
+                                    ))}
+                                    {unparseable.length > 5 ? (
+                                      <li className="italic text-yellow-800">…and {unparseable.length - 5} more.</li>
+                                    ) : null}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                          No date columns were detected for standardization.
                         </div>
                       )}
                     </div>
