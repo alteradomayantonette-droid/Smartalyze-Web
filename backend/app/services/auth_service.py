@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.auth import AuthSession, User
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.utils.security import (
@@ -27,6 +28,18 @@ from app.utils.security import (
 )
 
 SESSION_DAYS = 7
+
+
+def _validate_avatar_size(avatar: str | None) -> None:
+    """Reject avatars that exceed the configured size budget (default 1 MB)."""
+    if avatar is None:
+        return
+    max_bytes = get_settings().max_avatar_size_kb * 1024
+    if len(avatar.encode("utf-8")) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Avatar exceeds the {get_settings().max_avatar_size_kb} KB size limit.",
+        )
 
 
 async def _create_session(db: AsyncSession, user: User) -> str:
@@ -101,7 +114,11 @@ async def update_username(db: AsyncSession, user: User, new_username: str, passw
 
 
 async def update_password(db: AsyncSession, user: User, current_password: str, new_password: str) -> None:
-    """Change a user's password after verifying their current password."""
+    """Change a user's password and revoke all existing sessions.
+
+    Force re-login on every other device by stamping `revoked_at` on every active
+    AuthSession row for this user.
+    """
     if not verify_password(current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect current password.")
 
@@ -109,11 +126,23 @@ async def update_password(db: AsyncSession, user: User, current_password: str, n
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters.")
 
     user.password_hash = hash_password(new_password)
+
+    result = await db.execute(select(AuthSession).where(AuthSession.user_id == user.id))
+    sessions = result.scalars().all()
+    now = datetime.utcnow()
+    for session in sessions:
+        session.revoked_at = now
+
     await db.commit()
 
 
 async def update_avatar(db: AsyncSession, user: User, avatar: str | None) -> User:
-    """Update a user's avatar (base64 data URL or None to clear)."""
+    """Update a user's avatar (base64 data URL or None to clear).
+
+    Rejects payloads larger than `MAX_AVATAR_SIZE_KB` (default 1024 KB) to keep
+    the avatar TEXT column from being abused as unbounded storage.
+    """
+    _validate_avatar_size(avatar)
     user.avatar = avatar
     await db.commit()
     await db.refresh(user)
@@ -121,9 +150,22 @@ async def update_avatar(db: AsyncSession, user: User, avatar: str | None) -> Use
 
 
 async def delete_user(db: AsyncSession, user: User, password: str) -> None:
-    """Permanently delete a user account after verifying their password."""
+    """Permanently delete a user account and explicitly cascade their datasets.
+
+    The Dataset ↔ User relationship has no `cascade="all, delete-orphan"` declared
+    on the User side, so we iterate and delete each dataset (which DOES cascade
+    to its versions/actions) before removing the user row itself.
+    """
     if not verify_password(password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password.")
+
+    from app.models.dataset import Dataset
+    from app.services.dataset_service import delete_owned_dataset
+
+    result = await db.execute(select(Dataset).where(Dataset.user_id == user.id))
+    datasets = result.scalars().all()
+    for dataset in datasets:
+        await delete_owned_dataset(db, dataset)
 
     await db.delete(user)
     await db.commit()

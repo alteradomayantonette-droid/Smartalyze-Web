@@ -465,6 +465,33 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
             frame[column] = frame[column].astype("string").str.lower()
         return frame
 
+    if operation.operation_type == "sort_values":
+        if not operation.column:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="sort_values requires a column name.",
+            )
+        _ensure_columns(frame, [operation.column])
+        ascending = bool(operation.ascending)
+        try:
+            return frame.sort_values(
+                by=operation.column,
+                ascending=ascending,
+                na_position="last",
+                kind="mergesort",
+            )
+        except TypeError:
+            temp_key = "__smartalyze_sort_key__"
+            working = frame.copy()
+            working[temp_key] = working[operation.column].astype(str)
+            working = working.sort_values(
+                by=temp_key,
+                ascending=ascending,
+                na_position="last",
+                kind="mergesort",
+            )
+            return working.drop(columns=[temp_key])
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Unsupported cleaning operation: {operation.operation_type}",

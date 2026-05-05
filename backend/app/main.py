@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import models  # noqa: F401
+from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import engine
 from app.routes.analysis import router as analysis_router
@@ -25,8 +26,9 @@ app = FastAPI(title="Smartalyze API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    # CORS is configured for local dev (Next.js running on :3000).
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # Allowed origins are read from CORS_ALLOWED_ORIGINS (comma-separated).
+    # Defaults to localhost:3000 for local dev — set the env var before deploying.
+    allow_origins=get_settings().cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

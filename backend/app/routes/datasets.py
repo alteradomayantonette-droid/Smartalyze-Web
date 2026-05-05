@@ -32,7 +32,8 @@ from app.schemas.dataset import (
     SaveResultRequest,
     SaveResultResponse,
 )
-from app.services.dataset_snapshot import snapshot_to_export_bytes
+from app.schemas.structure import StructureSummaryRequest, StructureSummaryResponse
+from app.services.dataset_snapshot import snapshot_to_dataframe, snapshot_to_export_bytes
 from app.services.auth_service import get_user_by_token
 from app.services.dataset_service import (
     create_dataset_from_upload,
@@ -43,6 +44,7 @@ from app.services.dataset_service import (
     get_workspace_guidance,
     list_user_datasets,
 )
+from app.services.structure_service import compute_structure_summary
 
 router = APIRouter()
 
@@ -133,6 +135,31 @@ stored snapshot is exported.
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/dataset/{dataset_id}/structure/summary", response_model=StructureSummaryResponse)
+async def get_structure_summary(
+    dataset_id: int,
+    payload: StructureSummaryRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a friendly per-column summary for non-technical users.
+
+    If the client provides a `data_snapshot`, the summary is computed from that
+    snapshot (useful for unsaved results). Otherwise we summarize the dataset's
+    current snapshot. Mirrors Mobile's endpoint.
+    """
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+
+    snapshot = payload.data_snapshot if payload.data_snapshot is not None else dataset.current_snapshot
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset data is available.")
+
+    frame = snapshot_to_dataframe(snapshot)
+    return compute_structure_summary(frame, top_values_limit=payload.top_values_limit)
 
 
 @router.post("/dataset/{dataset_id}/versions", response_model=DatasetVersionRead)

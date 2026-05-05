@@ -24,6 +24,7 @@ CleaningOperationType = Literal[
     "trim_whitespace",
     "lowercase_column",
     "standardize_dates",
+    "sort_values",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]
@@ -55,6 +56,8 @@ class CleaningOperation(BaseModel):
     output_format: DateOutputFormat | None = None
     dayfirst_hint: DayFirstHint = "auto"
     unparseable_action: UnparseableAction = "keep_original"
+    # Field below only applies to operation_type == "sort_values".
+    ascending: bool = True
 
 
 class CleanDetectRequest(BaseModel):
