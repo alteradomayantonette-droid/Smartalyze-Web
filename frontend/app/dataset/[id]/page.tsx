@@ -55,6 +55,24 @@ function getFeedbackClasses(tone: FeedbackTone): string {
   }
 }
 
+function TipCard({ text }: { text: string }) {
+  return (
+    <div className="flex gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+      <span className="mt-0.5 shrink-0">💡</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function InsightCard({ text }: { text: string }) {
+  return (
+    <div className="flex gap-2 rounded-xl bg-sky-50 border border-sky-200 p-3 text-sm text-sky-800">
+      <span className="mt-0.5 shrink-0">ℹ️</span>
+      <span className="italic">{text}</span>
+    </div>
+  );
+}
+
 function getSummaryTone(label: string, value: number | string | null | undefined): string {
   const numericValue = typeof value === "number" ? value : Number(value ?? 0);
 
@@ -517,6 +535,17 @@ export default function DatasetWorkspacePage() {
     );
   }
 
+  function handleRescanData() {
+    setCleaningDetection(null);
+  }
+
+  function handleDiscardResult() {
+    setCleaningResult(null);
+    setCleaningDetection(null);
+    setCleaningOperations([]);
+    setFeedback("Changes discarded. Detection will re-run when you return to Cleaning.", "neutral");
+  }
+
   async function handleApplyCleaning() {
     if (!workspace || !token || cleaningOperations.length === 0) {
       setFeedback("Add at least one cleaning operation before applying changes.", "warning");
@@ -573,8 +602,11 @@ export default function DatasetWorkspacePage() {
           ...workspace,
           dataset: response.dataset,
         });
+        setCleaningResult(null);
+        setCleaningDetection(null);
         setFeedback("Result replaced the current dataset.", "success");
       } else {
+        setCleaningResult(null);
         setFeedback("Result saved as a new dataset.", "success");
         router.replace(`/dataset/${response.dataset.id}`);
       }
@@ -783,6 +815,36 @@ export default function DatasetWorkspacePage() {
             <p className="mt-1 text-2xl font-semibold text-indigo-600">{cleaningOperations.length}</p>
           </div>
         </div>
+
+        {!cleaningDetecting && cleaningDetection && (() => {
+          const hasDuplicates = (cleaningDetection.duplicates ?? 0) > 0;
+          const missingColCount = cleaningIssues.filter((i) => i.kind === "missing_values" && i.column).length;
+          const hasIssues = hasDuplicates || missingColCount > 0;
+          const summaryParts: string[] = [];
+          if (hasDuplicates) summaryParts.push(`${cleaningDetection.duplicates} duplicate row${cleaningDetection.duplicates === 1 ? "" : "s"}`);
+          if (missingColCount > 0) summaryParts.push(`${missingColCount} column${missingColCount === 1 ? "" : "s"} with missing values`);
+          return (
+            <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${hasIssues ? "border-amber-200 bg-amber-50" : "border-green-200 bg-green-50"}`}>
+              <div className={`text-sm ${hasIssues ? "text-amber-800" : "text-green-800"}`}>
+                {hasIssues ? (
+                  <>
+                    <p className="font-medium">Issues detected — apply fixes below to clean your data.</p>
+                    <p className="mt-0.5 text-xs">{summaryParts.join(", ")}</p>
+                  </>
+                ) : (
+                  <p className="font-medium">No issues detected — your data looks clean.</p>
+                )}
+              </div>
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${hasIssues ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}
+                onClick={handleRescanData}
+              >
+                Re-scan
+              </button>
+            </div>
+          );
+        })()}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
@@ -1146,7 +1208,7 @@ export default function DatasetWorkspacePage() {
                       const queued = hasQueuedOperation(op);
                       const confidencePct = Math.round(s.weighted_confidence * 100);
                       return (
-                        <div key={`${s.key_column}-${s.target_column}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div key={`${s.key_column}-${s.target_column}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div className="space-y-1">
                               <p className="font-medium text-slate-950">
@@ -1159,7 +1221,7 @@ export default function DatasetWorkspacePage() {
                                 <span className="text-xs text-slate-500">{confidencePct}% confidence · {s.groups.length} groups</span>
                               </div>
                               {s.low_sample_groups.length > 0 && (
-                                <p className="text-xs text-amber-600">Low-sample groups: {s.low_sample_groups.slice(0, 3).join(", ")}{s.low_sample_groups.length > 3 ? "…" : ""}</p>
+                                <p className="text-xs text-amber-600">⚠ Groups with fewer than 5 values ({s.low_sample_groups.slice(0, 3).join(", ")}{s.low_sample_groups.length > 3 ? "…" : ""}) — fill values here are less reliable</p>
                               )}
                             </div>
                             <button
@@ -1170,6 +1232,7 @@ export default function DatasetWorkspacePage() {
                               {queued ? "Added" : "Add"}
                             </button>
                           </div>
+                          <InsightCard text={confidencePct >= 90 ? "Strong pattern — very safe to apply." : "Moderate confidence — review the groups above before applying."} />
                         </div>
                       );
                     })}
@@ -1228,7 +1291,18 @@ export default function DatasetWorkspacePage() {
                 <h3 className="text-lg font-semibold text-slate-950">Selected Operations</h3>
                 <p className="text-sm text-slate-600">Review the queue before applying.</p>
               </div>
-              <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{cleaningOperations.length}</span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{cleaningOperations.length}</span>
+                {cleaningOperations.length > 0 && (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-600"
+                    onClick={() => setCleaningOperations([])}
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -1299,6 +1373,18 @@ export default function DatasetWorkspacePage() {
           <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="font-semibold text-slate-950">Save Result</h3>
             <p className="text-sm text-slate-600">Choose whether to replace the current dataset or create a new one.</p>
+            {cleaningResult && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+                <span>Cleaning applied. Head to Analysis to review the changes.</span>
+                <button
+                  type="button"
+                  className="shrink-0 font-medium underline underline-offset-4 decoration-indigo-400 hover:text-indigo-900"
+                  onClick={() => setActiveTab("analysis")}
+                >
+                  Review →
+                </button>
+              </div>
+            )}
             <button
               type="button"
               className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
@@ -1323,28 +1409,67 @@ export default function DatasetWorkspacePage() {
       const overviewTotal = overviewTotalRows ?? workspace.dataset.row_count ?? 0;
       const overviewLoaded = allOverviewRows.length;
       const canLoadMore = overviewLoaded < overviewTotal;
+
+      // When a cleaning result is pending (unsaved), show the cleaned working copy
+      const displayRowCount = cleaningResult?.summary.row_count ?? workspace.dataset.row_count;
+      const displayColCount = cleaningResult?.summary.column_count ?? workspace.dataset.column_count;
+      const displayMissing = cleaningResult?.summary.missing_cells ?? workspace.dataset.summary_json?.missing_cells;
+      const displayDuplicates = cleaningResult?.summary.duplicate_rows ?? workspace.dataset.summary_json?.duplicate_rows;
+      const displayPreview = cleaningResult ? cleaningResult.preview : allOverviewRows;
+
       return (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Rows</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{workspace.dataset.row_count ?? "-"}</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{String(displayRowCount ?? "-")}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Columns</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{workspace.dataset.column_count ?? "-"}</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{String(displayColCount ?? "-")}</p>
             </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Missing cells", workspace.dataset.summary_json?.missing_cells as number | string | null | undefined)}`}>
+            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Missing cells", displayMissing as number | string | null | undefined)}`}>
               <p className="text-sm text-slate-500">Missing cells</p>
-              <p className="mt-1 text-2xl font-semibold">{String(workspace.dataset.summary_json?.missing_cells ?? "-")}</p>
+              <p className="mt-1 text-2xl font-semibold">{String(displayMissing ?? "-")}</p>
             </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Duplicates", workspace.dataset.summary_json?.duplicate_rows as number | string | null | undefined)}`}>
+            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Duplicates", displayDuplicates as number | string | null | undefined)}`}>
               <p className="text-sm text-slate-500">Duplicates</p>
-              <p className="mt-1 text-2xl font-semibold">{String(workspace.dataset.summary_json?.duplicate_rows ?? "-")}</p>
+              <p className="mt-1 text-2xl font-semibold">{String(displayDuplicates ?? "-")}</p>
             </div>
           </div>
-          {renderPreviewTable(allOverviewRows)}
-          {canLoadMore ? (
+          {cleaningResult ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span>Showing cleaned preview — save to make this permanent.</span>
+              <button
+                type="button"
+                className="shrink-0 font-medium underline underline-offset-4 decoration-amber-400 hover:text-amber-900"
+                onClick={() => setShowSaveModal(true)}
+              >
+                Save →
+              </button>
+            </div>
+          ) : (() => {
+            const missingCells = Number(workspace.dataset.summary_json?.missing_cells ?? 0);
+            const duplicateRows = Number(workspace.dataset.summary_json?.duplicate_rows ?? 0);
+            if (missingCells === 0 && duplicateRows === 0) return null;
+            const parts: string[] = [];
+            if (missingCells > 0) parts.push(`${missingCells} missing value${missingCells === 1 ? "" : "s"}`);
+            if (duplicateRows > 0) parts.push(`${duplicateRows} duplicate row${duplicateRows === 1 ? "" : "s"}`);
+            return (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                <span>Your data has {parts.join(" and ")}.</span>
+                <button
+                  type="button"
+                  className="shrink-0 font-medium underline underline-offset-4 decoration-teal-400 hover:text-teal-900"
+                  onClick={() => setActiveTab("cleaning")}
+                >
+                  Go to Cleaning →
+                </button>
+              </div>
+            );
+          })()}
+          {renderPreviewTable(displayPreview)}
+          {!cleaningResult && canLoadMore ? (
             <button
               onClick={handleLoadMoreOverviewRows}
               disabled={overviewLoadingMore}
@@ -1352,7 +1477,7 @@ export default function DatasetWorkspacePage() {
             >
               {overviewLoadingMore ? "Loading…" : `Load 10 more (${overviewLoaded} of ${overviewTotal} shown)`}
             </button>
-          ) : overviewLoaded > 10 ? (
+          ) : !cleaningResult && overviewLoaded > 10 ? (
             <p className="text-center text-xs text-slate-400">All {overviewTotal} rows shown</p>
           ) : null}
         </div>
@@ -1406,16 +1531,30 @@ export default function DatasetWorkspacePage() {
                     Dates: "bg-purple-100 text-purple-700",
                     Boolean: "bg-orange-100 text-orange-700",
                   };
+                  const kindTooltips: Record<string, string> = {
+                    Numbers: "Numeric column — supports mean, sum, and correlation",
+                    Text: "Text column — supports grouping and frequency analysis",
+                    Dates: "Date column — supports trend analysis",
+                    Boolean: "True/False column",
+                  };
                   const kindClass = kindColors[col.kind] ?? "bg-slate-100 text-slate-600";
                   const topVal = col.top_values[0];
                   return (
                     <div key={col.name} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate font-medium text-slate-950 text-sm">{col.name}</p>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${kindClass}`}>{col.kind}</span>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium cursor-help ${kindClass}`}
+                          title={kindTooltips[col.kind] ?? col.kind}
+                        >
+                          {col.kind}
+                        </span>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-slate-500">
-                        <span>Unique: <span className="font-medium text-slate-700">{col.unique_values}</span></span>
+                        <span>
+                          Unique: <span className="font-medium text-slate-700">{col.unique_values}</span>
+                          {col.unique_values === 1 && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-700" title="Only 1 unique value — consider dropping this column">1 value</span>}
+                        </span>
                         <span className={col.missing_values > 0 ? "text-amber-600" : ""}>
                           Missing: <span className="font-medium">{col.missing_values}</span>
                         </span>
@@ -1493,8 +1632,19 @@ export default function DatasetWorkspacePage() {
                   </div>
                   {colsWithMissing.length > 0 ? (
                     <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-                      {colsWithMissing.length} column{colsWithMissing.length === 1 ? "" : "s"} have missing values.
-                      {mostMissingCol ? ` Highest: "${mostMissingCol.name}" (${mostMissingCol.missing_pct}%).` : ""}
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <span>
+                          {colsWithMissing.length} column{colsWithMissing.length === 1 ? "" : "s"} have missing values.
+                          {mostMissingCol ? ` Highest: "${mostMissingCol.name}" (${mostMissingCol.missing_pct}%).` : ""}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 font-medium underline underline-offset-4 decoration-yellow-500 hover:text-yellow-900"
+                          onClick={() => setActiveTab("cleaning")}
+                        >
+                          Fix in Cleaning →
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
@@ -1714,6 +1864,16 @@ export default function DatasetWorkspacePage() {
         return map[dir] ?? "bg-slate-100 text-slate-600";
       }
 
+      function directionLabel(dir: string) {
+        const map: Record<string, string> = {
+          increasing: "Going up over time",
+          decreasing: "Going down over time",
+          stable: "Relatively flat — little change over time",
+          volatile: "High variation — no clear direction",
+        };
+        return map[dir] ?? dir;
+      }
+
       function renderTrendChart(trend: typeof activeTrend) {
         if (!trend || trend.chart_points.length < 2) {
           return <p className="text-sm text-slate-500">Not enough data points to render chart.</p>;
@@ -1777,8 +1937,8 @@ export default function DatasetWorkspacePage() {
                   </select>
                 </label>
                 {activeTrend ? (
-                  <span className={`mt-5 rounded-full px-3 py-1 text-xs font-semibold capitalize ${directionBadge(activeTrend.direction)}`}>
-                    {activeTrend.direction}
+                  <span className={`mt-5 rounded-full px-3 py-1 text-xs font-semibold ${directionBadge(activeTrend.direction)}`}>
+                    {directionLabel(activeTrend.direction)}
                   </span>
                 ) : null}
               </div>
@@ -1800,6 +1960,8 @@ export default function DatasetWorkspacePage() {
                       </div>
                     ))}
                   </div>
+
+                  <InsightCard text="R² measures how well the trend line fits your data. Above 0.7 = strong trend. Below 0.3 = weak or noisy pattern — the trend line may not be reliable." />
 
                   <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                     <h3 className="text-sm font-semibold text-slate-950 mb-3">
@@ -1823,6 +1985,8 @@ export default function DatasetWorkspacePage() {
 
       return (
         <div className="space-y-6">
+          <TipCard text="Outliers are values unusually far from the typical range of a column. They may be data entry errors or genuine extremes worth investigating." />
+
           {!anomaly ? (
             <p className="text-sm text-slate-600">Switch to this tab to run anomaly detection.</p>
           ) : anomaly.columns_analyzed === 0 ? (
@@ -1879,7 +2043,7 @@ export default function DatasetWorkspacePage() {
 
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-lg font-semibold text-slate-950">Outliers per column</h3>
-                <p className="mt-1 text-sm text-slate-600">IQR method — values outside [Q1 − 1.5·IQR, Q3 + 1.5·IQR] are flagged.</p>
+                <p className="mt-1 text-sm text-slate-600">Statistical range method — flags values that fall far outside the typical spread of each column.</p>
 
                 <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -1901,14 +2065,19 @@ export default function DatasetWorkspacePage() {
                             <span className={col.outlier_count > 0 ? "font-semibold text-orange-700" : "text-slate-400"}>{col.outlier_count}</span>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
-                                <div
-                                  className={`h-full rounded-full ${col.outlier_pct > 10 ? "bg-red-500" : col.outlier_pct > 3 ? "bg-orange-400" : "bg-yellow-400"}`}
-                                  style={{ width: `${Math.min(col.outlier_pct, 100)}%` }}
-                                />
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                                  <div
+                                    className={`h-full rounded-full ${col.outlier_pct > 15 ? "bg-red-500" : col.outlier_pct > 5 ? "bg-orange-400" : "bg-yellow-400"}`}
+                                    style={{ width: `${Math.min(col.outlier_pct, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-slate-500">{col.outlier_pct}%</span>
                               </div>
-                              <span className="text-xs text-slate-500">{col.outlier_pct}%</span>
+                              <span className={`text-xs font-medium ${col.outlier_pct > 15 ? "text-red-600" : col.outlier_pct > 5 ? "text-amber-600" : "text-green-600"}`}>
+                                {col.outlier_pct > 15 ? "High — possible data quality issue" : col.outlier_pct > 5 ? "Moderate — worth reviewing" : "Low — likely safe to ignore"}
+                              </span>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-slate-600">{col.lower_fence}</td>
@@ -1927,10 +2096,10 @@ export default function DatasetWorkspacePage() {
     }
 
     if (activeTab === "prediction") {
-      function getPredictionConfidence(rSquared: number): { label: "High" | "Medium" | "Low"; badgeClasses: string } {
-        if (rSquared >= 0.7) return { label: "High", badgeClasses: "bg-green-100 text-green-700" };
-        if (rSquared >= 0.4) return { label: "Medium", badgeClasses: "bg-yellow-100 text-yellow-700" };
-        return { label: "Low", badgeClasses: "bg-red-100 text-red-700" };
+      function getPredictionConfidence(rSquared: number): { label: string; badgeClasses: string } {
+        if (rSquared >= 0.7) return { label: "High confidence — consistent historical data", badgeClasses: "bg-green-100 text-green-700" };
+        if (rSquared >= 0.4) return { label: "Medium confidence — some variation in historical data", badgeClasses: "bg-yellow-100 text-yellow-700" };
+        return { label: "Low confidence — irregular data; treat as a rough estimate", badgeClasses: "bg-red-100 text-red-700" };
       }
 
       function getPredictionTrend(slope: number): { label: "Trending Up" | "Trending Down" | "Stable"; badgeClasses: string } {
@@ -1971,8 +2140,8 @@ export default function DatasetWorkspacePage() {
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-4">
             <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-1 block text-sm font-medium text-slate-900">Time / label column</span>
-              <span className="mb-2 block text-xs text-slate-400">(optional — used to label the x-axis)</span>
+              <span className="mb-1 block text-sm font-medium text-slate-900">Date column (optional)</span>
+              <span className="mb-2 block text-xs text-slate-400">Select a date column to plot predictions over time</span>
               <select
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
                 value={predictionInputColumn}
@@ -2045,6 +2214,10 @@ export default function DatasetWorkspacePage() {
               </div>
             );
           })()}
+
+          {predictionResult && (
+            <InsightCard text="Predictions use a linear trend model. Accuracy improves with more data — best results with 20 or more rows. Use the confidence badge above to judge how much to rely on these estimates." />
+          )}
 
           {predictionResult && (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -2192,6 +2365,8 @@ export default function DatasetWorkspacePage() {
             </div>
           </div>
 
+          <InsightCard text="The diagonal always shows 1.0 — each column is perfectly correlated with itself. Values near +1 indicate columns that increase together; near −1 they move in opposite directions. Values near 0 mean no meaningful relationship." />
+
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-950">Correlation Heatmap</h3>
             <p className="mt-1 text-sm text-slate-500">Pearson correlation — blue = positive, red = negative. Diagonal is always 1.</p>
@@ -2291,21 +2466,53 @@ export default function DatasetWorkspacePage() {
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
-              {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "correlation", "prediction"] as WorkspaceTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                    activeTab === tab ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
-                  }`}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
+              {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "correlation", "prediction"] as WorkspaceTab[]).map((tab) => {
+                const hasUnsavedBadge = tab === "cleaning" && cleaningResult !== null;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    className={`relative rounded-full px-4 py-2 text-sm font-medium transition ${
+                      activeTab === tab ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                    }`}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {hasUnsavedBadge && (
+                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="mt-6">{renderTabContent()}</div>
+            <div className="mt-6">
+              {cleaningResult && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <div className="flex items-center gap-2">
+                    <span>⚠</span>
+                    <span>Cleaning applied — unsaved changes. Overview now shows the cleaned preview.</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      className="font-medium text-slate-600 underline underline-offset-4 hover:text-slate-900"
+                      onClick={handleDiscardResult}
+                    >
+                      Discard
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full bg-amber-600 px-4 py-1.5 font-medium text-white hover:bg-amber-500"
+                      onClick={() => setShowSaveModal(true)}
+                    >
+                      Save changes →
+                    </button>
+                  </div>
+                </div>
+              )}
+              {renderTabContent()}
+            </div>
           </div>
 
           <aside className="space-y-6">
@@ -2376,8 +2583,9 @@ export default function DatasetWorkspacePage() {
                 <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "replace" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
                   <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "replace"} onChange={() => setSaveMode("replace")} />
                   <div>
-                    <p className="font-medium text-slate-950">Replace current dataset</p>
-                    <p className="mt-1 text-sm text-slate-600">Keep the same dataset and update it with this result.</p>
+                    <p className="font-medium text-slate-950">Replace <span className="text-indigo-700">{workspace.dataset.original_filename}</span></p>
+                    <p className="mt-1 text-sm text-slate-600">Overwrites the current dataset with the cleaned result.</p>
+                    <p className="mt-1 text-xs font-medium text-red-600">This will permanently overwrite the current version.</p>
                   </div>
                 </label>
 

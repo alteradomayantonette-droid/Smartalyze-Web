@@ -136,6 +136,17 @@ function formatDate(value: string): string {
   });
 }
 
+function formatRelativeDate(value: string): string {
+  const date = new Date(value);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
@@ -358,14 +369,17 @@ export default function DashboardPage() {
                 <input className="hidden" type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleUpload} />
                 <span>{uploading ? "Uploading..." : "Upload Dataset"}</span>
               </label>
-              <button
-                type="button"
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={handleLoadSample}
-                disabled={loadingSample}
-              >
-                {loadingSample ? "Loading..." : "Load Sample Dataset"}
-              </button>
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleLoadSample}
+                  disabled={loadingSample}
+                >
+                  {loadingSample ? "Loading..." : "Load Sample Dataset"}
+                </button>
+                <p className="text-xs text-slate-400 text-center">25-row sales data with missing values &amp; duplicates</p>
+              </div>
               {recentDataset ? (
                 <Link className="rounded-xl border border-indigo-200 bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500" href={`/dataset/${recentDataset.id}`}>
                   Open Recent Dataset
@@ -433,7 +447,7 @@ export default function DashboardPage() {
                           <p className="font-semibold text-slate-950">{issue.datasetName}</p>
                         </div>
                         <p className="mt-1 text-sm font-medium text-slate-700">{issue.label}</p>
-                        <p className="mt-1 text-xs text-slate-500">Open the dataset workspace to review this issue.</p>
+                        <p className="mt-1 text-xs text-slate-500">Open the dataset workspace → Cleaning tab to fix this.</p>
                       </div>
                       <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">{issue.count}</span>
                     </div>
@@ -467,7 +481,10 @@ export default function DashboardPage() {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-slate-950">{dataset.original_filename}</h3>
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${health.classes}`}>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-medium cursor-help ${health.classes}`}
+                              title="Score = 60% missing-free + 40% duplicate-free. Good ≥ 80, Fair ≥ 50, Needs Work < 50."
+                            >
                               {health.label} · {health.score}
                             </span>
                           </div>
@@ -499,12 +516,23 @@ export default function DashboardPage() {
                         </div>
                         <div className="rounded-xl border border-slate-200 bg-white p-3">
                           <dt className="text-slate-500">Last updated</dt>
-                          <dd className="font-medium text-slate-950">{formatDate(dataset.created_at)}</dd>
+                          <dd className="font-medium text-slate-950" title={formatDate(dataset.created_at)}>{formatRelativeDate(dataset.created_at)}</dd>
                         </div>
-                        <div className={`rounded-xl border p-3 ${issueCount > 0 ? "border-yellow-100 bg-yellow-50" : "border-green-100 bg-green-50"}`}>
-                          <dt className="text-slate-500">Issues</dt>
-                          <dd className={`font-medium ${issueCount > 0 ? "text-yellow-800" : "text-green-700"}`}>{issueCount}</dd>
-                        </div>
+                        {(() => {
+                          const summary = dataset.summary_json ?? {};
+                          const missing = Number(summary.missing_cells ?? 0);
+                          const dupes = Number(summary.duplicate_rows ?? 0);
+                          const parts: string[] = [];
+                          if (missing > 0) parts.push(`${missing} missing`);
+                          if (dupes > 0) parts.push(`${dupes} dupe${dupes === 1 ? "" : "s"}`);
+                          const label = parts.length > 0 ? parts.join(" · ") : "None";
+                          return (
+                            <div className={`rounded-xl border p-3 ${issueCount > 0 ? "border-yellow-100 bg-yellow-50" : "border-green-100 bg-green-50"}`}>
+                              <dt className="text-slate-500">Issues</dt>
+                              <dd className={`font-medium text-xs mt-0.5 ${issueCount > 0 ? "text-yellow-800" : "text-green-700"}`}>{label}</dd>
+                            </div>
+                          );
+                        })()}
                       </dl>
                     </article>
                   );
