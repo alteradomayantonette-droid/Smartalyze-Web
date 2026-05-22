@@ -47,7 +47,7 @@ async def detect_cleaning(
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    version, missing_values, duplicates, column_types, issues = await detect_cleaning_issues(
+    version, missing_values, duplicates, column_types, issues, pattern_suggestions = await detect_cleaning_issues(
         db,
         dataset,
         payload.dataset_version_id,
@@ -59,6 +59,7 @@ async def detect_cleaning(
         "duplicates": duplicates,
         "column_types": column_types,
         "issues": issues,
+        "pattern_suggestions": pattern_suggestions,
     }
 
 
@@ -76,7 +77,7 @@ endpoint to replace the dataset or save as a new dataset.
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    version, missing_values, duplicates, column_types, issues = await detect_cleaning_issues(
+    version, missing_values, duplicates, column_types, issues, _pattern_suggestions = await detect_cleaning_issues(
         db,
         dataset,
         payload.dataset_version_id,

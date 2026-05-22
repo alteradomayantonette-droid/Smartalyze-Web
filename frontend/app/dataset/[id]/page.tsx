@@ -12,6 +12,7 @@ import {
   CleaningOperation,
   CleanApplyResponse,
   CleanDetectResponse,
+  CorrelationResponse,
   DateOutputFormat,
   DatasetWorkspace,
   DayFirstHint,
@@ -19,21 +20,25 @@ import {
   exportDataset,
   ExportDatasetFormat,
   getAnomalies,
+  getCorrelation,
   getDatasetRows,
   getDatasetWorkspace,
+  getStructureSummary,
   getTrends,
   groupDataset,
   GroupByResponse,
+  PatternImputationResult,
   predictDataset,
   PredictResponse,
   saveDatasetResult,
+  StructureSummaryResponse,
   TrendResponse,
   UnparseableDateRow,
   uploadDataset,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
-type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "trends" | "anomaly" | "prediction";
+type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "trends" | "anomaly" | "correlation" | "prediction";
 type FeedbackTone = "neutral" | "success" | "warning" | "error";
 type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
 
@@ -138,6 +143,31 @@ function buildLowercaseOperation(columnName: string): CleaningOperation {
   };
 }
 
+function buildSortValuesOperation(column: string, ascending: boolean): CleaningOperation {
+  return {
+    operation_type: "sort_values",
+    column,
+    ascending,
+    columns: [],
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
+function buildPatternImputationOperation(targetCol: string, keyCol: string): CleaningOperation {
+  return {
+    operation_type: "fill_pattern",
+    column: targetCol,
+    key_column: keyCol,
+    target_column_fill: targetCol,
+    columns: [],
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
 function buildStandardizeDatesOperation(
   columnName: string,
   outputFormat: DateOutputFormat,
@@ -188,6 +218,14 @@ function getOperationLabel(operation: CleaningOperation): string {
       return operation.column ? `Convert "${operation.column}"` : "Convert column type";
     case "standardize_dates":
       return operation.column ? `Standardize dates in "${operation.column}"` : "Standardize dates";
+    case "sort_values":
+      return operation.column
+        ? `Sort by "${operation.column}" (${operation.ascending === false ? "descending" : "ascending"})`
+        : "Sort data";
+    case "fill_pattern":
+      return operation.column && operation.key_column
+        ? `Smart fill "${operation.column}" using "${operation.key_column}"`
+        : "Smart fill (pattern)";
     default:
       return "Cleaning action";
   }
@@ -208,6 +246,10 @@ function getOperationDetail(operation: CleaningOperation): string {
       const hint = operation.dayfirst_hint ? DAYFIRST_LABELS[operation.dayfirst_hint] : DAYFIRST_LABELS.auto;
       return operation.column ? `Format ${fmt} • ${hint}` : `Format ${fmt}`;
     }
+    case "sort_values":
+      return operation.column ? `Column: ${operation.column}` : "";
+    case "fill_pattern":
+      return operation.key_column ? `Key column: ${operation.key_column}` : "";
     default:
       return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "";
   }
@@ -286,6 +328,11 @@ export default function DatasetWorkspacePage() {
   const [overviewExtraRows, setOverviewExtraRows] = useState<Record<string, unknown>[]>([]);
   const [overviewTotalRows, setOverviewTotalRows] = useState<number | null>(null);
   const [overviewLoadingMore, setOverviewLoadingMore] = useState(false);
+  const [correlationData, setCorrelationData] = useState<CorrelationResponse | null>(null);
+  const [correlationLoading, setCorrelationLoading] = useState(false);
+  const [structureSummary, setStructureSummary] = useState<StructureSummaryResponse | null>(null);
+  const [sortColumn, setSortColumn] = useState("");
+  const [sortAscending, setSortAscending] = useState(true);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -316,6 +363,7 @@ export default function DatasetWorkspacePage() {
           setAggregateColumn(firstName);
           setPredictionInputColumn(firstName);
           setPredictionTargetColumn(firstName);
+          setSortColumn(firstName);
         }
       })
       .catch(() => {
@@ -354,14 +402,29 @@ export default function DatasetWorkspacePage() {
   useEffect(() => {
     if (activeTab !== "analysis" || !workspace || !token || analysisStats) return;
     setAnalysisLoading(true);
-    analyzeStats(workspace.dataset.id, token)
-      .then(setAnalysisStats)
+    Promise.all([
+      analyzeStats(workspace.dataset.id, token),
+      getStructureSummary(workspace.dataset.id, token),
+    ])
+      .then(([stats, structure]) => {
+        setAnalysisStats(stats);
+        setStructureSummary(structure);
+      })
       .catch(() => {
         setMessage("Could not load column statistics.");
         setMessageTone("error");
       })
       .finally(() => setAnalysisLoading(false));
   }, [activeTab, workspace, token, analysisStats]);
+
+  useEffect(() => {
+    if (activeTab !== "correlation" || !workspace || !token || correlationData) return;
+    setCorrelationLoading(true);
+    getCorrelation(workspace.dataset.id, token)
+      .then(setCorrelationData)
+      .catch(() => { setMessage("Could not load correlation data."); setMessageTone("error"); })
+      .finally(() => setCorrelationLoading(false));
+  }, [activeTab, workspace, token, correlationData]);
 
   useEffect(() => {
     if (activeTab !== "cleaning" || !workspace || !token || cleaningDetection) return;
@@ -430,6 +493,17 @@ export default function DatasetWorkspacePage() {
       `Added: convert "${columnName}" to ${targetType}.`,
       `Removed convert "${columnName}" from the queue.`,
     );
+  }
+
+  function toggleSortValues() {
+    if (!sortColumn) return;
+    const operation = buildSortValuesOperation(sortColumn, sortAscending);
+    toggleOperation(operation, `Added sort by "${sortColumn}" (${sortAscending ? "ascending" : "descending"}).`, `Removed sort by "${sortColumn}" from the queue.`);
+  }
+
+  function togglePatternImputation(targetCol: string, keyCol: string) {
+    const operation = buildPatternImputationOperation(targetCol, keyCol);
+    toggleOperation(operation, `Added smart fill for "${targetCol}" using "${keyCol}".`, `Removed smart fill for "${targetCol}" from the queue.`);
   }
 
   function toggleStandardizeDates(columnName: string) {
@@ -1051,13 +1125,99 @@ export default function DatasetWorkspacePage() {
               })()}
             </section>
 
+            {(() => {
+              const suggestions = cleaningDetection?.pattern_suggestions ?? [];
+              if (suggestions.length === 0) return null;
+              return (
+                <section className="rounded-2xl border border-teal-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-teal-500" />
+                        <h3 className="text-lg font-semibold text-slate-950">Smart Fill (Pattern Imputation)</h3>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-600">Detected patterns where one column predicts missing values in another.</p>
+                    </div>
+                    <span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-700">{suggestions.length} suggestion{suggestions.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {suggestions.map((s) => {
+                      const op = buildPatternImputationOperation(s.target_column, s.key_column);
+                      const queued = hasQueuedOperation(op);
+                      const confidencePct = Math.round(s.weighted_confidence * 100);
+                      return (
+                        <div key={`${s.key_column}-${s.target_column}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="font-medium text-slate-950">
+                                Fill <span className="text-teal-700">"{s.target_column}"</span> using <span className="text-slate-700">"{s.key_column}"</span>
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-200">
+                                  <div className="h-full rounded-full bg-teal-500" style={{ width: `${confidencePct}%` }} />
+                                </div>
+                                <span className="text-xs text-slate-500">{confidencePct}% confidence · {s.groups.length} groups</span>
+                              </div>
+                              {s.low_sample_groups.length > 0 && (
+                                <p className="text-xs text-amber-600">Low-sample groups: {s.low_sample_groups.slice(0, 3).join(", ")}{s.low_sample_groups.length > 3 ? "…" : ""}</p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-teal-600 text-white hover:bg-teal-500"}`}
+                              onClick={() => togglePatternImputation(s.target_column, s.key_column)}
+                            >
+                              {queued ? "Added" : "Add"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })()}
+
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-950">Outliers</h3>
-                  <p className="text-sm text-slate-600">Optional for now. This section is ready for future numeric checks.</p>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                    <h3 className="text-lg font-semibold text-slate-950">Sort Data</h3>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">Reorder rows by any column, ascending or descending.</p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Coming soon</span>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <select
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                  value={sortColumn}
+                  onChange={(e) => setSortColumn(e.target.value)}
+                >
+                  {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
+                </select>
+                <select
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                  value={sortAscending ? "asc" : "desc"}
+                  onChange={(e) => setSortAscending(e.target.value === "asc")}
+                >
+                  <option value="asc">Ascending (A→Z, 0→9)</option>
+                  <option value="desc">Descending (Z→A, 9→0)</option>
+                </select>
+                {(() => {
+                  const op = sortColumn ? buildSortValuesOperation(sortColumn, sortAscending) : null;
+                  const queued = op ? hasQueuedOperation(op) : false;
+                  return (
+                    <button
+                      type="button"
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`}
+                      onClick={toggleSortValues}
+                      disabled={!sortColumn}
+                    >
+                      {queued ? "Added" : "Add"}
+                    </button>
+                  );
+                })()}
               </div>
             </section>
           </div>
@@ -1233,6 +1393,42 @@ export default function DatasetWorkspacePage() {
               <p className="mt-1 text-2xl font-semibold text-indigo-600">{stats ? numericCols.length : "-"}</p>
             </div>
           </div>
+
+          {structureSummary && structureSummary.columns.length > 0 && (
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-950">Column Overview</h3>
+              <p className="mt-1 text-sm text-slate-500">Quick breakdown of each column — type, missing values, and most common value.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {structureSummary.columns.map((col) => {
+                  const kindColors: Record<string, string> = {
+                    Numbers: "bg-indigo-100 text-indigo-700",
+                    Text: "bg-slate-100 text-slate-600",
+                    Dates: "bg-purple-100 text-purple-700",
+                    Boolean: "bg-orange-100 text-orange-700",
+                  };
+                  const kindClass = kindColors[col.kind] ?? "bg-slate-100 text-slate-600";
+                  const topVal = col.top_values[0];
+                  return (
+                    <div key={col.name} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-medium text-slate-950 text-sm">{col.name}</p>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${kindClass}`}>{col.kind}</span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-slate-500">
+                        <span>Unique: <span className="font-medium text-slate-700">{col.unique_values}</span></span>
+                        <span className={col.missing_values > 0 ? "text-amber-600" : ""}>
+                          Missing: <span className="font-medium">{col.missing_values}</span>
+                        </span>
+                        {topVal != null && (
+                          <span className="col-span-2 truncate">Top: <span className="font-medium text-slate-700">{String(topVal.value)}</span></span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1926,6 +2122,143 @@ export default function DatasetWorkspacePage() {
       );
     }
 
+    if (activeTab === "correlation") {
+      if (correlationLoading) return <p className="text-sm text-slate-600">Computing correlation matrix...</p>;
+
+      const corr = correlationData;
+
+      if (!corr || corr.columns.length < 2) {
+        return (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+            Correlation requires at least 2 numeric columns. Switch to this tab after uploading a dataset with numeric data.
+          </div>
+        );
+      }
+
+      const cols = corr.columns;
+      const n = cols.length;
+      const CELL = 64;
+      const LABEL_W = 100;
+      const PAD = 8;
+      const W = LABEL_W + n * CELL + PAD;
+      const H = LABEL_W + n * CELL + PAD;
+
+      // Find strongest positive and negative pairs (off-diagonal)
+      let maxPos = { r: 0, a: "", b: "" };
+      let maxNeg = { r: 0, a: "", b: "" };
+      for (let i = 0; i < cols.length; i++) {
+        for (let j = i + 1; j < cols.length; j++) {
+          const val = corr.matrix[cols[i]]?.[cols[j]] ?? 0;
+          if (val > maxPos.r) maxPos = { r: val, a: cols[i], b: cols[j] };
+          if (val < maxNeg.r) maxNeg = { r: val, a: cols[i], b: cols[j] };
+        }
+      }
+
+      function cellColor(r: number): string {
+        const abs = Math.abs(r);
+        const lightness = Math.round(98 - abs * 48);
+        if (r >= 0) return `hsl(220,70%,${lightness}%)`;
+        return `hsl(0,70%,${lightness}%)`;
+      }
+
+      function textColor(r: number): string {
+        return Math.abs(r) > 0.5 ? "#fff" : "#334155";
+      }
+
+      return (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Columns analyzed</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{n}</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Strongest positive</p>
+              {maxPos.a ? (
+                <>
+                  <p className="mt-1 text-lg font-semibold text-indigo-700">{maxPos.r.toFixed(3)}</p>
+                  <p className="text-xs text-slate-500 truncate">{maxPos.a} ↔ {maxPos.b}</p>
+                </>
+              ) : <p className="mt-1 text-sm text-slate-400">—</p>}
+            </div>
+            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Strongest negative</p>
+              {maxNeg.a ? (
+                <>
+                  <p className="mt-1 text-lg font-semibold text-red-700">{maxNeg.r.toFixed(3)}</p>
+                  <p className="text-xs text-slate-500 truncate">{maxNeg.a} ↔ {maxNeg.b}</p>
+                </>
+              ) : <p className="mt-1 text-sm text-slate-400">—</p>}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-950">Correlation Heatmap</h3>
+            <p className="mt-1 text-sm text-slate-500">Pearson correlation — blue = positive, red = negative. Diagonal is always 1.</p>
+            <div className="mt-4 overflow-x-auto">
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: W, height: H }}>
+                {/* Column headers (top) */}
+                {cols.map((col, j) => (
+                  <text
+                    key={`ch-${j}`}
+                    x={LABEL_W + j * CELL + CELL / 2}
+                    y={LABEL_W - 8}
+                    textAnchor="end"
+                    fontSize="10"
+                    fill="#64748b"
+                    transform={`rotate(-45, ${LABEL_W + j * CELL + CELL / 2}, ${LABEL_W - 8})`}
+                  >
+                    {col.length > 12 ? col.slice(0, 11) + "…" : col}
+                  </text>
+                ))}
+                {/* Row headers (left) */}
+                {cols.map((col, i) => (
+                  <text
+                    key={`rh-${i}`}
+                    x={LABEL_W - 8}
+                    y={LABEL_W + i * CELL + CELL / 2 + 4}
+                    textAnchor="end"
+                    fontSize="10"
+                    fill="#64748b"
+                  >
+                    {col.length > 12 ? col.slice(0, 11) + "…" : col}
+                  </text>
+                ))}
+                {/* Cells */}
+                {cols.map((row, i) =>
+                  cols.map((col, j) => {
+                    const val = corr.matrix[row]?.[col] ?? 0;
+                    const x = LABEL_W + j * CELL;
+                    const y = LABEL_W + i * CELL;
+                    return (
+                      <g key={`${i}-${j}`}>
+                        <rect x={x} y={y} width={CELL} height={CELL} fill={cellColor(val)} rx="2" />
+                        <text
+                          x={x + CELL / 2}
+                          y={y + CELL / 2 + 4}
+                          textAnchor="middle"
+                          fontSize="10"
+                          fill={textColor(val)}
+                          fontWeight={i === j ? "700" : "400"}
+                        >
+                          {val.toFixed(2)}
+                        </text>
+                      </g>
+                    );
+                  })
+                )}
+              </svg>
+            </div>
+            <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-6 rounded" style={{ background: cellColor(1) }} /> Strong positive (+1)</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-6 rounded" style={{ background: cellColor(0) }} /> No correlation (0)</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-6 rounded" style={{ background: cellColor(-1) }} /> Strong negative (−1)</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">This tab is ready for more demo content.</div>
     );
@@ -1958,7 +2291,7 @@ export default function DatasetWorkspacePage() {
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
-              {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "prediction"] as WorkspaceTab[]).map((tab) => (
+              {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "correlation", "prediction"] as WorkspaceTab[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"

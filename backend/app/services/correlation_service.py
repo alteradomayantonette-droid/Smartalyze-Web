@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import math
+
+import pandas as pd
+from fastapi import HTTPException, status
+
+from app.models.dataset import Dataset
+from app.models.dataset_version import DatasetVersion
+from app.schemas.analysis import CorrelationResponse
+from app.services.dataset_snapshot import snapshot_to_dataframe
+
+
+def _get_version(dataset: Dataset, version_id: int | None) -> DatasetVersion:
+    if version_id is not None:
+        version = next((v for v in (dataset.versions or []) if v.id == version_id), None)
+        if version is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset version not found.")
+        return version
+
+    if dataset.current_version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset has no current version.")
+    return dataset.current_version
+
+
+def _safe_float(value) -> float:
+    try:
+        result = float(value)
+        return 0.0 if (math.isnan(result) or math.isinf(result)) else round(result, 4)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _coerce_numeric_columns(df: pd.DataFrame) -> list[str]:
+    """Return column names that are numeric or can be coerced (≥80% parseable)."""
+    numeric_cols: list[str] = []
+    for col in df.columns:
+        series = df[col]
+        if pd.api.types.is_numeric_dtype(series):
+            numeric_cols.append(col)
+        elif series.dtype == object:
+            coerced = pd.to_numeric(series, errors="coerce")
+            non_null = series.dropna()
+            if len(non_null) > 0 and coerced.notna().sum() / len(non_null) >= 0.8:
+                numeric_cols.append(col)
+    return numeric_cols
+
+
+def compute_correlation(
+    dataset: Dataset,
+    version_id: int | None = None,
+    snapshot_override: dict | None = None,
+) -> CorrelationResponse:
+    """Compute Pearson correlation matrix for all numeric columns."""
+    if snapshot_override:
+        df = snapshot_to_dataframe(snapshot_override)
+    else:
+        version = _get_version(dataset, version_id)
+        df = snapshot_to_dataframe(version.data_snapshot)
+
+    numeric_cols = _coerce_numeric_columns(df)
+
+    if len(numeric_cols) < 2:
+        return CorrelationResponse(columns=[], matrix={})
+
+    # Coerce object columns to numeric where needed
+    sub = df[numeric_cols].copy()
+    for col in numeric_cols:
+        if sub[col].dtype == object:
+            sub[col] = pd.to_numeric(sub[col], errors="coerce")
+
+    corr_df = sub.corr(method="pearson")
+
+    columns = list(corr_df.columns)
+    matrix: dict[str, dict[str, float]] = {
+        col: {other: _safe_float(corr_df.loc[col, other]) for other in columns}
+        for col in columns
+    }
+
+    return CorrelationResponse(columns=columns, matrix=matrix)

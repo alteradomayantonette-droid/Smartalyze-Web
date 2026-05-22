@@ -25,6 +25,7 @@ CleaningOperationType = Literal[
     "lowercase_column",
     "standardize_dates",
     "sort_values",
+    "fill_pattern",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]
@@ -58,6 +59,25 @@ class CleaningOperation(BaseModel):
     unparseable_action: UnparseableAction = "keep_original"
     # Field below only applies to operation_type == "sort_values".
     ascending: bool = True
+    # Fields below only apply to operation_type == "fill_pattern".
+    key_column: str | None = None
+    target_column_fill: str | None = None
+
+
+class PatternImputationGroup(BaseModel):
+    key_value: str
+    fill_value: str | float | None
+    confidence: float
+    support_count: int
+    fillable_count: int
+
+
+class PatternImputationResult(BaseModel):
+    target_column: str
+    key_column: str
+    weighted_confidence: float
+    groups: list[PatternImputationGroup]
+    low_sample_groups: list[str]
 
 
 class CleanDetectRequest(BaseModel):
@@ -74,6 +94,7 @@ class CleanDetectResponse(BaseModel):
     duplicates: int
     column_types: dict[str, str]
     issues: list[CleaningIssue]
+    pattern_suggestions: list[PatternImputationResult] = []
 
 
 class CleanApplyRequest(BaseModel):

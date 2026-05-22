@@ -24,8 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
-from app.schemas.cleaning import CleaningIssue, CleaningOperation
+from app.schemas.cleaning import CleaningIssue, CleaningOperation, PatternImputationResult
 from app.services.dataset_snapshot import build_snapshot, snapshot_to_dataframe
+from app.services.pattern_imputation_service import apply_pattern_fill, find_pattern_suggestions
 
 
 def _infer_column_type(series: pd.Series) -> str:
@@ -62,6 +63,27 @@ def _infer_column_type(series: pd.Series) -> str:
     if unique_ratio <= 0.5:
         return "categorical"
     return "text"
+
+
+def _column_decimal_places(series: pd.Series) -> int:
+    """Return the max number of decimal places seen in a numeric series' non-null values.
+
+    Used to round fill values (mean/median) so they match the column's existing precision
+    instead of inheriting the full float representation of the statistic.
+    Examples: [85.0, 68.0] → 1 decimal;  [85.5, 68.25] → 2 decimals;  int64 → 0 decimals.
+    """
+    if pd.api.types.is_integer_dtype(series):
+        return 0
+    non_null = series.dropna()
+    if non_null.empty:
+        return 2
+    max_dp = 0
+    for v in non_null.head(100):
+        text = str(float(v))
+        if "e" in text.lower() or "." not in text:
+            continue
+        max_dp = max(max_dp, len(text.split(".")[1]))
+    return min(max_dp, 6)
 
 
 def _build_detection(frame: pd.DataFrame) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue]]:
@@ -356,12 +378,14 @@ async def detect_cleaning_issues(
     db: AsyncSession,
     dataset: Dataset,
     dataset_version_id: int | None = None,
-) -> tuple[DatasetVersion, dict[str, int], int, dict[str, str], list[CleaningIssue]]:
-    """Return (version, missing_values, duplicates, column_types, issues) for a snapshot."""
+) -> tuple[DatasetVersion, dict[str, int], int, dict[str, str], list[CleaningIssue], list[PatternImputationResult]]:
+    """Return (version, missing_values, duplicates, column_types, issues, pattern_suggestions)."""
     version = await get_dataset_source_version(db, dataset, dataset_version_id)
     frame = snapshot_to_dataframe(version.data_snapshot)
     missing_values, duplicates, column_types, issues = _build_detection(frame)
-    return version, missing_values, duplicates, column_types, issues
+    cols_with_missing = [col for col, count in missing_values.items() if count > 0]
+    pattern_suggestions = find_pattern_suggestions(frame, cols_with_missing)
+    return version, missing_values, duplicates, column_types, issues, pattern_suggestions
 
 
 def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.DataFrame:
@@ -377,7 +401,8 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"fill_mean can only be applied to numeric columns. Column '{column}' is not numeric.",
                 )
-            mean_value = series.mean()
+            dp = _column_decimal_places(series)
+            mean_value = round(series.mean(), dp)
             frame[column] = series.fillna(mean_value)
         return frame
 
@@ -389,7 +414,8 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"fill_median can only be applied to numeric columns. Column '{column}' is not numeric.",
                 )
-            median_value = series.median()
+            dp = _column_decimal_places(series)
+            median_value = round(series.median(), dp)
             frame[column] = series.fillna(median_value)
         return frame
 
@@ -491,6 +517,15 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
                 kind="mergesort",
             )
             return working.drop(columns=[temp_key])
+
+    if operation.operation_type == "fill_pattern":
+        if not operation.column or not operation.key_column:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="fill_pattern requires both column (target) and key_column.",
+            )
+        _ensure_columns(frame, [operation.column, operation.key_column])
+        return apply_pattern_fill(frame, operation.key_column, operation.column)
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,

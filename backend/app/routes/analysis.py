@@ -14,6 +14,8 @@ from app.schemas.analysis import (
     AnomalyResponse,
     AnalyzeStatsRequest,
     AnalyzeStatsResponse,
+    CorrelationRequest,
+    CorrelationResponse,
     GroupByRequest,
     GroupByResponse,
     PredictRequest,
@@ -22,6 +24,7 @@ from app.schemas.analysis import (
     TrendResponse,
 )
 from app.services.analysis_service import analyze_stats, anomaly_detection, group_dataset, predict_column, trend_analysis
+from app.services.correlation_service import compute_correlation
 from app.services.auth_service import get_user_by_token
 from app.services.dataset_service import get_owned_dataset
 
@@ -80,7 +83,7 @@ async def trend(
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    return trend_analysis(dataset, payload.dataset_version_id)
+    return trend_analysis(dataset, payload.dataset_version_id, time_column=payload.time_column)
 
 
 @router.post("/anomaly", response_model=AnomalyResponse)
@@ -96,6 +99,19 @@ async def anomaly(
     return anomaly_detection(dataset, payload.dataset_version_id)
 
 
+@router.post("/correlation", response_model=CorrelationResponse)
+async def correlation(
+    payload: CorrelationRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute Pearson correlation matrix for all numeric columns."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, payload.dataset_id, owner)
+    return compute_correlation(dataset, payload.dataset_version_id)
+
+
 @router.post("/predict", response_model=PredictResponse)
 async def predict(
     payload: PredictRequest,
@@ -106,4 +122,4 @@ async def predict(
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    return predict_column(dataset, payload.input_column, payload.target_column, payload.future_steps, payload.dataset_version_id)
+    return predict_column(dataset, payload.input_column, payload.target_column, payload.future_steps, payload.dataset_version_id, time_column=payload.time_column)

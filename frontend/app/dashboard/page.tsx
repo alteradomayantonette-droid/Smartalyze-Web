@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Dataset, deleteDataset, getCurrentUser, listDatasets, uploadDataset } from "@/lib/api";
@@ -114,14 +114,18 @@ function getDatasetIssueItems(dataset: Dataset): DashboardIssueItem[] {
   return issues;
 }
 
-function getDatasetStatus(dataset: Dataset): { label: string; classes: string } {
-  const issueCount = getDatasetIssueItems(dataset).length;
-
-  if (issueCount > 0) {
-    return { label: "Needs review", classes: "bg-amber-100 text-amber-700" };
-  }
-
-  return { label: "No issues", classes: "bg-green-100 text-green-700" };
+function getHealthScore(dataset: Dataset): { score: number; label: "Good" | "Fair" | "Needs Work"; classes: string } {
+  const summary = dataset.summary_json ?? {};
+  const rowCount = dataset.row_count ?? 0;
+  const missingCells = Number(summary.missing_cells ?? 0);
+  const duplicateRows = Number(summary.duplicate_rows ?? 0);
+  const totalCells = rowCount * (dataset.column_count ?? 1) || 1;
+  const missingRate = missingCells / totalCells;
+  const dupRate = rowCount > 0 ? duplicateRows / rowCount : 0;
+  const score = Math.round((1 - missingRate) * 0.6 * 100 + (1 - dupRate) * 0.4 * 100);
+  if (score >= 80) return { score, label: "Good", classes: "bg-green-100 text-green-700" };
+  if (score >= 50) return { score, label: "Fair", classes: "bg-yellow-100 text-yellow-700" };
+  return { score, label: "Needs Work", classes: "bg-red-100 text-red-700" };
 }
 
 function formatDate(value: string): string {
@@ -143,6 +147,7 @@ export default function DashboardPage() {
   const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [loadingSample, setLoadingSample] = useState(false);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -239,6 +244,28 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleLoadSample() {
+    const currentToken = token ?? getStoredToken();
+    if (!currentToken) {
+      setFeedback("You need to be logged in to upload.", "warning");
+      return;
+    }
+    setLoadingSample(true);
+    setFeedback("");
+    try {
+      const res = await fetch("/sample-dataset.csv");
+      const blob = await res.blob();
+      const file = new File([blob], "sample-dataset.csv", { type: "text/csv" });
+      await uploadDataset(file, "Sample dataset with messy sales data", currentToken);
+      await refreshDatasets(currentToken);
+      setFeedback("Sample dataset loaded successfully.", "success");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Could not load sample.", "error");
+    } finally {
+      setLoadingSample(false);
+    }
+  }
+
   function handleLogout() {
     clearStoredToken();
     router.replace("/login");
@@ -331,6 +358,14 @@ export default function DashboardPage() {
                 <input className="hidden" type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleUpload} />
                 <span>{uploading ? "Uploading..." : "Upload Dataset"}</span>
               </label>
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleLoadSample}
+                disabled={loadingSample}
+              >
+                {loadingSample ? "Loading..." : "Load Sample Dataset"}
+              </button>
               {recentDataset ? (
                 <Link className="rounded-xl border border-indigo-200 bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500" href={`/dataset/${recentDataset.id}`}>
                   Open Recent Dataset
@@ -424,6 +459,7 @@ export default function DashboardPage() {
               ) : (
                 visibleDatasets.map((dataset) => {
                   const issueCount = getDatasetIssueItems(dataset).length;
+                  const health = getHealthScore(dataset);
 
                   return (
                     <article key={dataset.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
@@ -431,8 +467,8 @@ export default function DashboardPage() {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-slate-950">{dataset.original_filename}</h3>
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${getDatasetStatus(dataset).classes}`}>
-                              {getDatasetStatus(dataset).label}
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${health.classes}`}>
+                              {health.label} · {health.score}
                             </span>
                           </div>
                           <p className="text-sm text-slate-600">{dataset.description ?? "No description provided."}</p>

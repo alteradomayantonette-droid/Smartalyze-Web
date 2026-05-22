@@ -4,6 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
+# Shared type alias used by dataset-level endpoints that accept an in-memory snapshot.
+_Snapshot = dict | None
+
 
 class AnalyzeStatsRequest(BaseModel):
     dataset_id: int
@@ -63,6 +66,7 @@ class GroupByResponse(BaseModel):
 class TrendRequest(BaseModel):
     dataset_id: int
     dataset_version_id: int | None = None
+    time_column: str | None = None
 
 
 class ChartPoint(BaseModel):
@@ -81,10 +85,12 @@ class ColumnTrendResult(BaseModel):
     count: int
     chart_points: list[ChartPoint]
     trend_line: list[ChartPoint]
+    x_labels: list[str] | None = None  # date strings per chart point when time_column is used
 
 
 class TrendResponse(BaseModel):
     columns: list[ColumnTrendResult]
+    time_column: str | None = None  # which column was used as time axis, or None
 
 
 # ── Anomaly Detection ─────────────────────────────────────────────────────────
@@ -110,6 +116,23 @@ class AnomalyResponse(BaseModel):
     columns: list[ColumnAnomalyResult]
 
 
+# ── Dataset-level request schemas (dataset_id comes from URL path) ────────────
+
+class DatasetTrendRequest(BaseModel):
+    """Request body for POST /dataset/{dataset_id}/trend."""
+    time_column: str | None = None
+    data_snapshot: dict | None = None
+
+
+class DatasetPredictRequest(BaseModel):
+    """Request body for POST /dataset/{dataset_id}/predict."""
+    target_column: str
+    input_column: str | None = None  # kept for compat; ignored when time_column is set
+    future_steps: int = 5
+    time_column: str | None = None
+    data_snapshot: dict | None = None
+
+
 # ── Prediction ────────────────────────────────────────────────────────────────
 
 class PredictRequest(BaseModel):
@@ -118,6 +141,7 @@ class PredictRequest(BaseModel):
     input_column: str
     target_column: str
     future_steps: int = 5
+    time_column: str | None = None  # if provided, use as time axis instead of row index
 
 
 class PredictPoint(BaseModel):
@@ -135,3 +159,16 @@ class PredictResponse(BaseModel):
     intercept: float
     r_squared: float
     predictions: list[PredictPoint]
+    time_column: str | None = None  # echoes back which time column was used
+
+
+# ── Correlation Matrix ────────────────────────────────────────────────────────
+
+class CorrelationRequest(BaseModel):
+    dataset_id: int
+    dataset_version_id: int | None = None
+
+
+class CorrelationResponse(BaseModel):
+    columns: list[str]
+    matrix: dict[str, dict[str, float]]

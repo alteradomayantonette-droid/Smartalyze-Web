@@ -1,0 +1,26 @@
+Product,Region,Sales,Quantity,Date
+Widget A,North,1200.50,10,2024-01-15
+Widget B,South,850.00,7,01/20/2024
+Widget A,East,,5,2024-01-22
+Widget C,West,430.75,3,Jan 25 2024
+Widget B,North,920.00,8,2024-02-01
+Widget A,South,1150.00,9,02/05/2024
+Widget C,East,510.00,,2024-02-10
+Widget A,West,1300.00,11,2024-02-14
+Widget B,South,850.00,7,01/20/2024
+Widget C,North,,4,2024-02-20
+Widget A,North,1250.00,10,2024-03-01
+Widget B,East,875.00,7,03/08/2024
+Widget A,South,1180.00,9,2024-03-12
+Widget C,West,490.00,3,Mar 15 2024
+Widget B,North,940.00,8,2024-03-20
+Widget A,East,1320.00,11,2024-03-25
+Widget C,South,,3,2024-04-01
+Widget B,West,860.00,7,04/05/2024
+Widget A,North,1200.50,10,2024-01-15
+Widget B,South,850.00,7,01/20/2024
+Widget C,East,520.00,4,2024-04-12
+Widget A,South,1190.00,9,2024-04-18
+Widget B,North,930.00,8,Apr 22 2024
+Widget C,West,505.00,3,2024-04-28
+Widget A,East,,10,2024-05-05

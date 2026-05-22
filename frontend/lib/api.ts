@@ -88,7 +88,9 @@ export type CleaningOperation = {
     | "convert_column_type"
     | "trim_whitespace"
     | "lowercase_column"
-    | "standardize_dates";
+    | "standardize_dates"
+    | "sort_values"
+    | "fill_pattern";
   columns?: string[];
   column?: string | null;
   target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;
@@ -97,9 +99,52 @@ export type CleaningOperation = {
   output_format?: DateOutputFormat | null;
   dayfirst_hint?: DayFirstHint;
   unparseable_action?: UnparseableAction;
+  ascending?: boolean | null;
+  key_column?: string | null;
+  target_column_fill?: string | null;
 };
 
 export type UnparseableDateRow = { row: number; original: string };
+
+export type PatternImputationGroup = {
+  key_value: string;
+  fill_value: string | number | null;
+  confidence: number;
+  support_count: number;
+  fillable_count: number;
+};
+
+export type PatternImputationResult = {
+  target_column: string;
+  key_column: string;
+  weighted_confidence: number;
+  groups: PatternImputationGroup[];
+  low_sample_groups: string[];
+};
+
+export type CorrelationResponse = {
+  columns: string[];
+  matrix: Record<string, Record<string, number>>;
+};
+
+export type StructureColumnSummary = {
+  name: string;
+  kind: string;
+  missing_values: number;
+  unique_values: number;
+  top_values: TopValue[];
+  mean?: number | null;
+  min?: number | null;
+  max?: number | null;
+};
+
+export type StructureSummaryResponse = {
+  row_count: number;
+  column_count: number;
+  missing_cells: number;
+  duplicate_rows: number;
+  columns: StructureColumnSummary[];
+};
 
 export type CleanDetectResponse = {
   dataset_id: number;
@@ -108,6 +153,7 @@ export type CleanDetectResponse = {
   duplicates: number;
   column_types: Record<string, string>;
   issues: CleaningIssue[];
+  pattern_suggestions: PatternImputationResult[];
 };
 
 export type CleanApplyResponse = CleanDetectResponse & {
@@ -519,6 +565,29 @@ export function getDatasetRows(
   token: string,
 ): Promise<{ rows: Record<string, unknown>[]; total: number; offset: number; limit: number }> {
   return request(`/dataset/${datasetId}/rows?offset=${offset}&limit=${limit}`, {}, token);
+}
+
+export function getCorrelation(
+  datasetId: number,
+  token: string,
+  datasetVersionId?: number | null,
+): Promise<CorrelationResponse> {
+  return request<CorrelationResponse>("/analysis/correlation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+  }, token);
+}
+
+export function getStructureSummary(
+  datasetId: number,
+  token: string,
+): Promise<StructureSummaryResponse> {
+  return request<StructureSummaryResponse>(`/dataset/${datasetId}/structure/summary`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId }),
+  }, token);
 }
 
 export async function uploadDataset(file: File, description: string, token?: string): Promise<{ message: string; dataset: Dataset }> {

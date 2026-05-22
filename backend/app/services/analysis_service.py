@@ -116,21 +116,92 @@ def analyze_stats(dataset: Dataset, version_id: int | None = None) -> AnalyzeSta
     )
 
 
-def trend_analysis(dataset: Dataset, version_id: int | None = None) -> TrendResponse:
-    """Run linear regression on all numeric columns and return trend results."""
-    version = _get_version(dataset, version_id)
-    df = snapshot_to_dataframe(version.data_snapshot)
+def _time_series_to_x(series: pd.Series) -> tuple[np.ndarray, list[str]]:
+    """Convert a datetime-like Series to float x-values (days since first) and label strings.
+
+    Accepts both proper datetime64 columns and string columns that are at least 80%
+    parseable as dates. The caller must pass a fully non-null series (drop NaT rows first).
+    """
+    if not pd.api.types.is_datetime64_any_dtype(series):
+        parsed = pd.to_datetime(series, errors="coerce")
+        if parsed.notna().mean() < 0.8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="time_column could not be parsed as datetime (fewer than 80% of values are valid dates).",
+            )
+        series = parsed
+
+    days = (series - series.min()).dt.days.to_numpy(dtype=float)
+    span = int(days.max()) if len(days) > 1 else 0
+    fmt = "%Y-%m-%d" if span > 365 else "%b %d"
+    labels = series.dt.strftime(fmt).tolist()
+    return days, labels
+
+
+def trend_analysis(
+    dataset: Dataset,
+    version_id: int | None = None,
+    time_column: str | None = None,
+    snapshot_override: dict | None = None,
+) -> TrendResponse:
+    """Run linear regression on all numeric columns and return trend results.
+
+    When time_column is provided the DataFrame is sorted by that column and the
+    regression x-axis becomes days-since-first-observation, making the slope
+    meaningful ("change per day") instead of "change per row."
+    snapshot_override lets callers pass an in-memory snapshot (e.g. an unsaved
+    cleaning result) without requiring it to be persisted first.
+    """
+    if snapshot_override is not None:
+        df = snapshot_to_dataframe(snapshot_override)
+    else:
+        version = _get_version(dataset, version_id)
+        df = snapshot_to_dataframe(version.data_snapshot)
+
+    # --- Time-column setup ---
+    x_all: np.ndarray | None = None
+    labels_all: list[str] | None = None
+    used_time_column: str | None = None
+
+    if time_column is not None:
+        if time_column not in df.columns:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"time_column '{time_column}' not found in dataset.",
+            )
+        # Drop rows without a time value, sort chronologically, reset index.
+        df = df[df[time_column].notna()].sort_values(by=time_column).reset_index(drop=True)
+        x_all, labels_all = _time_series_to_x(df[time_column])
+        used_time_column = time_column
+    # -------------------------
+
+    # Coerce object-dtype columns that contain numeric values (covers JSONB round-trip dtype drift).
+    # Skip the time_column — it must remain parseable as datetime.
+    for _col in df.select_dtypes(include=["object"]).columns:
+        if _col == time_column:
+            continue
+        _coerced = pd.to_numeric(df[_col], errors="coerce")
+        if _coerced.notna().sum() >= 2:
+            df[_col] = _coerced
 
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
     results: list[ColumnTrendResult] = []
 
     for col in numeric_cols:
-        series = df[col].dropna().reset_index(drop=True)
-        if len(series) < 2:
-            continue
-
-        values = series.to_numpy(dtype=float)
-        x = np.arange(len(values), dtype=float)
+        if time_column is not None:
+            valid_mask = df[col].notna().to_numpy()
+            values = df[col][df[col].notna()].to_numpy(dtype=float)
+            if len(values) < 2:
+                continue
+            x = x_all[valid_mask]  # type: ignore[index]
+            col_labels: list[str] | None = [labels_all[i] for i, v in enumerate(valid_mask) if v]  # type: ignore[index]
+        else:
+            series = df[col].dropna().reset_index(drop=True)
+            if len(series) < 2:
+                continue
+            values = series.to_numpy(dtype=float)
+            x = np.arange(len(values), dtype=float)
+            col_labels = None
 
         slope, intercept = np.polyfit(x, values, 1)
 
@@ -149,11 +220,10 @@ def trend_analysis(dataset: Dataset, version_id: int | None = None) -> TrendResp
         else:
             direction = "decreasing"
 
-        chart_points = [ChartPoint(x=float(i), y=round(float(v), 4)) for i, v in enumerate(values)]
-        n = len(values)
+        chart_points = [ChartPoint(x=float(xi), y=round(float(v), 4)) for xi, v in zip(x, values)]
         trend_line = [
-            ChartPoint(x=0.0, y=round(float(intercept), 4)),
-            ChartPoint(x=float(n - 1), y=round(float(slope * (n - 1) + intercept), 4)),
+            ChartPoint(x=float(x[0]), y=round(float(intercept + slope * x[0]), 4)),
+            ChartPoint(x=float(x[-1]), y=round(float(intercept + slope * x[-1]), 4)),
         ]
 
         results.append(
@@ -168,16 +238,22 @@ def trend_analysis(dataset: Dataset, version_id: int | None = None) -> TrendResp
                 count=len(values),
                 chart_points=chart_points,
                 trend_line=trend_line,
+                x_labels=col_labels,
             )
         )
 
-    return TrendResponse(columns=results)
+    return TrendResponse(columns=results, time_column=used_time_column)
 
 
 def anomaly_detection(dataset: Dataset, version_id: int | None = None) -> AnomalyResponse:
     """Detect outliers in all numeric columns using the IQR method."""
     version = _get_version(dataset, version_id)
     df = snapshot_to_dataframe(version.data_snapshot)
+
+    for _col in df.select_dtypes(include=["object"]).columns:
+        _coerced = pd.to_numeric(df[_col], errors="coerce")
+        if _coerced.notna().sum() >= 2:
+            df[_col] = _coerced
 
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
     col_results: list[ColumnAnomalyResult] = []
@@ -233,25 +309,51 @@ def predict_column(
     target_column: str,
     future_steps: int,
     version_id: int | None = None,
+    time_column: str | None = None,
+    snapshot_override: dict | None = None,
 ) -> PredictResponse:
-    """Predict future values for a numeric target column using linear regression."""
-    version = _get_version(dataset, version_id)
-    df = snapshot_to_dataframe(version.data_snapshot)
+    """Predict future values for a numeric target column using linear regression.
 
-    if input_column not in df.columns:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Column '{input_column}' not found.")
+    When time_column is provided the data is sorted chronologically and each
+    prediction step is 1 day beyond the last observed date, making the slope
+    "change per day." Without time_column the original row-index behavior is used.
+    snapshot_override lets callers pass an in-memory snapshot without persisting it.
+    """
+    if snapshot_override is not None:
+        df = snapshot_to_dataframe(snapshot_override)
+    else:
+        version = _get_version(dataset, version_id)
+        df = snapshot_to_dataframe(version.data_snapshot)
+
     if target_column not in df.columns:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Column '{target_column}' not found.")
 
-    y_series = pd.to_numeric(df[target_column], errors="coerce").dropna()
-    if len(y_series) < 2:
+    used_time_column: str | None = None
+    time_x_all: np.ndarray | None = None
+
+    if time_column is not None:
+        if time_column not in df.columns:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"time_column '{time_column}' not found.")
+        df = df[df[time_column].notna()].sort_values(by=time_column).reset_index(drop=True)
+        time_x_all, _ = _time_series_to_x(df[time_column])
+        used_time_column = time_column
+
+    y_numeric = pd.to_numeric(df[target_column], errors="coerce")
+    valid_mask = y_numeric.notna().to_numpy()
+    y = y_numeric[y_numeric.notna()].to_numpy(dtype=float)
+
+    if len(y) < 2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Column '{target_column}' has too few numeric values to predict (need at least 2).",
         )
 
-    x = np.arange(len(y_series)).reshape(-1, 1)
-    y = y_series.to_numpy(dtype=float)
+    if time_column is not None:
+        x = time_x_all[valid_mask].reshape(-1, 1)  # type: ignore[index]
+        last_x = float(x[-1, 0])
+    else:
+        x = np.arange(len(y)).reshape(-1, 1)
+        last_x = float(len(y) - 1)
 
     model = LinearRegression().fit(x, y)
     slope = float(model.coef_[0])
@@ -263,13 +365,12 @@ def predict_column(
     r_squared = round(1.0 - ss_res / ss_tot, 4) if ss_tot > 1e-10 else 0.0
     std_error = float(np.sqrt(ss_res / max(len(y) - 2, 1)))
 
-    n = len(y_series)
     predictions = [
         PredictPoint(
             step=i,
-            predicted_value=round(float(model.predict([[n + i - 1]])[0]), 4),
-            lower_bound=round(float(model.predict([[n + i - 1]])[0]) - std_error, 4),
-            upper_bound=round(float(model.predict([[n + i - 1]])[0]) + std_error, 4),
+            predicted_value=round(float(model.predict([[last_x + i]])[0]), 4),
+            lower_bound=round(float(model.predict([[last_x + i]])[0]) - std_error, 4),
+            upper_bound=round(float(model.predict([[last_x + i]])[0]) + std_error, 4),
         )
         for i in range(1, future_steps + 1)
     ]
@@ -282,6 +383,7 @@ def predict_column(
         intercept=round(intercept, 4),
         r_squared=r_squared,
         predictions=predictions,
+        time_column=used_time_column,
     )
 
 

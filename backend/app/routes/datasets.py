@@ -32,7 +32,9 @@ from app.schemas.dataset import (
     SaveResultRequest,
     SaveResultResponse,
 )
+from app.schemas.analysis import DatasetTrendRequest, DatasetPredictRequest, TrendResponse, PredictResponse
 from app.schemas.structure import StructureSummaryRequest, StructureSummaryResponse
+from app.services.analysis_service import trend_analysis, predict_column
 from app.services.dataset_snapshot import snapshot_to_dataframe, snapshot_to_export_bytes
 from app.services.auth_service import get_user_by_token
 from app.services.dataset_service import (
@@ -260,3 +262,45 @@ async def get_dataset_rows(
         "offset": offset,
         "limit": limit,
     }
+
+
+@router.post("/dataset/{dataset_id}/trend", response_model=TrendResponse)
+async def dataset_trend(
+    dataset_id: int,
+    payload: DatasetTrendRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run trend analysis on a dataset (or an unsaved in-memory snapshot)."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+    return trend_analysis(
+        dataset,
+        time_column=payload.time_column,
+        snapshot_override=payload.data_snapshot,
+    )
+
+
+@router.post("/dataset/{dataset_id}/predict", response_model=PredictResponse)
+async def dataset_predict(
+    dataset_id: int,
+    payload: DatasetPredictRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Predict future values for a numeric column in a dataset."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+    # input_column defaults to target_column when not supplied (it is unused when
+    # time_column is set, and was always a dead param in the row-index path).
+    input_col = payload.input_column or payload.target_column
+    return predict_column(
+        dataset,
+        input_col,
+        payload.target_column,
+        payload.future_steps,
+        time_column=payload.time_column,
+        snapshot_override=payload.data_snapshot,
+    )
