@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 import pandas as pd
 from fastapi import HTTPException, status
@@ -9,6 +10,8 @@ from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
 from app.schemas.analysis import CorrelationResponse
 from app.services.dataset_snapshot import snapshot_to_dataframe
+
+CorrelationMethod = Literal["pearson", "spearman"]
 
 
 def _get_version(dataset: Dataset, version_id: int | None) -> DatasetVersion:
@@ -50,8 +53,15 @@ def compute_correlation(
     dataset: Dataset,
     version_id: int | None = None,
     snapshot_override: dict | None = None,
+    method: CorrelationMethod = "pearson",
 ) -> CorrelationResponse:
-    """Compute Pearson correlation matrix for all numeric columns."""
+    """Compute a correlation matrix for all numeric columns.
+
+    Methods:
+    - "pearson" — linear correlation (assumes linearity + roughly normal residuals)
+    - "spearman" — rank correlation (captures monotonic but non-linear relationships;
+      robust to outliers, suitable for ordinal or skewed numeric data)
+    """
     if snapshot_override:
         df = snapshot_to_dataframe(snapshot_override)
     else:
@@ -61,15 +71,14 @@ def compute_correlation(
     numeric_cols = _coerce_numeric_columns(df)
 
     if len(numeric_cols) < 2:
-        return CorrelationResponse(columns=[], matrix={})
+        return CorrelationResponse(columns=[], matrix={}, method=method)
 
-    # Coerce object columns to numeric where needed
     sub = df[numeric_cols].copy()
     for col in numeric_cols:
         if sub[col].dtype == object:
             sub[col] = pd.to_numeric(sub[col], errors="coerce")
 
-    corr_df = sub.corr(method="pearson")
+    corr_df = sub.corr(method=method)
 
     columns = list(corr_df.columns)
     matrix: dict[str, dict[str, float]] = {
@@ -77,4 +86,4 @@ def compute_correlation(
         for col in columns
     }
 
-    return CorrelationResponse(columns=columns, matrix=matrix)
+    return CorrelationResponse(columns=columns, matrix=matrix, method=method)

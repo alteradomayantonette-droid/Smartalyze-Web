@@ -129,7 +129,7 @@ def snapshot_to_dataframe(snapshot: dict | None) -> pd.DataFrame:
 def snapshot_to_export_bytes(
     snapshot: dict,
     *,
-    export_format: Literal["csv", "xlsx", "json"],
+    export_format: Literal["csv", "xlsx", "json", "parquet"],
 ) -> tuple[bytes, str, str]:
     """Convert a snapshot into a downloadable file payload.
 
@@ -156,6 +156,16 @@ def snapshot_to_export_bytes(
         # Pandas will use openpyxl (already in requirements) for .xlsx.
         frame.to_excel(buffer, index=False, sheet_name="data")
         return buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+
+    if export_format == "parquet":
+        buffer = BytesIO()
+        try:
+            frame.to_parquet(buffer, engine="pyarrow", index=False)
+        except ImportError as exc:
+            raise ValueError(
+                "Parquet export requires pyarrow. Install it with `pip install pyarrow`."
+            ) from exc
+        return buffer.getvalue(), "application/vnd.apache.parquet", "parquet"
 
     # Should be unreachable due to typing, but kept as a safe guardrail.
     raise ValueError(f"Unsupported export format: {export_format}")

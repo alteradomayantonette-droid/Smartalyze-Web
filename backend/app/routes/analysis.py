@@ -16,6 +16,8 @@ from app.schemas.analysis import (
     AnalyzeStatsResponse,
     CorrelationRequest,
     CorrelationResponse,
+    DistributionRequest,
+    DistributionResponse,
     GroupByRequest,
     GroupByResponse,
     PredictRequest,
@@ -23,7 +25,14 @@ from app.schemas.analysis import (
     TrendRequest,
     TrendResponse,
 )
-from app.services.analysis_service import analyze_stats, anomaly_detection, group_dataset, predict_column, trend_analysis
+from app.services.analysis_service import (
+    analyze_stats,
+    anomaly_detection,
+    compute_distribution,
+    group_dataset,
+    predict_column,
+    trend_analysis,
+)
 from app.services.correlation_service import compute_correlation
 from app.services.auth_service import get_user_by_token
 from app.services.dataset_service import get_owned_dataset
@@ -105,11 +114,29 @@ async def correlation(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Compute Pearson correlation matrix for all numeric columns."""
+    """Compute a correlation matrix (Pearson or Spearman) for numeric columns."""
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    return compute_correlation(dataset, payload.dataset_version_id)
+    return compute_correlation(dataset, payload.dataset_version_id, method=payload.method)
+
+
+@router.post("/distribution", response_model=DistributionResponse)
+async def distribution(
+    payload: DistributionRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a histogram (numeric) or value-counts (categorical) for one column."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, payload.dataset_id, owner)
+    return compute_distribution(
+        dataset,
+        payload.column,
+        payload.dataset_version_id,
+        bins=payload.bins,
+    )
 
 
 @router.post("/predict", response_model=PredictResponse)

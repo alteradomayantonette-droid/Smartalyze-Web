@@ -17,6 +17,8 @@ from app.schemas.analysis import (
     ColumnAnomalyResult,
     ColumnStat,
     ColumnTrendResult,
+    DistributionBin,
+    DistributionResponse,
     GroupByResponse,
     GroupResult,
     PredictPoint,
@@ -443,4 +445,147 @@ def group_dataset(
         aggregate_column=aggregate_column,
         aggregate_func=aggregate_func,
         results=results,
+    )
+
+
+def compute_distribution(
+    dataset: Dataset,
+    column: str,
+    version_id: int | None = None,
+    bins: int = 20,
+) -> DistributionResponse:
+    """Build a distribution payload for one column.
+
+    Numeric: equal-width histogram with `bins` bins, plus mean/median/std/min/max.
+    Categorical: top 20 values by count.
+    Boolean: True/False counts.
+    Datetime: counts grouped by year (>5 yrs span) or year-month.
+    """
+    version = _get_version(dataset, version_id)
+    df = snapshot_to_dataframe(version.data_snapshot)
+
+    if column not in df.columns:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Column '{column}' not found.")
+
+    series = df[column]
+    total = int(series.shape[0])
+    missing = int(series.isna().sum())
+    unique = int(series.nunique(dropna=True))
+    non_null = series.dropna()
+
+    if len(non_null) == 0:
+        return DistributionResponse(
+            column=column,
+            kind="empty",
+            bins=[],
+            total_count=total,
+            missing_count=missing,
+            unique_count=unique,
+        )
+
+    if pd.api.types.is_bool_dtype(series):
+        counts = non_null.value_counts(dropna=True)
+        bin_list = [
+            DistributionBin(label=str(bool(value)), count=int(count))
+            for value, count in counts.items()
+        ]
+        return DistributionResponse(
+            column=column,
+            kind="boolean",
+            bins=bin_list,
+            total_count=total,
+            missing_count=missing,
+            unique_count=unique,
+        )
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        parsed = pd.to_datetime(non_null, errors="coerce").dropna()
+        if len(parsed) == 0:
+            return DistributionResponse(
+                column=column,
+                kind="empty",
+                bins=[],
+                total_count=total,
+                missing_count=missing,
+                unique_count=unique,
+            )
+        span_days = (parsed.max() - parsed.min()).days
+        freq = "Y" if span_days > 365 * 5 else "M"
+        grouped = parsed.dt.to_period(freq).value_counts().sort_index()
+        bin_list = [
+            DistributionBin(label=str(period), count=int(count))
+            for period, count in grouped.items()
+        ]
+        return DistributionResponse(
+            column=column,
+            kind="datetime",
+            bins=bin_list,
+            total_count=total,
+            missing_count=missing,
+            unique_count=unique,
+        )
+
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = pd.to_numeric(non_null, errors="coerce").dropna()
+        if len(numeric) == 0:
+            return DistributionResponse(
+                column=column,
+                kind="empty",
+                bins=[],
+                total_count=total,
+                missing_count=missing,
+                unique_count=unique,
+            )
+        bin_count = max(min(int(bins), 50), 5)
+        try:
+            edges = np.histogram_bin_edges(numeric.to_numpy(), bins=bin_count)
+            counts, _ = np.histogram(numeric.to_numpy(), bins=edges)
+        except ValueError:
+            return DistributionResponse(
+                column=column,
+                kind="empty",
+                bins=[],
+                total_count=total,
+                missing_count=missing,
+                unique_count=unique,
+            )
+        bin_list = []
+        for i in range(len(counts)):
+            start = float(edges[i])
+            end = float(edges[i + 1])
+            bin_list.append(
+                DistributionBin(
+                    label=f"{round(start, 2)}–{round(end, 2)}",
+                    count=int(counts[i]),
+                    bin_start=round(start, 6),
+                    bin_end=round(end, 6),
+                )
+            )
+        return DistributionResponse(
+            column=column,
+            kind="numeric",
+            bins=bin_list,
+            total_count=total,
+            missing_count=missing,
+            unique_count=unique,
+            mean=_safe_float(numeric.mean()),
+            median=_safe_float(numeric.median()),
+            std=_safe_float(numeric.std()) if len(numeric) > 1 else None,
+            min=_safe_float(numeric.min()),
+            max=_safe_float(numeric.max()),
+        )
+
+    # Categorical / object / string fallback
+    counts = non_null.astype(str).value_counts(dropna=True).head(20)
+    bin_list = [
+        DistributionBin(label=str(value), count=int(count))
+        for value, count in counts.items()
+    ]
+    return DistributionResponse(
+        column=column,
+        kind="categorical",
+        bins=bin_list,
+        total_count=total,
+        missing_count=missing,
+        unique_count=unique,
     )

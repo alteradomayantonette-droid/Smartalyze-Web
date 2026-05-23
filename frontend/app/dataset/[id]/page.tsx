@@ -12,24 +12,30 @@ import {
   CleaningOperation,
   CleanApplyResponse,
   CleanDetectResponse,
+  CorrelationMethod,
   CorrelationResponse,
   DateOutputFormat,
+  DatasetVersionSummary,
   DatasetWorkspace,
   DayFirstHint,
   detectCleaningIssues,
+  DistributionResponse,
   exportDataset,
   ExportDatasetFormat,
   getAnomalies,
   getCorrelation,
   getDatasetRows,
   getDatasetWorkspace,
+  getDistribution,
   getStructureSummary,
   getTrends,
   groupDataset,
   GroupByResponse,
+  listDatasetVersions,
   PatternImputationResult,
   predictDataset,
   PredictResponse,
+  restoreDatasetVersion,
   saveDatasetResult,
   StructureSummaryResponse,
   TrendResponse,
@@ -37,6 +43,7 @@ import {
   uploadDataset,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
+import { operationsToPandasScript } from "@/lib/codeExport";
 
 type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "trends" | "anomaly" | "correlation" | "prediction";
 type FeedbackTone = "neutral" | "success" | "warning" | "error";
@@ -173,6 +180,19 @@ function buildSortValuesOperation(column: string, ascending: boolean): CleaningO
   };
 }
 
+function buildDeriveColumnOperation(newColumnName: string, expression: string): CleaningOperation {
+  return {
+    operation_type: "derive_column",
+    new_column_name: newColumnName,
+    expression,
+    column: null,
+    columns: [],
+    target_type: null,
+    drop_all_missing: true,
+    errors: "coerce",
+  };
+}
+
 function buildPatternImputationOperation(targetCol: string, keyCol: string): CleaningOperation {
   return {
     operation_type: "fill_pattern",
@@ -244,6 +264,10 @@ function getOperationLabel(operation: CleaningOperation): string {
       return operation.column && operation.key_column
         ? `Smart fill "${operation.column}" using "${operation.key_column}"`
         : "Smart fill (pattern)";
+    case "derive_column":
+      return operation.new_column_name
+        ? `Derived column "${operation.new_column_name}" = ${operation.expression ?? ""}`
+        : "Derived column";
     default:
       return "Cleaning action";
   }
@@ -268,6 +292,8 @@ function getOperationDetail(operation: CleaningOperation): string {
       return operation.column ? `Column: ${operation.column}` : "";
     case "fill_pattern":
       return operation.key_column ? `Key column: ${operation.key_column}` : "";
+    case "derive_column":
+      return operation.expression ? `Formula: ${operation.expression}` : "";
     default:
       return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "";
   }
@@ -314,6 +340,13 @@ export default function DatasetWorkspacePage() {
   const [predictionResult, setPredictionResult] = useState<PredictResponse | null>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showCodeExport, setShowCodeExport] = useState(false);
+  const [codeExportCopied, setCodeExportCopied] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [versionList, setVersionList] = useState<DatasetVersionSummary[] | null>(null);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<number | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<DatasetVersionSummary | null>(null);
   const [saveMode, setSaveMode] = useState<"replace" | "new">("replace");
   const [newDatasetName, setNewDatasetName] = useState("");
   const [message, setMessage] = useState("");
@@ -348,10 +381,17 @@ export default function DatasetWorkspacePage() {
   const [overviewLoadingMore, setOverviewLoadingMore] = useState(false);
   const [correlationData, setCorrelationData] = useState<CorrelationResponse | null>(null);
   const [correlationLoading, setCorrelationLoading] = useState(false);
+  const [correlationMethod, setCorrelationMethod] = useState<CorrelationMethod>("pearson");
+  const [selectedDistColumn, setSelectedDistColumn] = useState<string | null>(null);
+  const [distributionData, setDistributionData] = useState<DistributionResponse | null>(null);
+  const [distributionLoading, setDistributionLoading] = useState(false);
   const [structureSummary, setStructureSummary] = useState<StructureSummaryResponse | null>(null);
   const [sortColumn, setSortColumn] = useState("");
   const [sortAscending, setSortAscending] = useState(true);
+  const [derivedColumnName, setDerivedColumnName] = useState("");
+  const [derivedExpression, setDerivedExpression] = useState("");
   const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
+  const [cumulativeAppliedOperations, setCumulativeAppliedOperations] = useState<CleaningOperation[]>([]);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -437,13 +477,28 @@ export default function DatasetWorkspacePage() {
   }, [activeTab, workspace, token, analysisStats]);
 
   useEffect(() => {
-    if (activeTab !== "correlation" || !workspace || !token || correlationData) return;
+    if (activeTab !== "correlation" || !workspace || !token) return;
+    if (correlationData && correlationData.method === correlationMethod) return;
     setCorrelationLoading(true);
-    getCorrelation(workspace.dataset.id, token)
+    getCorrelation(workspace.dataset.id, token, null, correlationMethod)
       .then(setCorrelationData)
       .catch(() => { setMessage("Could not load correlation data."); setMessageTone("error"); })
       .finally(() => setCorrelationLoading(false));
-  }, [activeTab, workspace, token, correlationData]);
+  }, [activeTab, workspace, token, correlationData, correlationMethod]);
+
+  useEffect(() => {
+    if (!workspace || !token || !selectedDistColumn) return;
+    if (distributionData && distributionData.column === selectedDistColumn) return;
+    setDistributionLoading(true);
+    getDistribution(workspace.dataset.id, selectedDistColumn, token, { bins: 20 })
+      .then(setDistributionData)
+      .catch((error) => {
+        setMessage(error instanceof Error ? error.message : "Could not load distribution.");
+        setMessageTone("error");
+        setDistributionData(null);
+      })
+      .finally(() => setDistributionLoading(false));
+  }, [workspace, token, selectedDistColumn, distributionData]);
 
   useEffect(() => {
     if (activeTab !== "cleaning" || !workspace || !token || cleaningDetection) return;
@@ -520,6 +575,23 @@ export default function DatasetWorkspacePage() {
     toggleOperation(operation, `Added sort by "${sortColumn}" (${sortAscending ? "ascending" : "descending"}).`, `Removed sort by "${sortColumn}" from the queue.`);
   }
 
+  function addDerivedColumn() {
+    const name = derivedColumnName.trim();
+    const expr = derivedExpression.trim();
+    if (!name || !expr) {
+      setFeedback("Provide both a new column name and a formula.", "warning");
+      return;
+    }
+    if (workspace?.dataset.columns_json?.some((c) => String((c as { name?: string }).name) === name)) {
+      setFeedback(`Column "${name}" already exists. Pick a different name.`, "warning");
+      return;
+    }
+    const operation = buildDeriveColumnOperation(name, expr);
+    toggleOperation(operation, `Added derived column "${name}" = ${expr}.`, `Removed derived column "${name}" from the queue.`);
+    setDerivedColumnName("");
+    setDerivedExpression("");
+  }
+
   function togglePatternImputation(targetCol: string, keyCol: string) {
     const operation = buildPatternImputationOperation(targetCol, keyCol);
     toggleOperation(operation, `Added smart fill for "${targetCol}" using "${keyCol}".`, `Removed smart fill for "${targetCol}" from the queue.`);
@@ -539,12 +611,14 @@ export default function DatasetWorkspacePage() {
   function handleRescanData() {
     setCleaningDetection(null);
     setCleaningResult(null);
+    setCumulativeAppliedOperations([]);
   }
 
   function handleDiscardResult() {
     setCleaningResult(null);
     setCleaningDetection(null);
     setCleaningOperations([]);
+    setCumulativeAppliedOperations([]);
     setFeedback("Changes discarded. Detection will re-run when you return to Cleaning.", "neutral");
   }
 
@@ -558,9 +632,11 @@ export default function DatasetWorkspacePage() {
     setFeedback("");
 
     try {
-      const response = await applyCleaningOperations(workspace.dataset.id, cleaningOperations, token, getSourceVersionId());
+      const allOperations = [...cumulativeAppliedOperations, ...cleaningOperations];
+      const response = await applyCleaningOperations(workspace.dataset.id, allOperations, token, getSourceVersionId());
       setCleaningDetection(response);
       setCleaningResult(response);
+      setCumulativeAppliedOperations(allOperations);
       setCleaningOperations([]);
       setActiveTab("overview");
       setFeedback(
@@ -612,9 +688,11 @@ export default function DatasetWorkspacePage() {
         });
         setCleaningResult(null);
         setCleaningDetection(null);
+        setCumulativeAppliedOperations([]);
         setFeedback("Result replaced the current dataset.", "success");
       } else {
         setCleaningResult(null);
+        setCumulativeAppliedOperations([]);
         setFeedback("Result saved as a new dataset.", "success");
         router.replace(`/dataset/${response.dataset.id}`);
       }
@@ -622,6 +700,45 @@ export default function DatasetWorkspacePage() {
       setFeedback(error instanceof Error ? error.message : "Could not save result.", "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openHistory() {
+    if (!workspace || !token) return;
+    setShowHistoryModal(true);
+    setPendingRestore(null);
+    setVersionsLoading(true);
+    try {
+      const versions = await listDatasetVersions(workspace.dataset.id, token);
+      setVersionList(versions);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Could not load version history.", "error");
+      setVersionList([]);
+    } finally {
+      setVersionsLoading(false);
+    }
+  }
+
+  async function confirmRestore(version: DatasetVersionSummary) {
+    if (!workspace || !token) return;
+    setRestoringVersionId(version.id);
+    try {
+      const response = await restoreDatasetVersion(workspace.dataset.id, version.id, token);
+      setWorkspace({ ...workspace, dataset: response.dataset });
+      setCleaningResult(null);
+      setCleaningDetection(null);
+      setCumulativeAppliedOperations([]);
+      setOverviewExtraRows([]);
+      setOverviewTotalRows(null);
+      setFeedback(response.message, "success");
+      const refreshed = await listDatasetVersions(workspace.dataset.id, token);
+      setVersionList(refreshed);
+      setPendingRestore(null);
+      setShowHistoryModal(false);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Could not restore version.", "error");
+    } finally {
+      setRestoringVersionId(null);
     }
   }
 
@@ -1362,7 +1479,7 @@ export default function DatasetWorkspacePage() {
                                     <th className="px-3 py-2 font-medium">{s.key_column}</th>
                                     <th className="px-3 py-2 font-medium">Fill value</th>
                                     <th className="px-3 py-2 font-medium">Consistent</th>
-                                    <th className="px-3 py-2 font-medium text-slate-400 font-normal hidden lg:table-cell">Detail</th>
+                                    <th className="px-3 py-2 font-normal text-slate-400 hidden lg:table-cell">Detail</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -1400,6 +1517,63 @@ export default function DatasetWorkspacePage() {
                 </section>
               );
             })()}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <h3 className="text-lg font-semibold text-slate-950">Derived Column</h3>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Compute a new column from a formula. Reference existing columns by name.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Allowed: <code className="rounded bg-slate-100 px-1">+ - * / % **</code>, comparisons, <code className="rounded bg-slate-100 px-1">and / or</code>, helpers <code className="rounded bg-slate-100 px-1">abs round min max int float str len</code>, and <code className="rounded bg-slate-100 px-1">a if cond else b</code>.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
+                <input
+                  type="text"
+                  value={derivedColumnName}
+                  onChange={(e) => setDerivedColumnName(e.target.value)}
+                  placeholder="new column name"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={derivedExpression}
+                  onChange={(e) => setDerivedExpression(e.target.value)}
+                  placeholder="e.g. price * qty"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={addDerivedColumn}
+                  disabled={!derivedColumnName.trim() || !derivedExpression.trim()}
+                >
+                  Add
+                </button>
+              </div>
+              {availableColumns.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+                  <span className="text-slate-500">Available columns:</span>
+                  {availableColumns.slice(0, 12).map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                      onClick={() => setDerivedExpression((prev) => (prev ? prev + " " + col : col))}
+                    >
+                      {col}
+                    </button>
+                  ))}
+                  {availableColumns.length > 12 ? <span className="text-slate-400">+{availableColumns.length - 12} more</span> : null}
+                </div>
+              ) : null}
+            </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1466,6 +1640,14 @@ export default function DatasetWorkspacePage() {
             </div>
 
             <div className="space-y-3">
+              {cumulativeAppliedOperations.length > 0 && cleaningResult && (
+                <div className="flex items-start gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5 text-xs text-teal-800">
+                  <span className="mt-0.5 shrink-0">↑</span>
+                  <span>
+                    Building on cleaned result — {cumulativeAppliedOperations.length} previous operation{cumulativeAppliedOperations.length !== 1 ? "s" : ""} will be re-run before these.
+                  </span>
+                </div>
+              )}
               {cleaningOperations.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
                   {cleaningResult ? "No new operations queued." : "No operations selected yet."}
@@ -1504,7 +1686,7 @@ export default function DatasetWorkspacePage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h3 className="font-semibold text-slate-950">Cleaned Preview</h3>
           <p className="mt-1 text-sm text-slate-600">Preview the result before saving a new version.</p>
-          <div className="mt-4 min-h-[200px] max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
+          <div className="mt-4 min-h-50 max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
             {cleaningResult ? renderPreviewTable(cleaningResult.preview) : <p className="text-sm text-slate-600">No cleaned preview yet.</p>}
           </div>
           {cleaningResult ? (
@@ -1732,38 +1914,157 @@ export default function DatasetWorkspacePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                      {stats.column_stats.map((col) => (
-                        <tr key={col.name}>
-                          <td className="px-4 py-3 font-medium text-slate-950">{col.name}</td>
-                          <td className="px-4 py-3">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              col.dtype === "numeric" ? "bg-indigo-100 text-indigo-700" :
-                              col.dtype === "datetime" ? "bg-purple-100 text-purple-700" :
-                              col.dtype === "boolean" ? "bg-orange-100 text-orange-700" :
-                              "bg-slate-100 text-slate-600"
-                            }`}>
-                              {col.dtype}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">{col.count}</td>
-                          <td className={`px-4 py-3 font-medium ${col.missing_pct > 0 ? "text-yellow-700" : "text-green-700"}`}>
-                            {col.missing_pct > 0 ? `${col.missing_pct}%` : "—"}
-                          </td>
-                          <td className="px-4 py-3">{col.unique}</td>
-                          <td className="px-4 py-3 text-slate-500">
-                            {col.dtype === "numeric" && col.mean != null
-                              ? `${col.mean} / ${col.min ?? "?"} / ${col.max ?? "?"}`
-                              : col.top_values[0] != null
-                              ? String(col.top_values[0].value)
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
+                      {stats.column_stats.map((col) => {
+                        const isSelected = selectedDistColumn === col.name;
+                        return (
+                          <tr
+                            key={col.name}
+                            className={`cursor-pointer transition hover:bg-indigo-50/40 ${isSelected ? "bg-indigo-50/60" : ""}`}
+                            onClick={() => setSelectedDistColumn(isSelected ? null : col.name)}
+                            title="Click to view distribution"
+                          >
+                            <td className="px-4 py-3 font-medium text-slate-950">
+                              <span className="inline-flex items-center gap-2">
+                                {isSelected ? <span className="text-indigo-600">▾</span> : <span className="text-slate-300">▸</span>}
+                                {col.name}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                col.dtype === "numeric" ? "bg-indigo-100 text-indigo-700" :
+                                col.dtype === "datetime" ? "bg-purple-100 text-purple-700" :
+                                col.dtype === "boolean" ? "bg-orange-100 text-orange-700" :
+                                "bg-slate-100 text-slate-600"
+                              }`}>
+                                {col.dtype}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">{col.count}</td>
+                            <td className={`px-4 py-3 font-medium ${col.missing_pct > 0 ? "text-yellow-700" : "text-green-700"}`}>
+                              {col.missing_pct > 0 ? `${col.missing_pct}%` : "—"}
+                            </td>
+                            <td className="px-4 py-3">{col.unique}</td>
+                            <td className="px-4 py-3 text-slate-500">
+                              {col.dtype === "numeric" && col.mean != null
+                                ? `${col.mean} / ${col.min ?? "?"} / ${col.max ?? "?"}`
+                                : col.top_values[0] != null
+                                ? String(col.top_values[0].value)
+                                : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-slate-600">Switch to this tab to load statistics.</p>
+              )}
+
+              {selectedDistColumn ? (
+                <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-indigo-600">Distribution</p>
+                      <h4 className="mt-0.5 text-base font-semibold text-slate-950">{selectedDistColumn}</h4>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full px-2 py-0.5 text-lg leading-none text-slate-400 transition hover:bg-white hover:text-slate-700"
+                      onClick={() => { setSelectedDistColumn(null); setDistributionData(null); }}
+                      aria-label="Close distribution"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {distributionLoading ? (
+                    <p className="mt-3 text-sm text-slate-600">Loading distribution…</p>
+                  ) : !distributionData || distributionData.bins.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-600">No distribution data available for this column.</p>
+                  ) : (() => {
+                    const dist = distributionData;
+                    const maxCount = Math.max(...dist.bins.map((b) => b.count), 1);
+                    return (
+                      <div className="mt-4 space-y-3">
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                          <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">{dist.kind}</span>
+                          <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">{dist.total_count} rows</span>
+                          {dist.missing_count > 0 ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">{dist.missing_count} missing</span>
+                          ) : null}
+                          <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">{dist.unique_count} unique</span>
+                          {dist.kind === "numeric" && dist.mean != null ? (
+                            <>
+                              <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">mean {dist.mean}</span>
+                              {dist.median != null ? <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">median {dist.median}</span> : null}
+                              {dist.std != null ? <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">σ {dist.std}</span> : null}
+                            </>
+                          ) : null}
+                        </div>
+                        {dist.kind === "categorical" || dist.kind === "boolean" || dist.kind === "datetime" ? (
+                          <div className="space-y-1.5">
+                            {dist.bins.map((bin) => {
+                              const widthPct = (bin.count / maxCount) * 100;
+                              return (
+                                <div key={bin.label} className="flex items-center gap-3 text-xs">
+                                  <span className="w-32 shrink-0 truncate text-slate-700" title={bin.label}>{bin.label}</span>
+                                  <div className="relative h-5 flex-1 overflow-hidden rounded bg-white">
+                                    <div className="h-full rounded bg-indigo-500" style={{ width: `${Math.max(widthPct, 2)}%` }} />
+                                  </div>
+                                  <span className="w-12 shrink-0 text-right font-medium text-slate-700">{bin.count}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          (() => {
+                            const W = 600;
+                            const H = 180;
+                            const PAD = 16;
+                            const barWidth = (W - PAD * 2) / dist.bins.length;
+                            return (
+                              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+                                {dist.bins.map((bin, i) => {
+                                  const h = (bin.count / maxCount) * (H - PAD * 2);
+                                  const x = PAD + i * barWidth;
+                                  const y = H - PAD - h;
+                                  return (
+                                    <g key={i}>
+                                      <rect x={x + 0.5} y={y} width={Math.max(barWidth - 1, 1)} height={h} fill="#6366f1" rx="1.5" />
+                                      {dist.bins.length <= 24 ? (
+                                        <text x={x + barWidth / 2} y={H - 4} textAnchor="middle" fontSize="8" fill="#64748b">
+                                          {bin.bin_start != null ? Number(bin.bin_start).toFixed(1) : ""}
+                                        </text>
+                                      ) : null}
+                                    </g>
+                                  );
+                                })}
+                                {dist.kind === "numeric" && dist.mean != null && dist.bins.length > 0 ? (() => {
+                                  const first = dist.bins[0];
+                                  const last = dist.bins[dist.bins.length - 1];
+                                  const lo = first.bin_start ?? 0;
+                                  const hi = last.bin_end ?? 1;
+                                  if (hi <= lo) return null;
+                                  const xMean = PAD + ((dist.mean - lo) / (hi - lo)) * (W - PAD * 2);
+                                  return (
+                                    <g>
+                                      <line x1={xMean} x2={xMean} y1={PAD} y2={H - PAD} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="3 3" />
+                                      <text x={xMean + 4} y={PAD + 10} fontSize="9" fill="#dc2626">mean</text>
+                                    </g>
+                                  );
+                                })() : null}
+                              </svg>
+                            );
+                          })()
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                stats ? (
+                  <p className="mt-4 text-xs text-slate-500">Click any column above to see its distribution.</p>
+                ) : null
               )}
             </div>
 
@@ -2514,8 +2815,34 @@ export default function DatasetWorkspacePage() {
           <InsightCard text="The diagonal always shows 1.0 — each column is perfectly correlated with itself. Values near +1 indicate columns that increase together; near −1 they move in opposite directions. Values near 0 mean no meaningful relationship." />
 
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-950">Correlation Heatmap</h3>
-            <p className="mt-1 text-sm text-slate-500">Pearson correlation — blue = positive, red = negative. Diagonal is always 1.</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-950">Correlation Heatmap</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {correlationMethod === "pearson"
+                    ? "Pearson correlation — measures linear relationships. Blue = positive, red = negative. Diagonal is always 1."
+                    : "Spearman correlation — measures monotonic (rank-based) relationships. Robust to outliers and non-linear curves."}
+                </p>
+              </div>
+              <div className="inline-flex shrink-0 rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-medium">
+                <button
+                  type="button"
+                  onClick={() => setCorrelationMethod("pearson")}
+                  className={`rounded-full px-3 py-1.5 transition ${correlationMethod === "pearson" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  disabled={correlationLoading}
+                >
+                  Pearson
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCorrelationMethod("spearman")}
+                  className={`rounded-full px-3 py-1.5 transition ${correlationMethod === "spearman" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                  disabled={correlationLoading}
+                >
+                  Spearman
+                </button>
+              </div>
+            </div>
             <div className="mt-4 overflow-x-auto">
               <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: W, height: H }}>
                 {/* Column headers (top) */}
@@ -2649,6 +2976,14 @@ export default function DatasetWorkspacePage() {
                     </button>
                     <button
                       type="button"
+                      className="font-medium text-slate-700 underline underline-offset-4 decoration-slate-400 hover:text-slate-900"
+                      onClick={() => { setCodeExportCopied(false); setShowCodeExport(true); }}
+                      title="Export the applied operations as a runnable pandas script"
+                    >
+                      Export as Python
+                    </button>
+                    <button
+                      type="button"
                       className="rounded-full bg-amber-600 px-4 py-1.5 font-medium text-white hover:bg-amber-500"
                       onClick={() => setShowSaveModal(true)}
                     >
@@ -2681,8 +3016,24 @@ export default function DatasetWorkspacePage() {
             </div>
 
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">History</h2>
+                  <p className="mt-1 text-sm text-slate-600">Browse previous versions of this dataset and restore any of them as the current state.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                onClick={openHistory}
+              >
+                View version history
+              </button>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-950">Export</h2>
-              <p className="mt-1 text-sm text-slate-600">Download the current result as CSV, Excel, or JSON.</p>
+              <p className="mt-1 text-sm text-slate-600">Download the current result as CSV, Excel, JSON, or Parquet.</p>
 
               <div className="mt-4 grid gap-3">
                 <label className="block">
@@ -2696,6 +3047,7 @@ export default function DatasetWorkspacePage() {
                     <option value="csv">CSV</option>
                     <option value="xlsx">XLSX</option>
                     <option value="json">JSON</option>
+                    <option value="parquet">Parquet</option>
                   </select>
                 </label>
 
@@ -2745,6 +3097,171 @@ export default function DatasetWorkspacePage() {
             </div>
           </aside>
         </section>
+
+        {showHistoryModal ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+            <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Version history</p>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{workspace.dataset.original_filename}</h2>
+                  <p className="mt-1 text-sm text-slate-600">Newest versions are listed first. Restoring an older version copies its snapshot into a new current version — nothing is overwritten.</p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full px-3 py-1 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  onClick={() => { setShowHistoryModal(false); setPendingRestore(null); }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-5 max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200">
+                {versionsLoading ? (
+                  <p className="px-4 py-6 text-sm text-slate-500">Loading history…</p>
+                ) : !versionList || versionList.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-slate-500">No version history available yet.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {versionList.map((v) => (
+                      <li key={v.id} className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${v.is_current ? "bg-indigo-50/40" : ""}`}>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-slate-950">v{v.version_number}</span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{v.operation_type}</span>
+                            {v.is_current ? <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">current</span> : null}
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {new Date(v.created_at).toLocaleString()} · {v.row_count ?? "?"} rows · {v.column_count ?? "?"} cols
+                            {v.missing_cells != null ? ` · ${v.missing_cells} missing` : ""}
+                            {v.duplicate_rows != null ? ` · ${v.duplicate_rows} duplicates` : ""}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => setPendingRestore(v)}
+                            disabled={v.is_current || restoringVersionId !== null}
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {pendingRestore ? (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <p className="font-medium">Restore v{pendingRestore.version_number}?</p>
+                  <p className="mt-1">
+                    A new version will be created from v{pendingRestore.version_number}&apos;s snapshot and become the current dataset. The currently visible version stays in history.
+                  </p>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-xl border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 transition hover:bg-amber-100"
+                      onClick={() => setPendingRestore(null)}
+                      disabled={restoringVersionId !== null}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-70"
+                      onClick={() => confirmRestore(pendingRestore)}
+                      disabled={restoringVersionId !== null}
+                    >
+                      {restoringVersionId === pendingRestore.id ? "Restoring…" : "Confirm restore"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-5 flex justify-end">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => { setShowHistoryModal(false); setPendingRestore(null); }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showCodeExport && cleaningResult ? (() => {
+          const script = operationsToPandasScript(
+            cleaningResult.operations_applied ?? [],
+            workspace.dataset.original_filename,
+          );
+          const safeFile = (workspace.dataset.original_filename || "cleaning_script").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "");
+          async function copyScript() {
+            try {
+              await navigator.clipboard.writeText(script);
+              setCodeExportCopied(true);
+              globalThis.setTimeout(() => setCodeExportCopied(false), 2000);
+            } catch {
+              setCodeExportCopied(false);
+            }
+          }
+          function downloadScript() {
+            const blob = new Blob([script], { type: "text/x-python" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${safeFile}_cleaning.py`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+              <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Reproducibility</p>
+                    <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Export as Python (pandas) script</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      A runnable equivalent of your {cleaningResult.operations_applied.length} applied operation{cleaningResult.operations_applied.length === 1 ? "" : "s"}. Use this to reproduce the cleaning outside Smartalyze.
+                    </p>
+                  </div>
+                  <button type="button" className="rounded-full px-3 py-1 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowCodeExport(false)}>
+                    ×
+                  </button>
+                </div>
+
+                <pre className="mt-5 max-h-[55vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs leading-relaxed text-slate-100">
+{script}
+                </pre>
+
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  <button type="button" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => setShowCodeExport(false)}>
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                    onClick={copyScript}
+                  >
+                    {codeExportCopied ? "Copied!" : "Copy script"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500"
+                    onClick={downloadScript}
+                  >
+                    Download .py
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })() : null}
 
         {showSaveModal ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">

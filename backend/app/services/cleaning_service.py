@@ -26,6 +26,7 @@ from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
 from app.schemas.cleaning import CleaningIssue, CleaningOperation, PatternImputationResult
 from app.services.dataset_snapshot import build_snapshot, snapshot_to_dataframe
+from app.services.derived_column_service import evaluate_derived_column
 from app.services.pattern_imputation_service import apply_pattern_fill, find_pattern_suggestions
 
 
@@ -526,6 +527,14 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
             )
         _ensure_columns(frame, [operation.column, operation.key_column])
         return apply_pattern_fill(frame, operation.key_column, operation.column)
+
+    if operation.operation_type == "derive_column":
+        if not operation.new_column_name or not operation.expression:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="derive_column requires new_column_name and expression.",
+            )
+        return evaluate_derived_column(frame, operation.new_column_name, operation.expression)
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,

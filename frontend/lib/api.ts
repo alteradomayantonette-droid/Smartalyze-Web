@@ -48,6 +48,30 @@ export type DatasetVersion = {
   created_at: string;
 };
 
+export type DatasetVersionSummary = {
+  id: number;
+  dataset_id: number;
+  version_number: number;
+  operation_type: string;
+  created_at: string;
+  row_count: number | null;
+  column_count: number | null;
+  missing_cells: number | null;
+  duplicate_rows: number | null;
+  is_current: boolean;
+};
+
+export type DatasetVersionDetail = DatasetVersionSummary & {
+  data_snapshot: Record<string, unknown>;
+};
+
+export type RestoreVersionResponse = {
+  message: string;
+  restored_version_id: number;
+  new_version: DatasetVersionSummary;
+  dataset: Dataset;
+};
+
 export type DatasetWorkspace = {
   dataset: Dataset;
   warnings: Array<{ scope: string; severity: string; message: string }>;
@@ -58,7 +82,7 @@ export type DeleteDatasetResponse = {
   message: string;
 };
 
-export type ExportDatasetFormat = "csv" | "xlsx" | "json";
+export type ExportDatasetFormat = "csv" | "xlsx" | "json" | "parquet";
 
 export type ExportDatasetRequest = {
   format: ExportDatasetFormat;
@@ -90,7 +114,8 @@ export type CleaningOperation = {
     | "lowercase_column"
     | "standardize_dates"
     | "sort_values"
-    | "fill_pattern";
+    | "fill_pattern"
+    | "derive_column";
   columns?: string[];
   column?: string | null;
   target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;
@@ -102,6 +127,8 @@ export type CleaningOperation = {
   ascending?: boolean | null;
   key_column?: string | null;
   target_column_fill?: string | null;
+  new_column_name?: string | null;
+  expression?: string | null;
 };
 
 export type UnparseableDateRow = { row: number; original: string };
@@ -124,9 +151,12 @@ export type PatternImputationResult = {
   low_sample_groups: string[];
 };
 
+export type CorrelationMethod = "pearson" | "spearman";
+
 export type CorrelationResponse = {
   columns: string[];
   matrix: Record<string, Record<string, number>>;
+  method: CorrelationMethod;
 };
 
 export type StructureColumnSummary = {
@@ -189,6 +219,29 @@ export type AnalyzeStatsResponse = {
   column_stats: ColumnStat[];
   row_count: number;
   col_count: number;
+};
+
+export type DistributionKind = "numeric" | "categorical" | "datetime" | "boolean" | "empty";
+
+export type DistributionBin = {
+  label: string;
+  count: number;
+  bin_start: number | null;
+  bin_end: number | null;
+};
+
+export type DistributionResponse = {
+  column: string;
+  kind: DistributionKind;
+  bins: DistributionBin[];
+  total_count: number;
+  missing_count: number;
+  unique_count: number;
+  mean: number | null;
+  median: number | null;
+  std: number | null;
+  min: number | null;
+  max: number | null;
 };
 
 export type GroupResult = { group: string; value: number };
@@ -573,11 +626,12 @@ export function getCorrelation(
   datasetId: number,
   token: string,
   datasetVersionId?: number | null,
+  method: CorrelationMethod = "pearson",
 ): Promise<CorrelationResponse> {
   return request<CorrelationResponse>("/analysis/correlation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null }),
+    body: JSON.stringify({ dataset_id: datasetId, dataset_version_id: datasetVersionId ?? null, method }),
   }, token);
 }
 
@@ -590,6 +644,52 @@ export function getStructureSummary(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_id: datasetId }),
   }, token);
+}
+
+export function getDistribution(
+  datasetId: number,
+  column: string,
+  token: string,
+  options?: { datasetVersionId?: number | null; bins?: number },
+): Promise<DistributionResponse> {
+  return request<DistributionResponse>(
+    "/analysis/distribution",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset_id: datasetId,
+        column,
+        dataset_version_id: options?.datasetVersionId ?? null,
+        bins: options?.bins ?? 20,
+      }),
+    },
+    token,
+  );
+}
+
+export function listDatasetVersions(datasetId: number, token: string): Promise<DatasetVersionSummary[]> {
+  return request<DatasetVersionSummary[]>(`/dataset/${datasetId}/versions`, {}, token);
+}
+
+export function getDatasetVersion(
+  datasetId: number,
+  versionId: number,
+  token: string,
+): Promise<DatasetVersionDetail> {
+  return request<DatasetVersionDetail>(`/dataset/${datasetId}/versions/${versionId}`, {}, token);
+}
+
+export function restoreDatasetVersion(
+  datasetId: number,
+  versionId: number,
+  token: string,
+): Promise<RestoreVersionResponse> {
+  return request<RestoreVersionResponse>(
+    `/dataset/${datasetId}/versions/${versionId}/restore`,
+    { method: "POST" },
+    token,
+  );
 }
 
 export async function uploadDataset(file: File, description: string, token?: string): Promise<{ message: string; dataset: Dataset }> {

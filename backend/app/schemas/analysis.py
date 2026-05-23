@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
+
+CorrelationMethod = Literal["pearson", "spearman"]
 
 # Shared type alias used by dataset-level endpoints that accept an in-memory snapshot.
 _Snapshot = dict | None
@@ -167,8 +169,44 @@ class PredictResponse(BaseModel):
 class CorrelationRequest(BaseModel):
     dataset_id: int
     dataset_version_id: int | None = None
+    method: CorrelationMethod = "pearson"
 
 
 class CorrelationResponse(BaseModel):
     columns: list[str]
     matrix: dict[str, dict[str, float]]
+    method: CorrelationMethod = "pearson"
+
+
+# ── Distribution Analysis ─────────────────────────────────────────────────────
+
+DistributionKind = Literal["numeric", "categorical", "datetime", "boolean", "empty"]
+
+
+class DistributionRequest(BaseModel):
+    """Request body for POST /analysis/distribution."""
+    dataset_id: int
+    column: str
+    dataset_version_id: int | None = None
+    bins: int = 20
+
+
+class DistributionBin(BaseModel):
+    label: str
+    count: int
+    bin_start: float | None = None
+    bin_end: float | None = None
+
+
+class DistributionResponse(BaseModel):
+    column: str
+    kind: DistributionKind
+    bins: list[DistributionBin]
+    total_count: int
+    missing_count: int
+    unique_count: int
+    mean: float | None = None
+    median: float | None = None
+    std: float | None = None
+    min: float | None = None
+    max: float | None = None

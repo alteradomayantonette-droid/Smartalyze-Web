@@ -26,6 +26,7 @@ CleaningOperationType = Literal[
     "standardize_dates",
     "sort_values",
     "fill_pattern",
+    "derive_column",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]
@@ -62,6 +63,9 @@ class CleaningOperation(BaseModel):
     # Fields below only apply to operation_type == "fill_pattern".
     key_column: str | None = None
     target_column_fill: str | None = None
+    # Fields below only apply to operation_type == "derive_column".
+    new_column_name: str | None = None
+    expression: str | None = None
 
 
 class PatternImputationGroup(BaseModel):

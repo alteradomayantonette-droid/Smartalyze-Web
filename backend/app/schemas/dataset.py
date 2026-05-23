@@ -70,6 +70,33 @@ class DatasetVersionRead(BaseModel):
     created_at: datetime
 
 
+class DatasetVersionSummary(BaseModel):
+    """Compact entry for the version history list."""
+    id: int
+    dataset_id: int
+    version_number: int
+    operation_type: str
+    created_at: datetime
+    row_count: int | None = None
+    column_count: int | None = None
+    missing_cells: int | None = None
+    duplicate_rows: int | None = None
+    is_current: bool = False
+
+
+class DatasetVersionDetail(DatasetVersionSummary):
+    """Full version payload including the stored snapshot."""
+    data_snapshot: dict
+
+
+class RestoreVersionResponse(BaseModel):
+    """Response after restoring an older version as the new current."""
+    message: str
+    restored_version_id: int
+    new_version: DatasetVersionSummary
+    dataset: DatasetRead
+
+
 class DatasetWorkspaceRead(BaseModel):
     """Response for GET /dataset/{id}: dataset + computed warnings/suggestions."""
     dataset: DatasetRead
@@ -130,5 +157,5 @@ unsaved session results like a cleaned snapshot).
 If `data_snapshot` is omitted, the backend exports the dataset's current stored snapshot.
     """
 
-    format: Literal["csv", "xlsx", "json"] = "csv"
+    format: Literal["csv", "xlsx", "json", "parquet"] = "csv"
     data_snapshot: dict | None = None

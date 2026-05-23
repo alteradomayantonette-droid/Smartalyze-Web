@@ -9,6 +9,7 @@ import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
 type FeedbackTone = "neutral" | "success" | "warning" | "error";
 type DashboardIssueType = "missing" | "duplicate" | "invalid";
+type DatasetSortKey = "recent" | "name" | "size";
 
 type DashboardIssueItem = {
   id: string;
@@ -159,6 +160,8 @@ export default function DashboardPage() {
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortKey, setSortKey] = useState<DatasetSortKey>("recent");
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -283,12 +286,36 @@ export default function DashboardPage() {
   }
 
   const datasetsByLatest = [...datasets].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
-  const visibleDatasets = datasetsByLatest.length > 0 ? datasetsByLatest : [];
+
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const filteredDatasets = trimmedQuery
+    ? datasetsByLatest.filter((dataset) => {
+        const name = dataset.original_filename?.toLowerCase() ?? "";
+        const description = dataset.description?.toLowerCase() ?? "";
+        return name.includes(trimmedQuery) || description.includes(trimmedQuery);
+      })
+    : datasetsByLatest;
+
+  const sortedDatasets = (() => {
+    const copy = [...filteredDatasets];
+    switch (sortKey) {
+      case "name":
+        return copy.sort((a, b) => (a.original_filename ?? "").localeCompare(b.original_filename ?? ""));
+      case "size":
+        return copy.sort((a, b) => Number(b.row_count ?? 0) - Number(a.row_count ?? 0));
+      case "recent":
+      default:
+        return copy;
+    }
+  })();
+
+  const visibleDatasets = sortedDatasets;
   const allIssues = visibleDatasets.flatMap((dataset) => getDatasetIssueItems(dataset));
   const datasetsWithWarnings = visibleDatasets.filter((dataset) => getDatasetIssueItems(dataset).length > 0).length;
   const datasetsWithNoIssues = Math.max(visibleDatasets.length - datasetsWithWarnings, 0);
   const totalRows = visibleDatasets.reduce((sum, dataset) => sum + Number(dataset.row_count ?? 0), 0);
-  const recentDataset = visibleDatasets[0] ?? null;
+  const recentDataset = datasetsByLatest[0] ?? null;
+  const recentTopThree = datasetsByLatest.slice(0, 3);
 
   const activityData = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -401,6 +428,32 @@ export default function DashboardPage() {
           ))}
         </section>
 
+        {recentTopThree.length > 0 ? (
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Recently touched</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Jump back in</h2>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {recentTopThree.map((dataset) => (
+                <Link
+                  key={dataset.id}
+                  href={`/dataset/${dataset.id}`}
+                  className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-md"
+                >
+                  <p className="truncate font-semibold text-slate-950 group-hover:text-indigo-700">{dataset.original_filename}</p>
+                  <p className="mt-1 text-xs text-slate-500">{formatRelativeDate(dataset.created_at)}</p>
+                  <p className="mt-2 text-xs text-slate-600">
+                    {dataset.row_count ?? "?"} rows · {dataset.column_count ?? "?"} cols
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Activity</p>
           <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Uploads — last 7 days</h2>
@@ -465,10 +518,42 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search by name or description…"
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500"
+              />
+              <label className="inline-flex items-center gap-2 text-xs text-slate-500">
+                <span>Sort by</span>
+                <select
+                  value={sortKey}
+                  onChange={(event) => setSortKey(event.target.value as DatasetSortKey)}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-700 outline-none transition focus:border-indigo-500"
+                >
+                  <option value="recent">Most recent</option>
+                  <option value="name">Name (A→Z)</option>
+                  <option value="size">Most rows</option>
+                </select>
+              </label>
+            </div>
+
+            {datasets.length > 0 && visibleDatasets.length !== datasets.length ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Showing {visibleDatasets.length} of {datasets.length} dataset{datasets.length === 1 ? "" : "s"}{trimmedQuery ? ` matching “${trimmedQuery}”` : ""}.
+              </p>
+            ) : null}
+
             <div className="mt-5 space-y-4">
-              {visibleDatasets.length === 0 ? (
+              {datasets.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
                   No datasets uploaded yet. Use Upload Dataset to add your first file.
+                </div>
+              ) : visibleDatasets.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+                  No datasets match your search.
                 </div>
               ) : (
                 visibleDatasets.map((dataset) => {

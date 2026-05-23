@@ -23,12 +23,15 @@ from app.db.session import get_db
 from app.models.dataset_version import DatasetVersion
 from app.schemas.dataset import (
     CreateDatasetVersionRequest,
+    DatasetVersionDetail,
+    DatasetVersionSummary,
     DeleteDatasetResponse,
     DatasetRead,
     DatasetUploadResponse,
     DatasetVersionRead,
     DatasetWorkspaceRead,
     ExportDatasetRequest,
+    RestoreVersionResponse,
     SaveResultRequest,
     SaveResultResponse,
 )
@@ -42,6 +45,7 @@ from app.services.dataset_service import (
     create_dataset_from_snapshot,
     create_dataset_version,
     delete_owned_dataset,
+    get_dataset_versions,
     get_owned_dataset,
     get_workspace_guidance,
     list_user_datasets,
@@ -180,6 +184,96 @@ Kept for compatibility; the simplified UI generally uses /result instead.
     dataset = await get_owned_dataset(db, dataset_id, owner)
     version = await create_dataset_version(db, dataset, payload)
     return version
+
+
+def _summarize_version(version: DatasetVersion, current_version_id: int | None) -> dict:
+    """Build a compact summary dict for a version (used by list/restore endpoints)."""
+    summary = version.summary_json or {}
+    return {
+        "id": version.id,
+        "dataset_id": version.dataset_id,
+        "version_number": version.version_number,
+        "operation_type": version.operation_type,
+        "created_at": version.created_at,
+        "row_count": summary.get("row_count"),
+        "column_count": summary.get("column_count"),
+        "missing_cells": summary.get("missing_cells"),
+        "duplicate_rows": summary.get("duplicate_rows"),
+        "is_current": current_version_id is not None and version.id == current_version_id,
+    }
+
+
+@router.get("/dataset/{dataset_id}/versions", response_model=list[DatasetVersionSummary])
+async def list_dataset_versions(
+    dataset_id: int,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all stored versions for a dataset (newest first)."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+    versions = await get_dataset_versions(db, dataset)
+    return [_summarize_version(v, dataset.current_version_id) for v in reversed(versions)]
+
+
+@router.get("/dataset/{dataset_id}/versions/{version_id}", response_model=DatasetVersionDetail)
+async def get_dataset_version(
+    dataset_id: int,
+    version_id: int,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a single version's full snapshot (for preview / restore confirmation)."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+    version = next((v for v in (dataset.versions or []) if v.id == version_id), None)
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found for this dataset.")
+    return {**_summarize_version(version, dataset.current_version_id), "data_snapshot": version.data_snapshot}
+
+
+@router.post("/dataset/{dataset_id}/versions/{version_id}/restore", response_model=RestoreVersionResponse)
+async def restore_dataset_version(
+    dataset_id: int,
+    version_id: int,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore an older version by copying its snapshot into a new current version.
+
+    History is preserved — we never mutate older rows. A new version row is created
+    with the restored snapshot and becomes the dataset's current version.
+    """
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+
+    target = next((v for v in (dataset.versions or []) if v.id == version_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found for this dataset.")
+
+    if dataset.current_version_id == target.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That version is already current.")
+
+    new_version = await create_dataset_version(
+        db,
+        dataset,
+        CreateDatasetVersionRequest(
+            operation_type=f"restore_v{target.version_number}",
+            replace_current=True,
+            data_snapshot=target.data_snapshot,
+        ),
+    )
+
+    reloaded_dataset = await get_owned_dataset(db, dataset.id, owner)
+    return {
+        "message": f"Restored version {target.version_number} as the current dataset.",
+        "restored_version_id": target.id,
+        "new_version": _summarize_version(new_version, reloaded_dataset.current_version_id),
+        "dataset": reloaded_dataset,
+    }
 
 
 @router.post("/dataset/{dataset_id}/result", response_model=SaveResultResponse)
