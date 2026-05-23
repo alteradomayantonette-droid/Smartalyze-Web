@@ -112,6 +112,8 @@ export type PatternImputationGroup = {
   confidence: number;
   support_count: number;
   fillable_count: number;
+  consistency_ratio: number;
+  explanation: string;
 };
 
 export type PatternImputationResult = {

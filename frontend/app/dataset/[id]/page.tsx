@@ -351,6 +351,7 @@ export default function DatasetWorkspacePage() {
   const [structureSummary, setStructureSummary] = useState<StructureSummaryResponse | null>(null);
   const [sortColumn, setSortColumn] = useState("");
   const [sortAscending, setSortAscending] = useState(true);
+  const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
 
   function setFeedback(text: string, tone: FeedbackTone = "neutral") {
     setMessage(text);
@@ -537,6 +538,7 @@ export default function DatasetWorkspacePage() {
 
   function handleRescanData() {
     setCleaningDetection(null);
+    setCleaningResult(null);
   }
 
   function handleDiscardResult() {
@@ -560,7 +562,13 @@ export default function DatasetWorkspacePage() {
       setCleaningDetection(response);
       setCleaningResult(response);
       setCleaningOperations([]);
-      setFeedback("Cleaning applied. Review the preview before saving.", "success");
+      setActiveTab("overview");
+      setFeedback(
+        cleaningResult
+          ? "Cleaning re-applied — previous result was replaced. Save to make it permanent."
+          : "Cleaning applied — overview updated. Save to make it permanent.",
+        "success",
+      );
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Could not apply cleaning operations.", "error");
     } finally {
@@ -773,6 +781,105 @@ export default function DatasetWorkspacePage() {
     );
   }
 
+  function renderIssuesPanel() {
+    if (!cleaningDetection) return null;
+
+    const missingEntries = Object.entries(cleaningDetection.missing_values ?? {}).filter(([, count]) => count > 0);
+    const typeIssues = cleaningIssues.filter((issue) => issue.kind === "type_inconsistency" && issue.column);
+    const hasDuplicates = (cleaningDetection.duplicates ?? 0) > 0;
+    const totalIssueCount = missingEntries.length + typeIssues.length + (hasDuplicates ? 1 : 0);
+
+    if (totalIssueCount === 0) return null;
+
+    const rowCount = workspace?.dataset.row_count ?? 0;
+
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 shadow-sm">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-5 py-4 text-left"
+          onClick={() => setIssuesPanelOpen((prev) => !prev)}
+        >
+          <div className="flex items-center gap-3">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+            <span className="font-semibold text-slate-950">
+              {totalIssueCount} Issue{totalIssueCount === 1 ? "" : "s"} Detected
+            </span>
+            <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+              Review before applying
+            </span>
+          </div>
+          <span className="text-sm text-slate-500">{issuesPanelOpen ? "▲ Collapse" : "▼ Expand"}</span>
+        </button>
+
+        {issuesPanelOpen && (
+          <div className="space-y-2 border-t border-amber-200 px-5 pb-5 pt-4">
+            {hasDuplicates && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <div className="text-sm text-red-800">
+                  <span className="font-semibold">{cleaningDetection.duplicates} duplicate row{cleaningDetection.duplicates === 1 ? "" : "s"}</span> found across the dataset.
+                </div>
+                <button
+                  type="button"
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${hasQueuedOperation(buildDuplicateOperation()) ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-600 text-white hover:bg-red-500"}`}
+                  onClick={toggleDuplicateRows}
+                >
+                  {hasQueuedOperation(buildDuplicateOperation()) ? "Added" : "Add fix"}
+                </button>
+              </div>
+            )}
+
+            {missingEntries.map(([col, count]) => {
+              const pct = rowCount > 0 ? ((count / rowCount) * 100).toFixed(1) : "0.0";
+              const strategy = missingValueStrategies[col] ?? getDefaultMissingStrategy(col, cleaningDetection);
+              const op = buildMissingValueOperation(col, strategy);
+              const queued = hasQueuedOperation(op);
+              return (
+                <div key={col} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3">
+                  <div className="text-sm text-amber-900">
+                    Column <span className="font-semibold">'{col}'</span> has{" "}
+                    <span className="font-semibold">{count} missing cell{count === 1 ? "" : "s"}</span>{" "}
+                    ({pct}% missing)
+                  </div>
+                  <button
+                    type="button"
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-amber-600 text-white hover:bg-amber-500"}`}
+                    onClick={() => addMissingValueOperation(col)}
+                  >
+                    {queued ? "Added" : "Add fix"}
+                  </button>
+                </div>
+              );
+            })}
+
+            {typeIssues.map((issue) => {
+              const col = issue.column ?? "";
+              const inferredType = String(issue.details?.inferred_type ?? "");
+              const targetType: "numeric" | "datetime" = inferredType === "datetime_string" ? "datetime" : "numeric";
+              const op = buildConvertTypeOperation(col, targetType);
+              const queued = hasQueuedOperation(op);
+              return (
+                <div key={col} className="flex items-center justify-between gap-3 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
+                  <div className="text-sm text-purple-900">
+                    Column <span className="font-semibold">'{col}'</span> is stored as text but looks like{" "}
+                    <span className="font-semibold text-purple-700">{targetType}</span>.
+                  </div>
+                  <button
+                    type="button"
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-purple-600 text-white hover:bg-purple-500"}`}
+                    onClick={() => toggleConvertType(col, targetType)}
+                  >
+                    {queued ? "Added" : "Add fix"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderCleaningTab() {
     if (cleaningDetecting) {
       return (
@@ -845,6 +952,8 @@ export default function DatasetWorkspacePage() {
             </div>
           );
         })()}
+
+        {renderIssuesPanel()}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
@@ -971,7 +1080,7 @@ export default function DatasetWorkspacePage() {
                   </div>
                   <button
                     type="button"
-                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${trimQueued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${trimQueued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
                     onClick={toggleTrimWhitespace}
                     disabled={textColumns.length === 0}
                   >
@@ -1207,6 +1316,14 @@ export default function DatasetWorkspacePage() {
                       const op = buildPatternImputationOperation(s.target_column, s.key_column);
                       const queued = hasQueuedOperation(op);
                       const confidencePct = Math.round(s.weighted_confidence * 100);
+                      const avgConsistency = s.groups.length > 0
+                        ? Math.round((s.groups.reduce((acc, g) => acc + (g.consistency_ratio ?? 0), 0) / s.groups.length) * 100)
+                        : 0;
+                      const insightText = confidencePct >= 90
+                        ? `Strong pattern (${avgConsistency}% avg consistency) — very safe to apply.`
+                        : avgConsistency < 70
+                        ? `Low consistency (${avgConsistency}%) — known values in some groups disagree on the fill. Review groups before applying.`
+                        : `Moderate confidence — review the group breakdown below before applying.`;
                       return (
                         <div key={`${s.key_column}-${s.target_column}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1214,11 +1331,15 @@ export default function DatasetWorkspacePage() {
                               <p className="font-medium text-slate-950">
                                 Fill <span className="text-teal-700">"{s.target_column}"</span> using <span className="text-slate-700">"{s.key_column}"</span>
                               </p>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-200">
                                   <div className="h-full rounded-full bg-teal-500" style={{ width: `${confidencePct}%` }} />
                                 </div>
-                                <span className="text-xs text-slate-500">{confidencePct}% confidence · {s.groups.length} groups</span>
+                                <span className="text-xs text-teal-700 font-medium">{confidencePct}% confidence</span>
+                                <span className="text-xs text-slate-400">·</span>
+                                <span className="text-xs text-slate-500">{avgConsistency}% avg consistent</span>
+                                <span className="text-xs text-slate-400">·</span>
+                                <span className="text-xs text-slate-500">{s.groups.length} group{s.groups.length !== 1 ? "s" : ""}</span>
                               </div>
                               {s.low_sample_groups.length > 0 && (
                                 <p className="text-xs text-amber-600">⚠ Groups with fewer than 5 values ({s.low_sample_groups.slice(0, 3).join(", ")}{s.low_sample_groups.length > 3 ? "…" : ""}) — fill values here are less reliable</p>
@@ -1232,7 +1353,46 @@ export default function DatasetWorkspacePage() {
                               {queued ? "Added" : "Add"}
                             </button>
                           </div>
-                          <InsightCard text={confidencePct >= 90 ? "Strong pattern — very safe to apply." : "Moderate confidence — review the groups above before applying."} />
+                          <InsightCard text={insightText} />
+                          {s.groups.length > 0 && (
+                            <div className="overflow-hidden rounded-lg border border-slate-200">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-slate-100 text-left text-slate-500">
+                                    <th className="px-3 py-2 font-medium">{s.key_column}</th>
+                                    <th className="px-3 py-2 font-medium">Fill value</th>
+                                    <th className="px-3 py-2 font-medium">Consistent</th>
+                                    <th className="px-3 py-2 font-medium text-slate-400 font-normal hidden lg:table-cell">Detail</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {s.groups.map((g) => {
+                                    const consistPct = Math.round((g.consistency_ratio ?? 0) * 100);
+                                    const isLowSample = s.low_sample_groups.includes(g.key_value);
+                                    return (
+                                      <tr
+                                        key={g.key_value}
+                                        title={g.explanation ?? ""}
+                                        className="border-t border-slate-100 hover:bg-white transition"
+                                      >
+                                        <td className="px-3 py-2 font-medium text-slate-800">
+                                          {g.key_value}
+                                          {isLowSample && <span className="ml-1 text-amber-500" title="Fewer than 5 supporting records">⚠</span>}
+                                        </td>
+                                        <td className="px-3 py-2 text-teal-700 font-medium">{g.fill_value ?? "—"}</td>
+                                        <td className="px-3 py-2">
+                                          <span className={`font-medium ${consistPct >= 90 ? "text-green-600" : consistPct >= 70 ? "text-amber-600" : "text-red-500"}`}>
+                                            {consistPct}%
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-400 hidden lg:table-cell truncate max-w-xs">{g.explanation ?? ""}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1273,7 +1433,7 @@ export default function DatasetWorkspacePage() {
                   return (
                     <button
                       type="button"
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`}
                       onClick={toggleSortValues}
                       disabled={!sortColumn}
                     >
@@ -1308,7 +1468,7 @@ export default function DatasetWorkspacePage() {
             <div className="space-y-3">
               {cleaningOperations.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                  No operations selected yet.
+                  {cleaningResult ? "No new operations queued." : "No operations selected yet."}
                 </div>
               ) : (
                 cleaningOperations.map((operation, index) => (
@@ -1341,59 +1501,32 @@ export default function DatasetWorkspacePage() {
           </aside>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="font-semibold text-slate-950">Cleaned Preview</h3>
-            <p className="mt-1 text-sm text-slate-600">Preview the result before saving a new version.</p>
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
-              {cleaningResult ? renderPreviewTable(cleaningResult.preview) : <p className="text-sm text-slate-600">No cleaned preview yet.</p>}
-            </div>
-            {cleaningResult ? (
-              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <dt className="text-slate-500">Rows</dt>
-                    <dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <dt className="text-slate-500">Columns</dt>
-                  <dd className="font-medium text-slate-950">{String(cleaningResult.summary.column_count ?? "-")}</dd>
-                </div>
-                <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.missing_cells ?? 0) > 0 ? "warning" : "success")}`}>
-                  <dt className="text-slate-500">Missing</dt>
-                  <dd className="font-medium">{String(cleaningResult.summary.missing_cells ?? "-")}</dd>
-                </div>
-                <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.duplicate_rows ?? 0) > 0 ? "error" : "success")}`}>
-                  <dt className="text-slate-500">Duplicates</dt>
-                  <dd className="font-medium">{String(cleaningResult.summary.duplicate_rows ?? "-")}</dd>
-                </div>
-              </dl>
-            ) : null}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="font-semibold text-slate-950">Cleaned Preview</h3>
+          <p className="mt-1 text-sm text-slate-600">Preview the result before saving a new version.</p>
+          <div className="mt-4 min-h-[200px] max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
+            {cleaningResult ? renderPreviewTable(cleaningResult.preview) : <p className="text-sm text-slate-600">No cleaned preview yet.</p>}
           </div>
-
-          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="font-semibold text-slate-950">Save Result</h3>
-            <p className="text-sm text-slate-600">Choose whether to replace the current dataset or create a new one.</p>
-            {cleaningResult && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-                <span>Cleaning applied. Head to Analysis to review the changes.</span>
-                <button
-                  type="button"
-                  className="shrink-0 font-medium underline underline-offset-4 decoration-indigo-400 hover:text-indigo-900"
-                  onClick={() => setActiveTab("analysis")}
-                >
-                  Review →
-                </button>
+          {cleaningResult ? (
+            <dl className="mt-4 grid grid-cols-4 gap-3 text-sm">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <dt className="text-slate-500">Rows</dt>
+                <dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd>
               </div>
-            )}
-            <button
-              type="button"
-              className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={saving || !cleaningResult}
-              onClick={() => setShowSaveModal(true)}
-            >
-              Save Result
-            </button>
-          </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <dt className="text-slate-500">Columns</dt>
+                <dd className="font-medium text-slate-950">{String(cleaningResult.summary.column_count ?? "-")}</dd>
+              </div>
+              <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.missing_cells ?? 0) > 0 ? "warning" : "success")}`}>
+                <dt className="text-slate-500">Missing</dt>
+                <dd className="font-medium">{String(cleaningResult.summary.missing_cells ?? "-")}</dd>
+              </div>
+              <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.duplicate_rows ?? 0) > 0 ? "error" : "success")}`}>
+                <dt className="text-slate-500">Duplicates</dt>
+                <dd className="font-medium">{String(cleaningResult.summary.duplicate_rows ?? "-")}</dd>
+              </div>
+            </dl>
+          ) : null}
         </div>
       </div>
     );
@@ -1518,6 +1651,19 @@ export default function DatasetWorkspacePage() {
               <p className="mt-1 text-2xl font-semibold text-indigo-600">{stats ? numericCols.length : "-"}</p>
             </div>
           </div>
+
+          {cleaningResult && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span>Analysis reflects original data. Save your cleaned result to analyze the cleaned version.</span>
+              <button
+                type="button"
+                className="shrink-0 font-medium underline underline-offset-4 decoration-amber-400 hover:text-amber-900"
+                onClick={() => setShowSaveModal(true)}
+              >
+                Save now →
+              </button>
+            </div>
+          )}
 
           {structureSummary && structureSummary.columns.length > 0 && (
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2467,7 +2613,7 @@ export default function DatasetWorkspacePage() {
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
               {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "correlation", "prediction"] as WorkspaceTab[]).map((tab) => {
-                const hasUnsavedBadge = tab === "cleaning" && cleaningResult !== null;
+                const hasUnsavedBadge = (tab === "cleaning" || tab === "overview") && cleaningResult !== null;
                 return (
                   <button
                     key={tab}
@@ -2562,6 +2708,40 @@ export default function DatasetWorkspacePage() {
                   {exporting ? "Exporting..." : "Export"}
                 </button>
               </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-950">Save Result</h2>
+              {!cleaningResult ? (
+                <div className="mt-4 space-y-3">
+                  <p className="text-sm text-slate-500">Apply cleaning operations first.</p>
+                  <button
+                    type="button"
+                    className="w-full cursor-not-allowed rounded-xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-400"
+                    disabled
+                  >
+                    Save Result
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-800">
+                    <p className="font-medium">Ready to save</p>
+                    <p className="mt-1">
+                      {String(cleaningResult.summary.row_count ?? "-")} rows,{" "}
+                      {String(cleaningResult.summary.column_count ?? "-")} columns
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={saving}
+                    onClick={() => setShowSaveModal(true)}
+                  >
+                    {saving ? "Saving..." : "Save Result"}
+                  </button>
+                </div>
+              )}
             </div>
           </aside>
         </section>

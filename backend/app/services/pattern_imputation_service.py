@@ -26,14 +26,17 @@ def _analyze_pair(
     Analyse the relationship between a categorical key column and a numeric
     target column that has missing values.  Returns None when the pattern is
     too weak (weighted confidence < threshold).
-    """
-    key_series = df[key_col].dropna()
-    target_series = df[target_col]
 
+    Two confidence dimensions:
+    - coverage   = support_count / total_in_group (how many records have a known value)
+    - consistency = consistency_count / support_count (how many known values agree on the fill)
+    - weighted_confidence = geometric mean of avg_coverage and avg_consistency
+    """
     groups: list[PatternImputationGroup] = []
     low_sample_groups: list[str] = []
-    confidence_sum = 0.0
-    confidence_weight = 0
+    coverage_sum = 0.0
+    consistency_sum = 0.0
+    group_count = 0
 
     for key_value, group_df in df.groupby(key_col, dropna=True):
         known = group_df[target_col].dropna()
@@ -49,7 +52,11 @@ def _analyze_pair(
 
         support_count = int(len(known))
         total_in_group = support_count + fillable_count
-        confidence = support_count / total_in_group if total_in_group > 0 else 0.0
+        coverage = support_count / total_in_group if total_in_group > 0 else 0.0
+
+        # Consistency: what fraction of known values equal the modal fill?
+        consistency_count = int((known == fill_value).sum()) if fill_value is not None else 0
+        consistency_ratio = round(consistency_count / support_count, 4) if support_count > 0 else 0.0
 
         key_str = str(key_value)
         if support_count < _LOW_SAMPLE_THRESHOLD:
@@ -64,22 +71,36 @@ def _analyze_pair(
         else:
             fill_serialised = None
 
+        # Human-readable explanation for this group
+        fill_repr = fill_serialised if fill_serialised is not None else "N/A"
+        explanation = (
+            f"'{key_col}'='{key_str}' has {total_in_group} record(s); "
+            f"{consistency_count} of {support_count} known {target_col} values are {fill_repr!r} "
+            f"({round(consistency_ratio * 100)}% consistent)"
+        )
+
         groups.append(
             PatternImputationGroup(
                 key_value=key_str,
                 fill_value=fill_serialised,
-                confidence=round(confidence, 4),
+                confidence=round(coverage, 4),
                 support_count=support_count,
                 fillable_count=fillable_count,
+                consistency_ratio=consistency_ratio,
+                explanation=explanation,
             )
         )
-        confidence_sum += confidence
-        confidence_weight += 1
+        coverage_sum += coverage
+        consistency_sum += consistency_ratio
+        group_count += 1
 
-    if confidence_weight == 0:
+    if group_count == 0:
         return None
 
-    weighted_confidence = round(confidence_sum / confidence_weight, 4)
+    avg_coverage = coverage_sum / group_count
+    avg_consistency = consistency_sum / group_count
+    # Geometric mean penalises both low coverage AND low consistency equally.
+    weighted_confidence = round((avg_coverage * avg_consistency) ** 0.5, 4)
     if weighted_confidence < _MIN_CONFIDENCE:
         return None
 

@@ -23,6 +23,7 @@ from app.services.cleaning_service import (
 )
 from app.services.dataset_snapshot import snapshot_to_dataframe
 from app.services.dataset_service import get_owned_dataset
+from app.services.pattern_imputation_service import find_pattern_suggestions
 
 router = APIRouter(prefix="/clean", tags=["cleaning"])
 
@@ -95,6 +96,8 @@ endpoint to replace the dataset or save as a new dataset.
     )
 
     cleaned_missing_values, cleaned_duplicates, cleaned_column_types, cleaned_issues = analyze_cleaning_frame(cleaned_frame)
+    cleaned_cols_with_missing = [col for col, count in cleaned_missing_values.items() if count > 0]
+    cleaned_pattern_suggestions = find_pattern_suggestions(cleaned_frame, cleaned_cols_with_missing)
     summary = dict(cleaned_snapshot["summary"])
     if unparseable_dates:
         summary["unparseable_dates"] = unparseable_dates
@@ -107,6 +110,7 @@ endpoint to replace the dataset or save as a new dataset.
         "duplicates": cleaned_duplicates,
         "column_types": cleaned_column_types,
         "issues": cleaned_issues,
+        "pattern_suggestions": cleaned_pattern_suggestions,
         "preview": cleaned_snapshot["preview"],
         "summary": summary,
         "data_snapshot": cleaned_snapshot,

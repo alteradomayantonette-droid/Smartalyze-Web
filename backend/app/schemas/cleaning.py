@@ -70,6 +70,8 @@ class PatternImputationGroup(BaseModel):
     confidence: float
     support_count: int
     fillable_count: int
+    consistency_ratio: float = 0.0
+    explanation: str = ""
 
 
 class PatternImputationResult(BaseModel):
@@ -117,6 +119,7 @@ save-result endpoint.
     duplicates: int
     column_types: dict[str, str]
     issues: list[CleaningIssue]
+    pattern_suggestions: list[PatternImputationResult] = []
     preview: list[dict]
     summary: dict[str, Any]
     data_snapshot: dict[str, Any]
