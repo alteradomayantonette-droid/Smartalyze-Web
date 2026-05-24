@@ -775,6 +775,8 @@ export default function DatasetWorkspacePage() {
         setCleaningResult(null);
         setCleaningDetection(null);
         setCumulativeAppliedOperations([]);
+        setOverviewExtraRows([]);
+        setOverviewTotalRows(null);
         setFeedback("Result replaced the current dataset.", "success");
       } else {
         setCleaningResult(null);

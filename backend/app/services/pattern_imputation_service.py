@@ -14,7 +14,7 @@ def _is_categorical(series: pd.Series) -> bool:
         return False
     if pd.api.types.is_datetime64_any_dtype(series):
         return False
-    return series.dtype == object
+    return pd.api.types.is_string_dtype(series) or series.dtype == object
 
 
 def _analyze_pair(
@@ -124,7 +124,8 @@ def find_pattern_suggestions(df: pd.DataFrame, missing_cols: list[str]) -> list[
     categorical_cols = [c for c in df.columns if _is_categorical(df[c]) and df[c].nunique(dropna=True) <= 50]
     numeric_missing = [
         c for c in missing_cols
-        if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
+        if c in df.columns
+        and (pd.api.types.is_numeric_dtype(df[c]) or pd.api.types.is_string_dtype(df[c]) or df[c].dtype == object)
     ]
 
     if not categorical_cols or not numeric_missing:
