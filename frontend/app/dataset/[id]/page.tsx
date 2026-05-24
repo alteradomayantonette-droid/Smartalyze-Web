@@ -22,6 +22,10 @@ import {
   DistributionResponse,
   exportDataset,
   ExportDatasetFormat,
+  FilterOp,
+  FilterPredicate,
+  filterDatasetRows,
+  FilterResponse,
   getAnomalies,
   getCorrelation,
   getDatasetRows,
@@ -390,6 +394,16 @@ export default function DatasetWorkspacePage() {
   const [sortAscending, setSortAscending] = useState(true);
   const [derivedColumnName, setDerivedColumnName] = useState("");
   const [derivedExpression, setDerivedExpression] = useState("");
+  const [filterPredicates, setFilterPredicates] = useState<FilterPredicate[]>([]);
+  const [filterCombine, setFilterCombine] = useState<"and" | "or">("and");
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterResult, setFilterResult] = useState<FilterResponse | null>(null);
+  const [filterLoading, setFilterLoading] = useState(false);
+  const [draftFilterColumn, setDraftFilterColumn] = useState("");
+  const [draftFilterOp, setDraftFilterOp] = useState<FilterOp>("eq");
+  const [draftFilterValue, setDraftFilterValue] = useState("");
+  const [draftFilterLower, setDraftFilterLower] = useState("");
+  const [draftFilterUpper, setDraftFilterUpper] = useState("");
   const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
   const [cumulativeAppliedOperations, setCumulativeAppliedOperations] = useState<CleaningOperation[]>([]);
 
@@ -485,6 +499,78 @@ export default function DatasetWorkspacePage() {
       .catch(() => { setMessage("Could not load correlation data."); setMessageTone("error"); })
       .finally(() => setCorrelationLoading(false));
   }, [activeTab, workspace, token, correlationData, correlationMethod]);
+
+  useEffect(() => {
+    if (!workspace || !token) return;
+    if (filterPredicates.length === 0) {
+      setFilterResult(null);
+      return;
+    }
+    let cancelled = false;
+    setFilterLoading(true);
+    const snapshot = (cleaningResult?.data_snapshot ?? null) as Record<string, unknown> | null;
+    filterDatasetRows(
+      workspace.dataset.id,
+      {
+        predicates: filterPredicates,
+        combine: filterCombine,
+        offset: 0,
+        limit: 50,
+        data_snapshot: snapshot,
+      },
+      token,
+    )
+      .then((res) => { if (!cancelled) setFilterResult(res); })
+      .catch((error) => {
+        if (!cancelled) {
+          setMessage(error instanceof Error ? error.message : "Could not apply filters.");
+          setMessageTone("error");
+          setFilterResult(null);
+        }
+      })
+      .finally(() => { if (!cancelled) setFilterLoading(false); });
+    return () => { cancelled = true; };
+  }, [workspace, token, filterPredicates, filterCombine, cleaningResult]);
+
+  function addFilterPredicate() {
+    if (!draftFilterColumn) return;
+    let predicate: FilterPredicate;
+    if (draftFilterOp === "is_null" || draftFilterOp === "not_null") {
+      predicate = { column: draftFilterColumn, op: draftFilterOp };
+    } else if (draftFilterOp === "between") {
+      if (!draftFilterLower || !draftFilterUpper) {
+        setFeedback("Provide both lower and upper values for 'between'.", "warning");
+        return;
+      }
+      predicate = { column: draftFilterColumn, op: "between", lower: draftFilterLower, upper: draftFilterUpper };
+    } else if (draftFilterOp === "in") {
+      const values = draftFilterValue.split(",").map((v) => v.trim()).filter(Boolean);
+      if (values.length === 0) {
+        setFeedback("Provide at least one value (comma-separated) for 'in'.", "warning");
+        return;
+      }
+      predicate = { column: draftFilterColumn, op: "in", values };
+    } else {
+      if (!draftFilterValue.trim()) {
+        setFeedback("Provide a value to filter by.", "warning");
+        return;
+      }
+      predicate = { column: draftFilterColumn, op: draftFilterOp, value: draftFilterValue };
+    }
+    setFilterPredicates((prev) => [...prev, predicate]);
+    setDraftFilterValue("");
+    setDraftFilterLower("");
+    setDraftFilterUpper("");
+  }
+
+  function removeFilterPredicate(index: number) {
+    setFilterPredicates((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function clearAllFilters() {
+    setFilterPredicates([]);
+    setFilterResult(null);
+  }
 
   useEffect(() => {
     if (!workspace || !token || !selectedDistColumn) return;
@@ -1783,18 +1869,190 @@ export default function DatasetWorkspacePage() {
               </div>
             );
           })()}
-          {renderPreviewTable(displayPreview)}
-          {!cleaningResult && canLoadMore ? (
-            <button
-              onClick={handleLoadMoreOverviewRows}
-              disabled={overviewLoadingMore}
-              className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-            >
-              {overviewLoadingMore ? "Loading…" : `Load 10 more (${overviewLoaded} of ${overviewTotal} shown)`}
-            </button>
-          ) : !cleaningResult && overviewLoaded > 10 ? (
-            <p className="text-center text-xs text-slate-400">All {overviewTotal} rows shown</p>
-          ) : null}
+
+          {(() => {
+            const ops: { value: FilterOp; label: string }[] = [
+              { value: "eq", label: "= equals" },
+              { value: "neq", label: "≠ not equal" },
+              { value: "gt", label: "> greater than" },
+              { value: "gte", label: "≥ greater or equal" },
+              { value: "lt", label: "< less than" },
+              { value: "lte", label: "≤ less or equal" },
+              { value: "contains", label: "contains" },
+              { value: "starts_with", label: "starts with" },
+              { value: "in", label: "in (comma list)" },
+              { value: "between", label: "between" },
+              { value: "is_null", label: "is empty" },
+              { value: "not_null", label: "is not empty" },
+            ];
+            const opLabel = (op: FilterOp): string => ops.find((o) => o.value === op)?.label ?? op;
+            const predicateChip = (p: FilterPredicate): string => {
+              if (p.op === "is_null") return `${p.column} is empty`;
+              if (p.op === "not_null") return `${p.column} is not empty`;
+              if (p.op === "between") return `${p.column} between ${String(p.lower)} and ${String(p.upper)}`;
+              if (p.op === "in") return `${p.column} in (${(p.values ?? []).map(String).join(", ")})`;
+              return `${p.column} ${opLabel(p.op).split(" ")[0]} ${String(p.value)}`;
+            };
+            const isUnary = draftFilterOp === "is_null" || draftFilterOp === "not_null";
+            const isRange = draftFilterOp === "between";
+            return (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between text-left"
+                  onClick={() => setFilterPanelOpen((open) => !open)}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-950">Filters</span>
+                    {filterPredicates.length > 0 ? (
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                        {filterPredicates.length} active
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-500">Narrow your dataset by column predicates.</span>
+                    )}
+                  </span>
+                  <span className="text-slate-400">{filterPanelOpen ? "▾" : "▸"}</span>
+                </button>
+
+                {filterPredicates.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {filterPredicates.map((p, i) => (
+                      <span
+                        key={`${p.column}-${p.op}-${i}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+                      >
+                        {predicateChip(p)}
+                        <button
+                          type="button"
+                          className="text-indigo-500 hover:text-indigo-900"
+                          onClick={() => removeFilterPredicate(i)}
+                          aria-label="Remove filter"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    {filterPredicates.length > 1 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                        Combine:
+                        <button
+                          type="button"
+                          className={`rounded-full px-2 py-0.5 ${filterCombine === "and" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}
+                          onClick={() => setFilterCombine("and")}
+                        >
+                          AND
+                        </button>
+                        <button
+                          type="button"
+                          className={`rounded-full px-2 py-0.5 ${filterCombine === "or" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}
+                          onClick={() => setFilterCombine("or")}
+                        >
+                          OR
+                        </button>
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="ml-auto text-xs font-medium text-slate-500 underline-offset-4 hover:text-slate-900 hover:underline"
+                      onClick={clearAllFilters}
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                ) : null}
+
+                {filterPanelOpen ? (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,180px)_minmax(0,1fr)_auto]">
+                    <select
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                      value={draftFilterColumn}
+                      onChange={(e) => setDraftFilterColumn(e.target.value)}
+                    >
+                      <option value="">Column…</option>
+                      {availableColumns.map((col) => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                      value={draftFilterOp}
+                      onChange={(e) => setDraftFilterOp(e.target.value as FilterOp)}
+                    >
+                      {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    {isUnary ? (
+                      <div className="text-xs text-slate-500 self-center px-2">No value needed.</div>
+                    ) : isRange ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="lower"
+                          value={draftFilterLower}
+                          onChange={(e) => setDraftFilterLower(e.target.value)}
+                          className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                        />
+                        <span className="text-xs text-slate-500">to</span>
+                        <input
+                          type="text"
+                          placeholder="upper"
+                          value={draftFilterUpper}
+                          onChange={(e) => setDraftFilterUpper(e.target.value)}
+                          className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder={draftFilterOp === "in" ? "value1, value2, …" : "value"}
+                        value={draftFilterValue}
+                        onChange={(e) => setDraftFilterValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFilterPredicate(); } }}
+                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={addFilterPredicate}
+                      disabled={!draftFilterColumn}
+                    >
+                      Add filter
+                    </button>
+                  </div>
+                ) : null}
+
+                {filterPredicates.length > 0 ? (
+                  <p className="mt-3 text-xs text-slate-500">
+                    {filterLoading
+                      ? "Filtering…"
+                      : filterResult
+                      ? `Showing ${Math.min(filterResult.limit, filterResult.rows.length)} of ${filterResult.total_matched.toLocaleString()} matching rows (out of ${filterResult.total_rows.toLocaleString()} total).`
+                      : "No filter result yet."}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })()}
+
+          {filterPredicates.length > 0 && filterResult ? (
+            renderPreviewTable(filterResult.rows)
+          ) : (
+            <>
+              {renderPreviewTable(displayPreview)}
+              {!cleaningResult && canLoadMore ? (
+                <button
+                  onClick={handleLoadMoreOverviewRows}
+                  disabled={overviewLoadingMore}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {overviewLoadingMore ? "Loading…" : `Load 10 more (${overviewLoaded} of ${overviewTotal} shown)`}
+                </button>
+              ) : !cleaningResult && overviewLoaded > 10 ? (
+                <p className="text-center text-xs text-slate-400">All {overviewTotal} rows shown</p>
+              ) : null}
+            </>
+          )}
         </div>
       );
     }

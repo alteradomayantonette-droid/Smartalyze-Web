@@ -89,6 +89,46 @@ export type ExportDatasetRequest = {
   data_snapshot?: Record<string, unknown> | null;
 };
 
+export type FilterOp =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "starts_with"
+  | "is_null"
+  | "not_null"
+  | "in"
+  | "between";
+
+export type FilterPredicate = {
+  column: string;
+  op: FilterOp;
+  value?: unknown;
+  values?: unknown[];
+  lower?: unknown;
+  upper?: unknown;
+  case_sensitive?: boolean;
+};
+
+export type FilterRequest = {
+  predicates: FilterPredicate[];
+  combine?: "and" | "or";
+  offset?: number;
+  limit?: number;
+  data_snapshot?: Record<string, unknown> | null;
+};
+
+export type FilterResponse = {
+  rows: Record<string, unknown>[];
+  total_matched: number;
+  total_rows: number;
+  offset: number;
+  limit: number;
+};
+
 export type CleaningIssue = {
   kind: string;
   severity: "info" | "warning" | "error";
@@ -620,6 +660,22 @@ export function getDatasetRows(
   token: string,
 ): Promise<{ rows: Record<string, unknown>[]; total: number; offset: number; limit: number }> {
   return request(`/dataset/${datasetId}/rows?offset=${offset}&limit=${limit}`, {}, token);
+}
+
+export function filterDatasetRows(
+  datasetId: number,
+  payload: FilterRequest,
+  token: string,
+): Promise<FilterResponse> {
+  return request<FilterResponse>(
+    `/dataset/${datasetId}/filter`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
 }
 
 export function getCorrelation(

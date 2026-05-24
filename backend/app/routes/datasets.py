@@ -35,6 +35,7 @@ from app.schemas.dataset import (
     SaveResultRequest,
     SaveResultResponse,
 )
+from app.schemas.filter import FilterRequest, FilterResponse
 from app.schemas.analysis import DatasetTrendRequest, DatasetPredictRequest, TrendResponse, PredictResponse
 from app.schemas.structure import StructureSummaryRequest, StructureSummaryResponse
 from app.services.analysis_service import trend_analysis, predict_column
@@ -50,6 +51,7 @@ from app.services.dataset_service import (
     get_workspace_guidance,
     list_user_datasets,
 )
+from app.services.filter_service import filter_rows
 from app.services.structure_service import compute_structure_summary
 
 router = APIRouter()
@@ -325,6 +327,36 @@ Two modes:
         action_input_params={"source_dataset_id": dataset.id, "source_dataset_name": dataset.name},
     )
     return {"message": "Result saved as a new dataset.", "dataset": created_dataset}
+
+
+@router.post("/dataset/{dataset_id}/filter", response_model=FilterResponse)
+async def filter_dataset(
+    dataset_id: int,
+    payload: FilterRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Filter dataset rows by a list of predicates (AND/OR) and return a page.
+
+    The frontend uses this to power the row-filter panel on the Overview tab.
+    A `data_snapshot` may be passed to filter an unsaved cleaning result.
+    """
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+
+    snapshot = payload.data_snapshot if payload.data_snapshot is not None else dataset.current_snapshot
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset data is available to filter.")
+
+    frame = snapshot_to_dataframe(snapshot)
+    return filter_rows(
+        frame,
+        payload.predicates,
+        combine=payload.combine,
+        offset=payload.offset,
+        limit=payload.limit,
+    )
 
 
 @router.get("/dataset/{dataset_id}/rows")
