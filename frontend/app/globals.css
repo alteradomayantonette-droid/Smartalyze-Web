@@ -5,13 +5,17 @@
   --foreground: #0f172a;
   --surface: #ffffff;
   --surface-muted: #f1f5f9;
-  --accent: #4f46e5;
+  --accent: #6366f1;
   --accent-strong: #4338ca;
   --accent-soft: #eef2ff;
-  --warning: #facc15;
+  --warning: #f59e0b;
   --danger: #ef4444;
   --success: #22c55e;
   --invalid: #f97316;
+  --chart-1: #6366f1;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #f43f5e;
 }
 
 @theme inline {

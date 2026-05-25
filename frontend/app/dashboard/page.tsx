@@ -3,116 +3,41 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { Dataset, deleteDataset, getCurrentUser, listDatasets, uploadDataset } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
-type FeedbackTone = "neutral" | "success" | "warning" | "error";
-type DashboardIssueType = "missing" | "duplicate" | "invalid";
 type DatasetSortKey = "recent" | "name" | "size";
 
-type DashboardIssueItem = {
-  id: string;
-  datasetId: number;
-  datasetName: string;
-  type: DashboardIssueType;
-  label: string;
-  count: number;
-  href: string;
-  classes: string;
+const CHART_COLORS = {
+  good: "#22c55e",
+  fair: "#f59e0b",
+  needsWork: "#ef4444",
+  missing: "#f59e0b",
+  duplicate: "#ef4444",
+  invalid: "#f97316",
 };
-
-type SummaryCardProps = {
-  title: string;
-  value: string;
-  detail: string;
-  classes: string;
-  accent: string;
-};
-
-function SummaryCard({ title, value, detail, classes, accent }: SummaryCardProps) {
-  return (
-    <article className={`rounded-3xl border bg-white p-5 shadow-sm ${classes}`}>
-      <div className={`mb-4 h-1.5 w-16 rounded-full ${accent}`} />
-      <p className="text-sm font-medium text-slate-600">{title}</p>
-      <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
-      <p className="mt-2 text-sm text-slate-600">{detail}</p>
-    </article>
-  );
-}
-
-function getFeedbackClasses(tone: FeedbackTone): string {
-  switch (tone) {
-    case "success":
-      return "border-green-200 bg-green-50 text-green-800";
-    case "warning":
-      return "border-yellow-200 bg-yellow-50 text-yellow-800";
-    case "error":
-      return "border-red-200 bg-red-50 text-red-800";
-    default:
-      return "border-slate-200 bg-slate-50 text-slate-700";
-  }
-}
 
 function getNumericSummaryValue(summary: Record<string, unknown> | null | undefined, keys: string[]): number {
   for (const key of keys) {
     const value = summary?.[key];
     const numericValue = typeof value === "number" ? value : Number(value ?? 0);
-    if (Number.isFinite(numericValue) && numericValue > 0) {
-      return numericValue;
-    }
+    if (Number.isFinite(numericValue) && numericValue > 0) return numericValue;
   }
-
   return 0;
-}
-
-function getDatasetIssueItems(dataset: Dataset): DashboardIssueItem[] {
-  const summary = dataset.summary_json ?? {};
-  const issues: DashboardIssueItem[] = [];
-  const missingCount = getNumericSummaryValue(summary, ["missing_cells", "missing_values"]);
-  const duplicateCount = getNumericSummaryValue(summary, ["duplicate_rows", "duplicates"]);
-  const invalidCount = getNumericSummaryValue(summary, ["invalid_values", "invalid_rows", "invalid_data_types", "type_issues"]);
-
-  if (missingCount > 0) {
-    issues.push({
-      id: `${dataset.id}-missing`,
-      datasetId: dataset.id,
-      datasetName: dataset.original_filename,
-      type: "missing",
-      label: "Missing values",
-      count: missingCount,
-      href: `/dataset/${dataset.id}`,
-      classes: "border-yellow-200 bg-yellow-50 text-yellow-800",
-    });
-  }
-
-  if (duplicateCount > 0) {
-    issues.push({
-      id: `${dataset.id}-duplicates`,
-      datasetId: dataset.id,
-      datasetName: dataset.original_filename,
-      type: "duplicate",
-      label: "Duplicate rows",
-      count: duplicateCount,
-      href: `/dataset/${dataset.id}`,
-      classes: "border-red-200 bg-red-50 text-red-800",
-    });
-  }
-
-  if (invalidCount > 0) {
-    issues.push({
-      id: `${dataset.id}-invalid`,
-      datasetId: dataset.id,
-      datasetName: dataset.original_filename,
-      type: "invalid",
-      label: "Invalid values",
-      count: invalidCount,
-      href: `/dataset/${dataset.id}`,
-      classes: "border-orange-200 bg-orange-50 text-orange-800",
-    });
-  }
-
-  return issues;
 }
 
 function getHealthScore(dataset: Dataset): { score: number; label: "Good" | "Fair" | "Needs Work"; classes: string } {
@@ -129,529 +54,476 @@ function getHealthScore(dataset: Dataset): { score: number; label: "Good" | "Fai
   return { score, label: "Needs Work", classes: "bg-red-100 text-red-700" };
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function getIssueItems(dataset: Dataset) {
+  const summary = dataset.summary_json ?? {};
+  return {
+    missing: getNumericSummaryValue(summary, ["missing_cells", "missing_values"]),
+    duplicate: getNumericSummaryValue(summary, ["duplicate_rows", "duplicates"]),
+    invalid: getNumericSummaryValue(summary, ["invalid_values", "invalid_rows", "invalid_data_types", "type_issues"]),
+  };
 }
 
 function formatRelativeDate(value: string): string {
   const date = new Date(value);
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+type StatCardProps = { title: string; value: string; sub: string; accent: string; bg: string };
+
+function StatCard({ title, value, sub, accent, bg }: StatCardProps) {
+  return (
+    <article className={`rounded-2xl border bg-white p-5 shadow-sm ${bg}`}>
+      <div className={`mb-3 h-1 w-10 rounded-full ${accent}`} />
+      <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{title}</p>
+      <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{sub}</p>
+    </article>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [username, setUsername] = useState<string | null>(null);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [token, setToken] = useState<string | null>(null);
-  const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<DatasetSortKey>("recent");
 
-  function setFeedback(text: string, tone: FeedbackTone = "neutral") {
-    setMessage(text);
-    setMessageTone(tone);
-  }
-
   useEffect(() => {
-    const token = getStoredToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
-    setToken(token);
-
-    Promise.all([getCurrentUser(token), listDatasets(token)])
-      .then(([user, datasetList]) => {
-        setUsername(user.username);
-        setDatasets(datasetList);
-      })
-      .catch(() => {
-        clearStoredToken();
-        router.replace("/login");
-      })
+    const storedToken = getStoredToken();
+    if (!storedToken) { router.replace("/login"); return; }
+    setToken(storedToken);
+    Promise.all([getCurrentUser(storedToken), listDatasets(storedToken)])
+      .then(([user, datasetList]) => { setUsername(user.username); setDatasets(datasetList); })
+      .catch(() => { clearStoredToken(); router.replace("/login"); })
       .finally(() => setLoading(false));
   }, [router]);
 
-  async function refreshDatasets(currentToken?: string) {
-    const effectiveToken = currentToken ?? token;
-    if (!effectiveToken) {
-      return;
-    }
-
-    const datasetList = await listDatasets(effectiveToken);
-    setDatasets(datasetList);
+  async function refreshDatasets(t?: string) {
+    const tok = t ?? token;
+    if (!tok) return;
+    const list = await listDatasets(tok);
+    setDatasets(list);
   }
 
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const selectedFile = event.target.files?.[0] ?? null;
-    if (!selectedFile) {
-      return;
-    }
-
-    const currentToken = token ?? getStoredToken();
-    if (!currentToken) {
-      setFeedback("You need to be logged in to upload.", "warning");
-      return;
-    }
-
+    const file = event.target.files?.[0] ?? null;
+    if (!file) return;
+    const tok = token ?? getStoredToken();
+    if (!tok) { toast.warning("You need to be logged in to upload."); return; }
     setUploading(true);
-    setFeedback("");
-
     try {
-      await uploadDataset(selectedFile, "Dashboard upload", currentToken);
+      await uploadDataset(file, "Dashboard upload", tok);
       event.target.value = "";
-      await refreshDatasets(currentToken);
-      setFeedback("Dataset uploaded successfully.", "success");
+      await refreshDatasets(tok);
+      toast.success("Dataset uploaded successfully.");
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Upload failed.", "error");
+      toast.error(error instanceof Error ? error.message : "Upload failed.");
     } finally {
       setUploading(false);
     }
   }
 
-  function openDeleteModal(dataset: Dataset) {
-    setDeleteTarget(dataset);
-  }
-
-  function closeDeleteModal() {
-    if (deleting) {
-      return;
-    }
-    setDeleteTarget(null);
-  }
-
-  async function handleConfirmDelete() {
-    const currentToken = token ?? getStoredToken();
-    if (!currentToken || !deleteTarget) {
-      return;
-    }
-
-    setDeleting(true);
-    setFeedback("");
-
-    try {
-      await deleteDataset(deleteTarget.id, currentToken);
-      await refreshDatasets(currentToken);
-      setFeedback(`Deleted ${deleteTarget.original_filename}.`, "success");
-      setDeleteTarget(null);
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Delete failed.", "error");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
   async function handleLoadSample() {
-    const currentToken = token ?? getStoredToken();
-    if (!currentToken) {
-      setFeedback("You need to be logged in to upload.", "warning");
-      return;
-    }
+    const tok = token ?? getStoredToken();
+    if (!tok) { toast.warning("You need to be logged in."); return; }
     setLoadingSample(true);
-    setFeedback("");
     try {
       const res = await fetch("/sample-dataset.csv");
       const blob = await res.blob();
       const file = new File([blob], "sample-dataset.csv", { type: "text/csv" });
-      await uploadDataset(file, "Sample dataset with messy sales data", currentToken);
-      await refreshDatasets(currentToken);
-      setFeedback("Sample dataset loaded successfully.", "success");
+      await uploadDataset(file, "Sample dataset with messy sales data", tok);
+      await refreshDatasets(tok);
+      toast.success("Sample dataset loaded successfully.");
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not load sample.", "error");
+      toast.error(error instanceof Error ? error.message : "Could not load sample.");
     } finally {
       setLoadingSample(false);
     }
   }
 
-  function handleLogout() {
-    clearStoredToken();
-    router.replace("/login");
+  async function handleConfirmDelete() {
+    const tok = token ?? getStoredToken();
+    if (!tok || !deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteDataset(deleteTarget.id, tok);
+      await refreshDatasets(tok);
+      toast.success(`Deleted "${deleteTarget.original_filename}".`);
+      setDeleteTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  const datasetsByLatest = [...datasets].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+  function handleLogout() { clearStoredToken(); router.replace("/login"); }
 
-  const trimmedQuery = searchQuery.trim().toLowerCase();
-  const filteredDatasets = trimmedQuery
-    ? datasetsByLatest.filter((dataset) => {
-        const name = dataset.original_filename?.toLowerCase() ?? "";
-        const description = dataset.description?.toLowerCase() ?? "";
-        return name.includes(trimmedQuery) || description.includes(trimmedQuery);
-      })
-    : datasetsByLatest;
-
-  const sortedDatasets = (() => {
-    const copy = [...filteredDatasets];
-    switch (sortKey) {
-      case "name":
-        return copy.sort((a, b) => (a.original_filename ?? "").localeCompare(b.original_filename ?? ""));
-      case "size":
-        return copy.sort((a, b) => Number(b.row_count ?? 0) - Number(a.row_count ?? 0));
-      case "recent":
-      default:
-        return copy;
-    }
+  // Derived data
+  const byLatest = [...datasets].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const trimmed = searchQuery.trim().toLowerCase();
+  const filtered = trimmed
+    ? byLatest.filter((d) => (d.original_filename ?? "").toLowerCase().includes(trimmed) || (d.description ?? "").toLowerCase().includes(trimmed))
+    : byLatest;
+  const sorted = (() => {
+    const copy = [...filtered];
+    if (sortKey === "name") return copy.sort((a, b) => (a.original_filename ?? "").localeCompare(b.original_filename ?? ""));
+    if (sortKey === "size") return copy.sort((a, b) => Number(b.row_count ?? 0) - Number(a.row_count ?? 0));
+    return copy;
   })();
 
-  const visibleDatasets = sortedDatasets;
-  const allIssues = visibleDatasets.flatMap((dataset) => getDatasetIssueItems(dataset));
-  const datasetsWithWarnings = visibleDatasets.filter((dataset) => getDatasetIssueItems(dataset).length > 0).length;
-  const datasetsWithNoIssues = Math.max(visibleDatasets.length - datasetsWithWarnings, 0);
-  const totalRows = visibleDatasets.reduce((sum, dataset) => sum + Number(dataset.row_count ?? 0), 0);
-  const recentDataset = datasetsByLatest[0] ?? null;
-  const recentTopThree = datasetsByLatest.slice(0, 3);
+  const totalRows = datasets.reduce((s, d) => s + Number(d.row_count ?? 0), 0);
+  const healthCounts = datasets.reduce((acc, d) => {
+    const h = getHealthScore(d).label;
+    acc[h] = (acc[h] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const datasetsWithIssues = datasets.filter((d) => {
+    const issues = getIssueItems(d);
+    return issues.missing > 0 || issues.duplicate > 0 || issues.invalid > 0;
+  }).length;
+  const avgScore = datasets.length > 0
+    ? Math.round(datasets.reduce((s, d) => s + getHealthScore(d).score, 0) / datasets.length)
+    : 0;
 
-  const activityData = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const label = d.toLocaleDateString(undefined, { weekday: "short" });
-    const count = datasets.filter((ds) => new Date(ds.created_at).toDateString() === d.toDateString()).length;
-    return { label, count };
-  });
-  const activityMax = Math.max(...activityData.map((d) => d.count), 1);
+  const qualityPieData = [
+    { name: "Good", value: healthCounts["Good"] ?? 0, fill: CHART_COLORS.good },
+    { name: "Fair", value: healthCounts["Fair"] ?? 0, fill: CHART_COLORS.fair },
+    { name: "Needs Work", value: healthCounts["Needs Work"] ?? 0, fill: CHART_COLORS.needsWork },
+  ].filter((d) => d.value > 0);
+
+  const totalIssues = datasets.reduce(
+    (acc, d) => {
+      const issues = getIssueItems(d);
+      acc.missing += issues.missing;
+      acc.duplicate += issues.duplicate;
+      acc.invalid += issues.invalid;
+      return acc;
+    },
+    { missing: 0, duplicate: 0, invalid: 0 },
+  );
+  const issuesBarData = [
+    { name: "Missing Values", count: totalIssues.missing, fill: CHART_COLORS.missing },
+    { name: "Duplicates", count: totalIssues.duplicate, fill: CHART_COLORS.duplicate },
+    { name: "Invalid Values", count: totalIssues.invalid, fill: CHART_COLORS.invalid },
+  ].filter((d) => d.count > 0);
+
+  const recentDataset = byLatest[0] ?? null;
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">
-        <div className="mx-auto max-w-6xl">Loading dashboard...</div>
+      <main className="min-h-screen bg-slate-50 px-6 py-10">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-col gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-20 animate-pulse rounded-2xl bg-slate-200" />
+            ))}
+          </div>
+        </div>
       </main>
     );
   }
 
-  const summaryCards = [
-    {
-      title: "Total datasets",
-      value: String(visibleDatasets.length),
-      detail: "All uploads in one place.",
-      classes: "border-indigo-100",
-      accent: "bg-indigo-600",
-    },
-    {
-      title: "Datasets with no issues",
-      value: String(datasetsWithNoIssues),
-      detail: "No missing values or duplicates detected.",
-      classes: "border-green-100",
-      accent: "bg-green-500",
-    },
-    {
-      title: "Datasets with warnings",
-      value: String(datasetsWithWarnings),
-      detail: "Items that need quick review.",
-      classes: "border-amber-100",
-      accent: "bg-yellow-400",
-    },
-    {
-      title: "Total rows",
-      value: totalRows > 0 ? totalRows.toLocaleString() : "0",
-      detail: "Across the visible datasets.",
-      classes: "border-slate-200",
-      accent: "bg-sky-500",
-    },
-  ];
-
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900">
+    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-900">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+
+        {/* Page Header */}
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Smartalyze</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Dashboard</h1>
-            <p className="text-sm text-slate-600">Welcome{username ? `, ${username}` : ""}. Review your datasets and warnings at a glance.</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">Smartalyze</p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
+              {username ? `Welcome back, ${username}` : "Your Datasets"}
+            </h1>
+            <p className="text-sm text-slate-500">Data quality portfolio — {datasets.length} dataset{datasets.length !== 1 ? "s" : ""} total.</p>
           </div>
-          <button
-            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            type="button"
-            onClick={handleLogout}
-          >
-            Logout
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleUpload} />
+            <button
+              type="button"
+              className="rounded-xl border border-indigo-200 bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? "Uploading…" : "Upload Dataset"}
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              onClick={handleLoadSample}
+              disabled={loadingSample}
+            >
+              {loadingSample ? "Loading…" : "Load Sample"}
+            </button>
+            {recentDataset ? (
+              <Link
+                href={`/dataset/${recentDataset.id}`}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Open Recent
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
+              onClick={handleLogout}
+            >
+              Logout
+            </button>
+          </div>
         </header>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Quick actions</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Fast access to your workspace</h2>
-              <p className="mt-1 text-sm text-slate-600">Upload a new dataset or jump straight back into the latest one.</p>
+        {/* Stat Cards */}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Total Datasets"
+            value={String(datasets.length)}
+            sub="All uploads"
+            accent="bg-indigo-500"
+            bg="border-indigo-100"
+          />
+          <StatCard
+            title="Total Rows"
+            value={totalRows > 0 ? totalRows.toLocaleString() : "0"}
+            sub="Across all datasets"
+            accent="bg-sky-500"
+            bg="border-sky-100"
+          />
+          <StatCard
+            title="Datasets with Issues"
+            value={String(datasetsWithIssues)}
+            sub="Need attention"
+            accent="bg-amber-500"
+            bg="border-amber-100"
+          />
+          <StatCard
+            title="Avg Health Score"
+            value={datasets.length > 0 ? `${avgScore}%` : "—"}
+            sub="Quality index"
+            accent="bg-emerald-500"
+            bg="border-emerald-100"
+          />
+        </div>
+
+        {/* Charts Row */}
+        {datasets.length > 0 ? (
+          <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-900">Data Quality Breakdown</h2>
+              <p className="text-xs text-slate-500">Distribution of health scores across all datasets</p>
+              {qualityPieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={qualityPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={({ name, value }) => `${name}: ${value}`}
+                      labelLine={false}
+                    >
+                      {qualityPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => [`${value} dataset${Number(value) !== 1 ? "s" : ""}`, ""]} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-55 items-center justify-center text-sm text-slate-400">
+                  Upload datasets to see quality breakdown
+                </div>
+              )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
-                <input className="hidden" type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleUpload} />
-                <span>{uploading ? "Uploading..." : "Upload Dataset"}</span>
-              </label>
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={handleLoadSample}
-                  disabled={loadingSample}
-                >
-                  {loadingSample ? "Loading..." : "Load Sample Dataset"}
-                </button>
-                <p className="text-xs text-slate-400 text-center">25-row sales data with missing values &amp; duplicates</p>
-              </div>
-              {recentDataset ? (
-                <Link className="rounded-xl border border-indigo-200 bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500" href={`/dataset/${recentDataset.id}`}>
-                  Open Recent Dataset
-                </Link>
+            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-900">Top Issues</h2>
+              <p className="text-xs text-slate-500">Cumulative issue counts across all datasets</p>
+              {issuesBarData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={issuesBarData} layout="vertical" margin={{ top: 8, right: 32, left: 8, bottom: 0 }}>
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(value) => [value, "Count"]} cursor={{ fill: "#f1f5f9" }} />
+                    <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                      {issuesBarData.map((entry, index) => (
+                        <Cell key={`bar-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               ) : (
-                <button className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-400" type="button" disabled>
-                  Open Recent Dataset
-                </button>
+                <div className="flex h-55 items-center justify-center text-sm text-slate-400">
+                  No issues detected — your data looks clean.
+                </div>
               )}
             </div>
           </div>
-
-          {message ? <p className={`mt-5 rounded-2xl border px-4 py-3 text-sm ${getFeedbackClasses(messageTone)}`}>{message}</p> : null}
-        </section>
-
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {summaryCards.map((card) => (
-            <SummaryCard key={card.title} title={card.title} value={card.value} detail={card.detail} classes={card.classes} accent={card.accent} />
-          ))}
-        </section>
-
-        {recentTopThree.length > 0 ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Recently touched</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Jump back in</h2>
-              </div>
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {recentTopThree.map((dataset) => (
-                <Link
-                  key={dataset.id}
-                  href={`/dataset/${dataset.id}`}
-                  className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-md"
-                >
-                  <p className="truncate font-semibold text-slate-950 group-hover:text-indigo-700">{dataset.original_filename}</p>
-                  <p className="mt-1 text-xs text-slate-500">{formatRelativeDate(dataset.created_at)}</p>
-                  <p className="mt-2 text-xs text-slate-600">
-                    {dataset.row_count ?? "?"} rows · {dataset.column_count ?? "?"} cols
-                  </p>
-                </Link>
-              ))}
-            </div>
-          </section>
         ) : null}
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Activity</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Uploads — last 7 days</h2>
-          <div className="mt-5 flex h-24 items-end gap-2">
-            {activityData.map(({ label, count }) => (
-              <div key={label} className="flex flex-1 flex-col items-center gap-1">
-                <span className="text-xs font-medium text-slate-600">{count > 0 ? count : ""}</span>
-                <div
-                  className="w-full rounded-t-lg bg-indigo-500 transition-all"
-                  style={{ height: `${Math.max((count / activityMax) * 100, count > 0 ? 8 : 2)}%` }}
-                />
-                <span className="text-xs text-slate-500">{label}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_0.9fr]">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Warnings</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Issues across datasets</h2>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{allIssues.length} issues</span>
+        {/* Dataset List */}
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Datasets</h2>
+              {sorted.length !== datasets.length && trimmed ? (
+                <p className="text-xs text-slate-500">{sorted.length} of {datasets.length} match &ldquo;{searchQuery}&rdquo;</p>
+              ) : null}
             </div>
-
-            <div className="mt-5 space-y-3">
-              {allIssues.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-                  No warnings found. Your datasets look clean.
-                </div>
-              ) : (
-                allIssues.map((issue) => (
-                  <Link key={issue.id} href={issue.href} className={`block rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${issue.classes}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full ${
-                              issue.type === "missing" ? "bg-yellow-500" : issue.type === "duplicate" ? "bg-red-500" : "bg-orange-500"
-                            }`}
-                          />
-                          <p className="font-semibold text-slate-950">{issue.datasetName}</p>
-                        </div>
-                        <p className="mt-1 text-sm font-medium text-slate-700">{issue.label}</p>
-                        <p className="mt-1 text-xs text-slate-500">Open the dataset workspace → Cleaning tab to fix this.</p>
-                      </div>
-                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">{issue.count}</span>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Dataset list</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Your datasets</h2>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="search"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search by name or description…"
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500"
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search datasets…"
+                className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 w-52"
               />
-              <label className="inline-flex items-center gap-2 text-xs text-slate-500">
-                <span>Sort by</span>
-                <select
-                  value={sortKey}
-                  onChange={(event) => setSortKey(event.target.value as DatasetSortKey)}
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-700 outline-none transition focus:border-indigo-500"
-                >
-                  <option value="recent">Most recent</option>
-                  <option value="name">Name (A→Z)</option>
-                  <option value="size">Most rows</option>
-                </select>
-              </label>
-            </div>
-
-            {datasets.length > 0 && visibleDatasets.length !== datasets.length ? (
-              <p className="mt-2 text-xs text-slate-500">
-                Showing {visibleDatasets.length} of {datasets.length} dataset{datasets.length === 1 ? "" : "s"}{trimmedQuery ? ` matching “${trimmedQuery}”` : ""}.
-              </p>
-            ) : null}
-
-            <div className="mt-5 space-y-4">
-              {datasets.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-                  No datasets uploaded yet. Use Upload Dataset to add your first file.
-                </div>
-              ) : visibleDatasets.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-                  No datasets match your search.
-                </div>
-              ) : (
-                visibleDatasets.map((dataset) => {
-                  const issueCount = getDatasetIssueItems(dataset).length;
-                  const health = getHealthScore(dataset);
-
-                  return (
-                    <article key={dataset.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-semibold text-slate-950">{dataset.original_filename}</h3>
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-xs font-medium cursor-help ${health.classes}`}
-                              title="Score = 60% missing-free + 40% duplicate-free. Good ≥ 80, Fair ≥ 50, Needs Work < 50."
-                            >
-                              {health.label} · {health.score}
-                            </span>
-                          </div>
-                          <p className="text-sm text-slate-600">{dataset.description ?? "No description provided."}</p>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href={`/dataset/${dataset.id}`}>
-                            Open workspace
-                          </Link>
-                          <button
-                            className="text-sm font-medium text-red-700 underline decoration-red-300 underline-offset-4"
-                            type="button"
-                            onClick={() => openDeleteModal(dataset)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-
-                      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
-                          <dt className="text-slate-500">Rows</dt>
-                          <dd className="font-medium text-slate-950">{dataset.row_count ?? "-"}</dd>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white p-3">
-                          <dt className="text-slate-500">Columns</dt>
-                          <dd className="font-medium text-slate-950">{dataset.column_count ?? "-"}</dd>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white p-3">
-                          <dt className="text-slate-500">Last updated</dt>
-                          <dd className="font-medium text-slate-950" title={formatDate(dataset.created_at)}>{formatRelativeDate(dataset.created_at)}</dd>
-                        </div>
-                        {(() => {
-                          const summary = dataset.summary_json ?? {};
-                          const missing = Number(summary.missing_cells ?? 0);
-                          const dupes = Number(summary.duplicate_rows ?? 0);
-                          const parts: string[] = [];
-                          if (missing > 0) parts.push(`${missing} missing`);
-                          if (dupes > 0) parts.push(`${dupes} dupe${dupes === 1 ? "" : "s"}`);
-                          const label = parts.length > 0 ? parts.join(" · ") : "None";
-                          return (
-                            <div className={`rounded-xl border p-3 ${issueCount > 0 ? "border-yellow-100 bg-yellow-50" : "border-green-100 bg-green-50"}`}>
-                              <dt className="text-slate-500">Issues</dt>
-                              <dd className={`font-medium text-xs mt-0.5 ${issueCount > 0 ? "text-yellow-800" : "text-green-700"}`}>{label}</dd>
-                            </div>
-                          );
-                        })()}
-                      </dl>
-                    </article>
-                  );
-                })
-              )}
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as DatasetSortKey)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none transition focus:border-indigo-500"
+              >
+                <option value="recent">Most recent</option>
+                <option value="name">Name (A→Z)</option>
+                <option value="size">Most rows</option>
+              </select>
             </div>
           </div>
-        </section>
+
+          {datasets.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-10 text-center">
+              <p className="text-sm font-medium text-slate-600">No datasets yet</p>
+              <p className="mt-1 text-xs text-slate-400">Upload a CSV, XLSX, or JSON file to get started.</p>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+              No datasets match your search.
+            </div>
+          ) : (
+            <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
+              <table className="min-w-full divide-y divide-slate-100 text-sm">
+                <thead className="bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Name</th>
+                    <th className="px-4 py-3 text-left font-medium">Rows</th>
+                    <th className="px-4 py-3 text-left font-medium">Cols</th>
+                    <th className="px-4 py-3 text-left font-medium">Health</th>
+                    <th className="px-4 py-3 text-left font-medium">Issues</th>
+                    <th className="px-4 py-3 text-left font-medium">Last modified</th>
+                    <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 bg-white">
+                  {sorted.map((dataset) => {
+                    const health = getHealthScore(dataset);
+                    const issues = getIssueItems(dataset);
+                    const hasIssues = issues.missing > 0 || issues.duplicate > 0 || issues.invalid > 0;
+                    const issueParts: string[] = [];
+                    if (issues.missing > 0) issueParts.push(`${issues.missing} missing`);
+                    if (issues.duplicate > 0) issueParts.push(`${issues.duplicate} dup${issues.duplicate !== 1 ? "s" : ""}`);
+                    if (issues.invalid > 0) issueParts.push(`${issues.invalid} invalid`);
+                    return (
+                      <tr key={dataset.id} className="transition hover:bg-slate-50/60">
+                        <td className="px-4 py-3">
+                          <p className="max-w-50 truncate font-medium text-slate-900">{dataset.original_filename}</p>
+                          {dataset.description ? (
+                            <p className="mt-0.5 max-w-50 truncate text-xs text-slate-400">{dataset.description}</p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{dataset.row_count?.toLocaleString() ?? "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{dataset.column_count ?? "—"}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium cursor-help ${health.classes}`}
+                            title={`Score: ${health.score}. Good ≥80, Fair ≥50, Needs Work <50`}
+                          >
+                            {health.label} · {health.score}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {hasIssues ? (
+                            <span className="text-xs font-medium text-amber-700">{issueParts.join(" · ")}</span>
+                          ) : (
+                            <span className="text-xs text-emerald-600">Clean</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500" title={formatDate(dataset.created_at)}>
+                          {formatRelativeDate(dataset.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-3">
+                            <Link
+                              href={`/dataset/${dataset.id}`}
+                              className="text-xs font-medium text-indigo-600 transition hover:text-indigo-800"
+                            >
+                              Open
+                            </Link>
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-red-500 transition hover:text-red-700"
+                              onClick={() => setDeleteTarget(dataset)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Delete Confirmation Modal */}
       {deleteTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" role="dialog" aria-modal="true">
-            <h3 className="text-lg font-semibold text-slate-950">Delete dataset?</h3>
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" role="dialog" aria-modal="true">
+            <h3 className="text-base font-semibold text-slate-900">Delete dataset?</h3>
             <p className="mt-2 text-sm text-slate-600">
-              You are about to delete <span className="font-medium text-slate-900">{deleteTarget.original_filename}</span>. This action cannot be undone.
+              You are about to permanently delete{" "}
+              <span className="font-medium text-slate-900">{deleteTarget.original_filename}</span>.
+              This cannot be undone.
             </p>
-
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
                 type="button"
-                onClick={closeDeleteModal}
+                onClick={() => { if (!deleting) setDeleteTarget(null); }}
                 disabled={deleting}
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl border border-red-200 bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-60"
                 type="button"
                 onClick={handleConfirmDelete}
                 disabled={deleting}
               >
-                {deleting ? "Deleting..." : "Delete dataset"}
+                {deleting ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>

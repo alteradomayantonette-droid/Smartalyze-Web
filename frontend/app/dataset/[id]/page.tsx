@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import {
   analyzeStats,
@@ -36,67 +37,24 @@ import {
   groupDataset,
   GroupByResponse,
   listDatasetVersions,
-  PatternImputationResult,
   predictDataset,
   PredictResponse,
   restoreDatasetVersion,
   saveDatasetResult,
   StructureSummaryResponse,
   TrendResponse,
-  UnparseableDateRow,
   uploadDataset,
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 import { operationsToPandasScript } from "@/lib/codeExport";
+import { PrepareTab } from "@/components/dataset/PrepareTab";
+import { ExploreTab } from "@/components/dataset/ExploreTab";
+import { DetectTab } from "@/components/dataset/DetectTab";
+import { PredictTab } from "@/components/dataset/PredictTab";
 
-type WorkspaceTab = "overview" | "cleaning" | "analysis" | "aggregation" | "trends" | "anomaly" | "correlation" | "prediction";
-type FeedbackTone = "neutral" | "success" | "warning" | "error";
+type WorkspaceTab = "prepare" | "explore" | "detect" | "predict";
+type PrepareSubTab = "overview" | "cleaning";
 type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
-
-function getFeedbackClasses(tone: FeedbackTone): string {
-  switch (tone) {
-    case "success":
-      return "border-green-200 bg-green-50 text-green-800";
-    case "warning":
-      return "border-yellow-200 bg-yellow-50 text-yellow-800";
-    case "error":
-      return "border-red-200 bg-red-50 text-red-800";
-    default:
-      return "border-slate-200 bg-slate-50 text-slate-700";
-  }
-}
-
-function TipCard({ text }: { text: string }) {
-  return (
-    <div className="flex gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
-      <span className="mt-0.5 shrink-0">💡</span>
-      <span>{text}</span>
-    </div>
-  );
-}
-
-function InsightCard({ text }: { text: string }) {
-  return (
-    <div className="flex gap-2 rounded-xl bg-sky-50 border border-sky-200 p-3 text-sm text-sky-800">
-      <span className="mt-0.5 shrink-0">ℹ️</span>
-      <span className="italic">{text}</span>
-    </div>
-  );
-}
-
-function getSummaryTone(label: string, value: number | string | null | undefined): string {
-  const numericValue = typeof value === "number" ? value : Number(value ?? 0);
-
-  if (label === "Missing cells") {
-    return numericValue > 0 ? "border-yellow-200 bg-yellow-50 text-yellow-800" : "border-green-200 bg-green-50 text-green-800";
-  }
-
-  if (label === "Duplicates") {
-    return numericValue > 0 ? "border-red-200 bg-red-50 text-red-800" : "border-green-200 bg-green-50 text-green-800";
-  }
-
-  return "border-slate-200 bg-slate-50 text-slate-700";
-}
 
 function getColumnType(columnName: string, detection: CleanDetectResponse | null): string {
   return detection?.column_types?.[columnName] ?? "unknown";
@@ -111,7 +69,7 @@ function isLowercaseCandidate(columnType: string): boolean {
 }
 
 function getTextColumns(detection: CleanDetectResponse | null, availableColumns: string[]): string[] {
-  return availableColumns.filter((columnName) => isTextLikeColumnType(getColumnType(columnName, detection)));
+  return availableColumns.filter((col) => isTextLikeColumnType(getColumnType(col, detection)));
 }
 
 function getDefaultMissingStrategy(columnName: string, detection: CleanDetectResponse | null): MissingStrategy {
@@ -120,196 +78,47 @@ function getDefaultMissingStrategy(columnName: string, detection: CleanDetectRes
 }
 
 function buildDuplicateOperation(): CleaningOperation {
-  return {
-    operation_type: "remove_all_duplicates",
-    columns: [],
-    column: null,
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: "remove_all_duplicates", columns: [], column: null, target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
 function buildMissingValueOperation(columnName: string, strategy: MissingStrategy): CleaningOperation {
-  return {
-    operation_type: strategy,
-    columns: [columnName],
-    column: columnName,
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: strategy, columns: [columnName], column: columnName, target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
 function buildTrimWhitespaceOperation(columns: string[]): CleaningOperation {
-  return {
-    operation_type: "trim_whitespace",
-    columns,
-    column: null,
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: "trim_whitespace", columns, column: null, target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
 function buildConvertTypeOperation(columnName: string, targetType: "numeric" | "datetime"): CleaningOperation {
-  return {
-    operation_type: "convert_column_type",
-    column: columnName,
-    target_type: targetType,
-    errors: "coerce",
-  };
+  return { operation_type: "convert_column_type", column: columnName, target_type: targetType, errors: "coerce" };
 }
 
 function buildLowercaseOperation(columnName: string): CleaningOperation {
-  return {
-    operation_type: "lowercase_column",
-    columns: [columnName],
-    column: columnName,
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: "lowercase_column", columns: [columnName], column: columnName, target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
 function buildSortValuesOperation(column: string, ascending: boolean): CleaningOperation {
-  return {
-    operation_type: "sort_values",
-    column,
-    ascending,
-    columns: [],
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: "sort_values", column, ascending, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
 function buildDeriveColumnOperation(newColumnName: string, expression: string): CleaningOperation {
-  return {
-    operation_type: "derive_column",
-    new_column_name: newColumnName,
-    expression,
-    column: null,
-    columns: [],
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: "derive_column", new_column_name: newColumnName, expression, column: null, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
 function buildPatternImputationOperation(targetCol: string, keyCol: string): CleaningOperation {
-  return {
-    operation_type: "fill_pattern",
-    column: targetCol,
-    key_column: keyCol,
-    target_column_fill: targetCol,
-    columns: [],
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-  };
+  return { operation_type: "fill_pattern", column: targetCol, key_column: keyCol, target_column_fill: targetCol, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
-function buildStandardizeDatesOperation(
-  columnName: string,
-  outputFormat: DateOutputFormat,
-  dayfirstHint: DayFirstHint,
-): CleaningOperation {
-  return {
-    operation_type: "standardize_dates",
-    columns: [],
-    column: columnName,
-    target_type: null,
-    drop_all_missing: true,
-    errors: "coerce",
-    output_format: outputFormat,
-    dayfirst_hint: dayfirstHint,
-    unparseable_action: "keep_original",
-  };
+function buildStandardizeDatesOperation(columnName: string, outputFormat: DateOutputFormat, dayfirstHint: DayFirstHint): CleaningOperation {
+  return { operation_type: "standardize_dates", columns: [], column: columnName, target_type: null, drop_all_missing: true, errors: "coerce", output_format: outputFormat, dayfirst_hint: dayfirstHint, unparseable_action: "keep_original" };
 }
 
-const DATE_FORMAT_LABELS: Record<DateOutputFormat, string> = {
-  iso: "ISO (2024-01-08)",
-  us: "US (01/08/2024)",
-  eu: "EU (08/01/2024)",
-};
-
-const DAYFIRST_LABELS: Record<DayFirstHint, string> = {
-  auto: "Auto-detect",
-  day: "Day-first",
-  month: "Month-first",
-};
-
-function getOperationLabel(operation: CleaningOperation): string {
-  switch (operation.operation_type) {
-    case "remove_all_duplicates":
-      return "Remove duplicate rows";
-    case "fill_mean":
-      return operation.column ? `Fill "${operation.column}" missing values with average` : "Fill missing values with average";
-    case "fill_median":
-      return operation.column ? `Fill "${operation.column}" missing values with median` : "Fill missing values with median";
-    case "fill_mode":
-      return operation.column ? `Fill "${operation.column}" missing values with mode` : "Fill missing values with mode";
-    case "drop_rows":
-      return operation.column ? `Drop rows with missing values in "${operation.column}"` : "Drop rows with missing values";
-    case "trim_whitespace":
-      return "Trim whitespace";
-    case "lowercase_column":
-      return operation.column ? `Lowercase "${operation.column}"` : "Lowercase text";
-    case "convert_column_type":
-      return operation.column ? `Convert "${operation.column}"` : "Convert column type";
-    case "standardize_dates":
-      return operation.column ? `Standardize dates in "${operation.column}"` : "Standardize dates";
-    case "sort_values":
-      return operation.column
-        ? `Sort by "${operation.column}" (${operation.ascending === false ? "descending" : "ascending"})`
-        : "Sort data";
-    case "fill_pattern":
-      return operation.column && operation.key_column
-        ? `Smart fill "${operation.column}" using "${operation.key_column}"`
-        : "Smart fill (pattern)";
-    case "derive_column":
-      return operation.new_column_name
-        ? `Derived column "${operation.new_column_name}" = ${operation.expression ?? ""}`
-        : "Derived column";
-    default:
-      return "Cleaning action";
-  }
-}
-
-function getOperationDetail(operation: CleaningOperation): string {
-  switch (operation.operation_type) {
-    case "remove_all_duplicates":
-      return "Applies to the full dataset.";
-    case "trim_whitespace":
-      return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "Applied to detected text columns.";
-    case "lowercase_column":
-      return operation.column ? `Column: ${operation.column}` : "Lowercase a text column.";
-    case "convert_column_type":
-      return operation.column ? `Column: ${operation.column}` : "Convert a column to another type.";
-    case "standardize_dates": {
-      const fmt = operation.output_format ? DATE_FORMAT_LABELS[operation.output_format] : DATE_FORMAT_LABELS.iso;
-      const hint = operation.dayfirst_hint ? DAYFIRST_LABELS[operation.dayfirst_hint] : DAYFIRST_LABELS.auto;
-      return operation.column ? `Format ${fmt} • ${hint}` : `Format ${fmt}`;
-    }
-    case "sort_values":
-      return operation.column ? `Column: ${operation.column}` : "";
-    case "fill_pattern":
-      return operation.key_column ? `Key column: ${operation.key_column}` : "";
-    case "derive_column":
-      return operation.expression ? `Formula: ${operation.expression}` : "";
-    default:
-      return operation.columns?.length ? `Columns: ${operation.columns.join(", ")}` : "";
-  }
-}
-
-function areCleaningOperationsEqual(left: CleaningOperation, right: CleaningOperation): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function areCleaningOperationsEqual(a: CleaningOperation, b: CleaningOperation): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function buildSnapshotFromDataset(dataset: DatasetWorkspace["dataset"]): Record<string, unknown> {
   const summary = (dataset.summary_json ?? {}) as Record<string, unknown>;
-
   return {
     source_name: dataset.original_filename,
     file_type: dataset.file_format,
@@ -327,6 +136,11 @@ function buildSnapshotFromDataset(dataset: DatasetWorkspace["dataset"]): Record<
   };
 }
 
+const DATE_FORMAT_LABELS: Record<DateOutputFormat, string> = {
+  iso: "ISO (2024-01-08)",
+  us: "US (01/08/2024)",
+  eu: "EU (08/01/2024)",
+};
 
 export default function DatasetWorkspacePage() {
   const router = useRouter();
@@ -334,15 +148,16 @@ export default function DatasetWorkspacePage() {
   const datasetId = Number(params.id);
 
   const [workspace, setWorkspace] = useState<DatasetWorkspace | null>(null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("prepare");
+  const [prepareSubTab, setPrepareSubTab] = useState<PrepareSubTab>("overview");
   const [token, setToken] = useState<string | null>(null);
-  const [aggregationGroupBy, setAggregationGroupBy] = useState("");
-  const [aggregationOperation, setAggregationOperation] = useState("sum");
-  const [predictionInputColumn, setPredictionInputColumn] = useState("");
-  const [predictionTargetColumn, setPredictionTargetColumn] = useState("");
-  const [predictionSteps, setPredictionSteps] = useState(5);
-  const [predictionResult, setPredictionResult] = useState<PredictResponse | null>(null);
-  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportDatasetFormat>("csv");
+
+  // Modals
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showCodeExport, setShowCodeExport] = useState(false);
   const [codeExportCopied, setCodeExportCopied] = useState(false);
@@ -353,13 +168,8 @@ export default function DatasetWorkspacePage() {
   const [pendingRestore, setPendingRestore] = useState<DatasetVersionSummary | null>(null);
   const [saveMode, setSaveMode] = useState<"replace" | "new">("replace");
   const [newDatasetName, setNewDatasetName] = useState("");
-  const [message, setMessage] = useState("");
-  const [messageTone, setMessageTone] = useState<FeedbackTone>("neutral");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportDatasetFormat>("csv");
-  const [exporting, setExporting] = useState(false);
+
+  // Cleaning
   const [cleaningDetection, setCleaningDetection] = useState<CleanDetectResponse | null>(null);
   const [cleaningDetecting, setCleaningDetecting] = useState(false);
   const [cleaningOperations, setCleaningOperations] = useState<CleaningOperation[]>([]);
@@ -367,33 +177,14 @@ export default function DatasetWorkspacePage() {
   const [missingValueStrategies, setMissingValueStrategies] = useState<Record<string, MissingStrategy>>({});
   const [dateFormatChoices, setDateFormatChoices] = useState<Record<string, DateOutputFormat>>({});
   const [dayfirstChoices, setDayfirstChoices] = useState<Record<string, DayFirstHint>>({});
-  const [analysisStats, setAnalysisStats] = useState<AnalyzeStatsResponse | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [aggregateColumn, setAggregateColumn] = useState("");
-  const [groupResult, setGroupResult] = useState<GroupByResponse | null>(null);
-  const [groupLoading, setGroupLoading] = useState(false);
-  const [saveGroupAsOpen, setSaveGroupAsOpen] = useState(false);
-  const [saveGroupAsName, setSaveGroupAsName] = useState("");
-  const [saveGroupAsSaving, setSaveGroupAsSaving] = useState(false);
-  const [trendData, setTrendData] = useState<TrendResponse | null>(null);
-  const [trendLoading, setTrendLoading] = useState(false);
-  const [selectedTrendColumn, setSelectedTrendColumn] = useState("");
-  const [anomalyData, setAnomalyData] = useState<AnomalyResponse | null>(null);
-  const [anomalyLoading, setAnomalyLoading] = useState(false);
-  const [overviewExtraRows, setOverviewExtraRows] = useState<Record<string, unknown>[]>([]);
-  const [overviewTotalRows, setOverviewTotalRows] = useState<number | null>(null);
-  const [overviewLoadingMore, setOverviewLoadingMore] = useState(false);
-  const [correlationData, setCorrelationData] = useState<CorrelationResponse | null>(null);
-  const [correlationLoading, setCorrelationLoading] = useState(false);
-  const [correlationMethod, setCorrelationMethod] = useState<CorrelationMethod>("pearson");
-  const [selectedDistColumn, setSelectedDistColumn] = useState<string | null>(null);
-  const [distributionData, setDistributionData] = useState<DistributionResponse | null>(null);
-  const [distributionLoading, setDistributionLoading] = useState(false);
-  const [structureSummary, setStructureSummary] = useState<StructureSummaryResponse | null>(null);
+  const [cumulativeAppliedOperations, setCumulativeAppliedOperations] = useState<CleaningOperation[]>([]);
+  const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
   const [sortColumn, setSortColumn] = useState("");
   const [sortAscending, setSortAscending] = useState(true);
   const [derivedColumnName, setDerivedColumnName] = useState("");
   const [derivedExpression, setDerivedExpression] = useState("");
+
+  // Filter
   const [filterPredicates, setFilterPredicates] = useState<FilterPredicate[]>([]);
   const [filterCombine, setFilterCombine] = useState<"and" | "or">("and");
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -404,33 +195,58 @@ export default function DatasetWorkspacePage() {
   const [draftFilterValue, setDraftFilterValue] = useState("");
   const [draftFilterLower, setDraftFilterLower] = useState("");
   const [draftFilterUpper, setDraftFilterUpper] = useState("");
-  const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
-  const [cumulativeAppliedOperations, setCumulativeAppliedOperations] = useState<CleaningOperation[]>([]);
 
-  function setFeedback(text: string, tone: FeedbackTone = "neutral") {
-    setMessage(text);
-    setMessageTone(tone);
-  }
+  // Overview pagination
+  const [overviewExtraRows, setOverviewExtraRows] = useState<Record<string, unknown>[]>([]);
+  const [overviewTotalRows, setOverviewTotalRows] = useState<number | null>(null);
+  const [overviewLoadingMore, setOverviewLoadingMore] = useState(false);
 
+  // Explore
+  const [analysisStats, setAnalysisStats] = useState<AnalyzeStatsResponse | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [structureSummary, setStructureSummary] = useState<StructureSummaryResponse | null>(null);
+  const [selectedDistColumn, setSelectedDistColumn] = useState<string | null>(null);
+  const [distributionData, setDistributionData] = useState<DistributionResponse | null>(null);
+  const [distributionLoading, setDistributionLoading] = useState(false);
+  const [aggregationGroupBy, setAggregationGroupBy] = useState("");
+  const [aggregateColumn, setAggregateColumn] = useState("");
+  const [aggregationOperation, setAggregationOperation] = useState("sum");
+  const [groupResult, setGroupResult] = useState<GroupByResponse | null>(null);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [saveGroupAsOpen, setSaveGroupAsOpen] = useState(false);
+  const [saveGroupAsName, setSaveGroupAsName] = useState("");
+  const [saveGroupAsSaving, setSaveGroupAsSaving] = useState(false);
+  const [trendData, setTrendData] = useState<TrendResponse | null>(null);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [selectedTrendColumn, setSelectedTrendColumn] = useState("");
+
+  // Detect
+  const [anomalyData, setAnomalyData] = useState<AnomalyResponse | null>(null);
+  const [anomalyLoading, setAnomalyLoading] = useState(false);
+  const [correlationData, setCorrelationData] = useState<CorrelationResponse | null>(null);
+  const [correlationLoading, setCorrelationLoading] = useState(false);
+  const [correlationMethod, setCorrelationMethod] = useState<CorrelationMethod>("pearson");
+
+  // Predict
+  const [predictionInputColumn, setPredictionInputColumn] = useState("");
+  const [predictionTargetColumn, setPredictionTargetColumn] = useState("");
+  const [predictionSteps, setPredictionSteps] = useState(5);
+  const [predictionResult, setPredictionResult] = useState<PredictResponse | null>(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+
+  const availableColumns = workspace?.dataset.columns_json?.map((c) => String(c.name ?? "")).filter(Boolean) ?? [];
+  const cleaningIssues = cleaningDetection?.issues ?? [];
+
+  // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const storedToken = getStoredToken();
-    if (!storedToken) {
-      router.replace("/login");
-      return;
-    }
-
+    if (!storedToken) { router.replace("/login"); return; }
     setToken(storedToken);
-
-    if (!Number.isFinite(datasetId)) {
-      router.replace("/dashboard");
-      return;
-    }
-
+    if (!Number.isFinite(datasetId)) { router.replace("/dashboard"); return; }
     getDatasetWorkspace(datasetId, storedToken)
       .then((ws) => {
         setWorkspace(ws);
-        const firstCol = ws.dataset.columns_json?.[0];
-        const firstName = firstCol ? String(firstCol.name ?? "") : "";
+        const firstName = String(ws.dataset.columns_json?.[0]?.name ?? "");
         if (firstName) {
           setAggregationGroupBy(firstName);
           setAggregateColumn(firstName);
@@ -439,98 +255,148 @@ export default function DatasetWorkspacePage() {
           setSortColumn(firstName);
         }
       })
-      .catch(() => {
-        clearStoredToken();
-        router.replace("/login");
-      })
+      .catch(() => { clearStoredToken(); router.replace("/login"); })
       .finally(() => setLoading(false));
   }, [datasetId, router]);
 
+  // ── Lazy data loaders ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (activeTab !== "trends" || !workspace || !token || trendData) return;
-    setTrendLoading(true);
-    getTrends(workspace.dataset.id, token)
-      .then((data) => {
-        setTrendData(data);
-        if (data.columns[0]) setSelectedTrendColumn(data.columns[0].column);
-      })
-      .catch(() => { setMessage("Could not load trend data."); setMessageTone("error"); })
-      .finally(() => setTrendLoading(false));
-  }, [activeTab, workspace, token, trendData]);
+    if (activeTab !== "prepare" || !workspace || !token || cleaningDetection) return;
+    setCleaningDetecting(true);
+    detectCleaningIssues(workspace.dataset.id, token)
+      .then(setCleaningDetection)
+      .catch(() => toast.error("Could not detect cleaning issues."))
+      .finally(() => setCleaningDetecting(false));
+  }, [activeTab, workspace, token, cleaningDetection]);
 
   useEffect(() => {
-    if (activeTab !== "anomaly" || !workspace || !token || anomalyData) return;
-    setAnomalyLoading(true);
-    getAnomalies(workspace.dataset.id, token)
-      .then(setAnomalyData)
-      .catch(() => { setMessage("Could not load anomaly data."); setMessageTone("error"); })
-      .finally(() => setAnomalyLoading(false));
-  }, [activeTab, workspace, token, anomalyData]);
-
-  useEffect(() => {
-    setOverviewExtraRows([]);
-    setOverviewTotalRows(null);
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== "analysis" || !workspace || !token || analysisStats) return;
+    if (activeTab !== "explore" || !workspace || !token || analysisStats) return;
     setAnalysisLoading(true);
-    Promise.all([
-      analyzeStats(workspace.dataset.id, token),
-      getStructureSummary(workspace.dataset.id, token),
-    ])
-      .then(([stats, structure]) => {
-        setAnalysisStats(stats);
-        setStructureSummary(structure);
-      })
-      .catch(() => {
-        setMessage("Could not load column statistics.");
-        setMessageTone("error");
-      })
+    Promise.all([analyzeStats(workspace.dataset.id, token), getStructureSummary(workspace.dataset.id, token)])
+      .then(([stats, structure]) => { setAnalysisStats(stats); setStructureSummary(structure); })
+      .catch(() => toast.error("Could not load column statistics."))
       .finally(() => setAnalysisLoading(false));
   }, [activeTab, workspace, token, analysisStats]);
 
   useEffect(() => {
-    if (activeTab !== "correlation" || !workspace || !token) return;
+    if (activeTab !== "explore" || !workspace || !token || trendData) return;
+    setTrendLoading(true);
+    getTrends(workspace.dataset.id, token)
+      .then((data) => { setTrendData(data); if (data.columns[0]) setSelectedTrendColumn(data.columns[0].column); })
+      .catch(() => toast.error("Could not load trend data."))
+      .finally(() => setTrendLoading(false));
+  }, [activeTab, workspace, token, trendData]);
+
+  useEffect(() => {
+    if (activeTab !== "detect" || !workspace || !token || anomalyData) return;
+    setAnomalyLoading(true);
+    getAnomalies(workspace.dataset.id, token)
+      .then(setAnomalyData)
+      .catch(() => toast.error("Could not load anomaly data."))
+      .finally(() => setAnomalyLoading(false));
+  }, [activeTab, workspace, token, anomalyData]);
+
+  useEffect(() => {
+    if (activeTab !== "detect" || !workspace || !token) return;
     if (correlationData && correlationData.method === correlationMethod) return;
     setCorrelationLoading(true);
     getCorrelation(workspace.dataset.id, token, null, correlationMethod)
       .then(setCorrelationData)
-      .catch(() => { setMessage("Could not load correlation data."); setMessageTone("error"); })
+      .catch(() => toast.error("Could not load correlation data."))
       .finally(() => setCorrelationLoading(false));
   }, [activeTab, workspace, token, correlationData, correlationMethod]);
 
+  // Distribution loads on column selection
+  useEffect(() => {
+    if (!workspace || !token || !selectedDistColumn) return;
+    if (distributionData && distributionData.column === selectedDistColumn) return;
+    setDistributionLoading(true);
+    getDistribution(workspace.dataset.id, selectedDistColumn, token, { bins: 20 })
+      .then(setDistributionData)
+      .catch((e) => { toast.error(e instanceof Error ? e.message : "Could not load distribution."); setDistributionData(null); })
+      .finally(() => setDistributionLoading(false));
+  }, [workspace, token, selectedDistColumn, distributionData]);
+
+  // Filters fire on predicate changes
   useEffect(() => {
     if (!workspace || !token) return;
-    if (filterPredicates.length === 0) {
-      setFilterResult(null);
-      return;
-    }
+    if (filterPredicates.length === 0) { setFilterResult(null); return; }
     let cancelled = false;
     setFilterLoading(true);
     const snapshot = (cleaningResult?.data_snapshot ?? null) as Record<string, unknown> | null;
-    filterDatasetRows(
-      workspace.dataset.id,
-      {
-        predicates: filterPredicates,
-        combine: filterCombine,
-        offset: 0,
-        limit: 50,
-        data_snapshot: snapshot,
-      },
-      token,
-    )
+    filterDatasetRows(workspace.dataset.id, { predicates: filterPredicates, combine: filterCombine, offset: 0, limit: 50, data_snapshot: snapshot }, token)
       .then((res) => { if (!cancelled) setFilterResult(res); })
-      .catch((error) => {
-        if (!cancelled) {
-          setMessage(error instanceof Error ? error.message : "Could not apply filters.");
-          setMessageTone("error");
-          setFilterResult(null);
-        }
-      })
+      .catch((e) => { if (!cancelled) { toast.error(e instanceof Error ? e.message : "Could not apply filters."); setFilterResult(null); } })
       .finally(() => { if (!cancelled) setFilterLoading(false); });
     return () => { cancelled = true; };
   }, [workspace, token, filterPredicates, filterCombine, cleaningResult]);
+
+  // Reset pagination on tab switch
+  useEffect(() => { setOverviewExtraRows([]); setOverviewTotalRows(null); }, [activeTab]);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function hasQueuedOperation(operation: CleaningOperation): boolean {
+    return cleaningOperations.some((op) => areCleaningOperationsEqual(op, operation));
+  }
+
+  function toggleOperation(operation: CleaningOperation, addMessage: string, removeMessage: string) {
+    setCleaningOperations((ops) => {
+      const exists = ops.some((op) => areCleaningOperationsEqual(op, operation));
+      if (exists) { toast.warning(removeMessage); return ops.filter((op) => !areCleaningOperationsEqual(op, operation)); }
+      toast.success(addMessage);
+      return [...ops, operation];
+    });
+  }
+
+  function addMissingValueOperation(col: string) {
+    const strategy = missingValueStrategies[col] ?? getDefaultMissingStrategy(col, cleaningDetection);
+    const op = buildMissingValueOperation(col, strategy);
+    toggleOperation(op, `Added fill for "${col}".`, `Removed fill for "${col}" from queue.`);
+  }
+
+  function toggleDuplicateRows() {
+    toggleOperation(buildDuplicateOperation(), "Added remove duplicate rows.", "Removed duplicate rows from queue.");
+  }
+
+  function toggleTrimWhitespace() {
+    const textCols = getTextColumns(cleaningDetection, availableColumns);
+    if (textCols.length === 0) { toast.warning("No text columns found for trimming."); return; }
+    toggleOperation(buildTrimWhitespaceOperation(textCols), "Added trim whitespace.", "Removed trim whitespace from queue.");
+  }
+
+  function toggleLowercaseColumn(col: string) {
+    toggleOperation(buildLowercaseOperation(col), `Added lowercase for "${col}".`, `Removed lowercase for "${col}".`);
+  }
+
+  function toggleConvertType(col: string, targetType: "numeric" | "datetime") {
+    toggleOperation(buildConvertTypeOperation(col, targetType), `Added convert "${col}" to ${targetType}.`, `Removed convert "${col}" from queue.`);
+  }
+
+  function toggleSortValues() {
+    if (!sortColumn) return;
+    toggleOperation(buildSortValuesOperation(sortColumn, sortAscending), `Added sort by "${sortColumn}".`, `Removed sort by "${sortColumn}" from queue.`);
+  }
+
+  function addDerivedColumn() {
+    const name = derivedColumnName.trim();
+    const expr = derivedExpression.trim();
+    if (!name || !expr) { toast.warning("Provide both a new column name and a formula."); return; }
+    if (workspace?.dataset.columns_json?.some((c) => String((c as { name?: string }).name) === name)) {
+      toast.warning(`Column "${name}" already exists. Pick a different name.`); return;
+    }
+    toggleOperation(buildDeriveColumnOperation(name, expr), `Added derived column "${name}".`, `Removed derived column "${name}" from queue.`);
+    setDerivedColumnName(""); setDerivedExpression("");
+  }
+
+  function togglePatternImputation(targetCol: string, keyCol: string) {
+    toggleOperation(buildPatternImputationOperation(targetCol, keyCol), `Added smart fill for "${targetCol}".`, `Removed smart fill for "${targetCol}".`);
+  }
+
+  function toggleStandardizeDates(col: string) {
+    const fmt = dateFormatChoices[col] ?? "iso";
+    const hint = dayfirstChoices[col] ?? "auto";
+    toggleOperation(buildStandardizeDatesOperation(col, fmt, hint), `Added standardize dates in "${col}" (${DATE_FORMAT_LABELS[fmt]}).`, `Removed standardize dates for "${col}".`);
+  }
 
   function addFilterPredicate() {
     if (!draftFilterColumn) return;
@@ -538,254 +404,78 @@ export default function DatasetWorkspacePage() {
     if (draftFilterOp === "is_null" || draftFilterOp === "not_null") {
       predicate = { column: draftFilterColumn, op: draftFilterOp };
     } else if (draftFilterOp === "between") {
-      if (!draftFilterLower || !draftFilterUpper) {
-        setFeedback("Provide both lower and upper values for 'between'.", "warning");
-        return;
-      }
+      if (!draftFilterLower || !draftFilterUpper) { toast.warning("Provide both lower and upper values for 'between'."); return; }
       predicate = { column: draftFilterColumn, op: "between", lower: draftFilterLower, upper: draftFilterUpper };
     } else if (draftFilterOp === "in") {
       const values = draftFilterValue.split(",").map((v) => v.trim()).filter(Boolean);
-      if (values.length === 0) {
-        setFeedback("Provide at least one value (comma-separated) for 'in'.", "warning");
-        return;
-      }
+      if (values.length === 0) { toast.warning("Provide at least one value (comma-separated) for 'in'."); return; }
       predicate = { column: draftFilterColumn, op: "in", values };
     } else {
-      if (!draftFilterValue.trim()) {
-        setFeedback("Provide a value to filter by.", "warning");
-        return;
-      }
+      if (!draftFilterValue.trim()) { toast.warning("Provide a value to filter by."); return; }
       predicate = { column: draftFilterColumn, op: draftFilterOp, value: draftFilterValue };
     }
     setFilterPredicates((prev) => [...prev, predicate]);
-    setDraftFilterValue("");
-    setDraftFilterLower("");
-    setDraftFilterUpper("");
+    setDraftFilterValue(""); setDraftFilterLower(""); setDraftFilterUpper("");
   }
 
   function removeFilterPredicate(index: number) {
     setFilterPredicates((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function clearAllFilters() {
-    setFilterPredicates([]);
-    setFilterResult(null);
-  }
-
-  useEffect(() => {
-    if (!workspace || !token || !selectedDistColumn) return;
-    if (distributionData && distributionData.column === selectedDistColumn) return;
-    setDistributionLoading(true);
-    getDistribution(workspace.dataset.id, selectedDistColumn, token, { bins: 20 })
-      .then(setDistributionData)
-      .catch((error) => {
-        setMessage(error instanceof Error ? error.message : "Could not load distribution.");
-        setMessageTone("error");
-        setDistributionData(null);
-      })
-      .finally(() => setDistributionLoading(false));
-  }, [workspace, token, selectedDistColumn, distributionData]);
-
-  useEffect(() => {
-    if (activeTab !== "cleaning" || !workspace || !token || cleaningDetection) return;
-    setCleaningDetecting(true);
-    detectCleaningIssues(workspace.dataset.id, token)
-      .then(setCleaningDetection)
-      .catch(() => setFeedback("Could not detect cleaning issues.", "error"))
-      .finally(() => setCleaningDetecting(false));
-  }, [activeTab, workspace, token, cleaningDetection]);
-
-  const availableColumns = workspace?.dataset.columns_json?.map((column) => String(column.name ?? "")).filter(Boolean) ?? [];
-  const cleaningIssues = cleaningDetection?.issues ?? [];
-
-  function getSourceVersionId(): number | null {
-    return cleaningDetection?.dataset_version_id ?? null;
-  }
-
-  function hasQueuedOperation(operation: CleaningOperation): boolean {
-    return cleaningOperations.some((currentOperation) => areCleaningOperationsEqual(currentOperation, operation));
-  }
-
-  function toggleOperation(operation: CleaningOperation, addMessage: string, removeMessage: string) {
-    setCleaningOperations((currentOperations) => {
-      const exists = currentOperations.some((currentOperation) => areCleaningOperationsEqual(currentOperation, operation));
-      if (exists) {
-        setFeedback(removeMessage, "warning");
-        return currentOperations.filter((currentOperation) => !areCleaningOperationsEqual(currentOperation, operation));
-      }
-
-      setFeedback(addMessage, "success");
-      return [...currentOperations, operation];
-    });
-  }
-
-  function addMissingValueOperation(columnName: string) {
-    const strategy = missingValueStrategies[columnName] ?? getDefaultMissingStrategy(columnName, cleaningDetection);
-    const operation = buildMissingValueOperation(columnName, strategy);
-    toggleOperation(operation, `Added ${getOperationLabel(operation)}.`, `Removed ${getOperationLabel(operation)} from the queue.`);
-  }
-
-  function toggleDuplicateRows() {
-    const operation = buildDuplicateOperation();
-    toggleOperation(operation, "Added remove duplicate rows.", "Removed duplicate rows from the queue.");
-  }
-
-  function toggleTrimWhitespace() {
-    const textColumns = getTextColumns(cleaningDetection, availableColumns);
-    if (textColumns.length === 0) {
-      setFeedback("No text columns were found for trimming.", "warning");
-      return;
-    }
-
-    const operation = buildTrimWhitespaceOperation(textColumns);
-    toggleOperation(operation, "Added trim whitespace.", "Removed trim whitespace from the queue.");
-  }
-
-  function toggleLowercaseColumn(columnName: string) {
-    const operation = buildLowercaseOperation(columnName);
-    toggleOperation(operation, `Added lowercase for ${columnName}.`, `Removed lowercase for ${columnName}.`);
-  }
-
-  function toggleConvertType(columnName: string, targetType: "numeric" | "datetime") {
-    const operation = buildConvertTypeOperation(columnName, targetType);
-    toggleOperation(
-      operation,
-      `Added: convert "${columnName}" to ${targetType}.`,
-      `Removed convert "${columnName}" from the queue.`,
-    );
-  }
-
-  function toggleSortValues() {
-    if (!sortColumn) return;
-    const operation = buildSortValuesOperation(sortColumn, sortAscending);
-    toggleOperation(operation, `Added sort by "${sortColumn}" (${sortAscending ? "ascending" : "descending"}).`, `Removed sort by "${sortColumn}" from the queue.`);
-  }
-
-  function addDerivedColumn() {
-    const name = derivedColumnName.trim();
-    const expr = derivedExpression.trim();
-    if (!name || !expr) {
-      setFeedback("Provide both a new column name and a formula.", "warning");
-      return;
-    }
-    if (workspace?.dataset.columns_json?.some((c) => String((c as { name?: string }).name) === name)) {
-      setFeedback(`Column "${name}" already exists. Pick a different name.`, "warning");
-      return;
-    }
-    const operation = buildDeriveColumnOperation(name, expr);
-    toggleOperation(operation, `Added derived column "${name}" = ${expr}.`, `Removed derived column "${name}" from the queue.`);
-    setDerivedColumnName("");
-    setDerivedExpression("");
-  }
-
-  function togglePatternImputation(targetCol: string, keyCol: string) {
-    const operation = buildPatternImputationOperation(targetCol, keyCol);
-    toggleOperation(operation, `Added smart fill for "${targetCol}" using "${keyCol}".`, `Removed smart fill for "${targetCol}" from the queue.`);
-  }
-
-  function toggleStandardizeDates(columnName: string) {
-    const outputFormat = dateFormatChoices[columnName] ?? "iso";
-    const dayfirstHint = dayfirstChoices[columnName] ?? "auto";
-    const operation = buildStandardizeDatesOperation(columnName, outputFormat, dayfirstHint);
-    toggleOperation(
-      operation,
-      `Added: standardize dates in "${columnName}" (${DATE_FORMAT_LABELS[outputFormat]}).`,
-      `Removed standardize dates for "${columnName}" from the queue.`,
-    );
-  }
+  function clearAllFilters() { setFilterPredicates([]); setFilterResult(null); }
 
   function handleRescanData() {
-    setCleaningDetection(null);
-    setCleaningResult(null);
-    setCumulativeAppliedOperations([]);
+    setCleaningDetection(null); setCleaningResult(null); setCumulativeAppliedOperations([]);
   }
 
   function handleDiscardResult() {
-    setCleaningResult(null);
-    setCleaningDetection(null);
-    setCleaningOperations([]);
-    setCumulativeAppliedOperations([]);
-    setFeedback("Changes discarded. Detection will re-run when you return to Cleaning.", "neutral");
+    setCleaningResult(null); setCleaningDetection(null); setCleaningOperations([]); setCumulativeAppliedOperations([]);
+    toast.info("Changes discarded. Detection will re-run when you return to Cleaning.");
   }
 
   async function handleApplyCleaning() {
     if (!workspace || !token || cleaningOperations.length === 0) {
-      setFeedback("Add at least one cleaning operation before applying changes.", "warning");
-      return;
+      toast.warning("Add at least one cleaning operation before applying."); return;
     }
-
     setApplying(true);
-    setFeedback("");
-
     try {
-      const allOperations = [...cumulativeAppliedOperations, ...cleaningOperations];
-      const response = await applyCleaningOperations(workspace.dataset.id, allOperations, token, getSourceVersionId());
+      const allOps = [...cumulativeAppliedOperations, ...cleaningOperations];
+      const sourceVersionId = cleaningDetection?.dataset_version_id ?? null;
+      const response = await applyCleaningOperations(workspace.dataset.id, allOps, token, sourceVersionId);
       setCleaningDetection(response);
       setCleaningResult(response);
-      setCumulativeAppliedOperations(allOperations);
+      setCumulativeAppliedOperations(allOps);
       setCleaningOperations([]);
-      setActiveTab("overview");
-      setFeedback(
-        cleaningResult
-          ? "Cleaning re-applied — previous result was replaced. Save to make it permanent."
-          : "Cleaning applied — overview updated. Save to make it permanent.",
-        "success",
-      );
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not apply cleaning operations.", "error");
+      setActiveTab("prepare");
+      setPrepareSubTab("overview");
+      toast.success(cleaningResult ? "Cleaning re-applied — previous result replaced. Save to make it permanent." : "Cleaning applied — overview updated. Save to make it permanent.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not apply cleaning operations.");
     } finally {
       setApplying(false);
     }
   }
 
   async function handleSaveResult() {
-    if (!workspace || !token) {
-      return;
-    }
-
-    if (saveMode === "new" && !newDatasetName.trim()) {
-      setFeedback("Please enter a dataset name.", "warning");
-      return;
-    }
-
+    if (!workspace || !token) return;
+    if (saveMode === "new" && !newDatasetName.trim()) { toast.warning("Please enter a dataset name."); return; }
     const resultSnapshot = cleaningResult?.data_snapshot ?? buildSnapshotFromDataset(workspace.dataset);
-
     setSaving(true);
-    setFeedback("");
-
     try {
-      const response = await saveDatasetResult(
-        workspace.dataset.id,
-        {
-          replace_current: saveMode === "replace",
-          dataset_name: newDatasetName.trim() || null,
-          description: workspace.dataset.description,
-          data_snapshot: resultSnapshot,
-        },
-        token,
-      );
-
+      const response = await saveDatasetResult(workspace.dataset.id, { replace_current: saveMode === "replace", dataset_name: newDatasetName.trim() || null, description: workspace.dataset.description, data_snapshot: resultSnapshot }, token);
       setShowSaveModal(false);
-
       if (saveMode === "replace") {
-        setWorkspace({
-          ...workspace,
-          dataset: response.dataset,
-        });
-        setCleaningResult(null);
-        setCleaningDetection(null);
-        setCumulativeAppliedOperations([]);
-        setOverviewExtraRows([]);
-        setOverviewTotalRows(null);
-        setFeedback("Result replaced the current dataset.", "success");
+        setWorkspace({ ...workspace, dataset: response.dataset });
+        setCleaningResult(null); setCleaningDetection(null); setCumulativeAppliedOperations([]);
+        setOverviewExtraRows([]); setOverviewTotalRows(null);
+        toast.success("Result replaced the current dataset.");
       } else {
-        setCleaningResult(null);
-        setCumulativeAppliedOperations([]);
-        setFeedback("Result saved as a new dataset.", "success");
+        setCleaningResult(null); setCumulativeAppliedOperations([]);
+        toast.success("Result saved as a new dataset.");
         router.replace(`/dataset/${response.dataset.id}`);
       }
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not save result.", "error");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save result.");
     } finally {
       setSaving(false);
     }
@@ -793,14 +483,11 @@ export default function DatasetWorkspacePage() {
 
   async function openHistory() {
     if (!workspace || !token) return;
-    setShowHistoryModal(true);
-    setPendingRestore(null);
-    setVersionsLoading(true);
+    setShowHistoryModal(true); setPendingRestore(null); setVersionsLoading(true);
     try {
-      const versions = await listDatasetVersions(workspace.dataset.id, token);
-      setVersionList(versions);
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not load version history.", "error");
+      setVersionList(await listDatasetVersions(workspace.dataset.id, token));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load version history.");
       setVersionList([]);
     } finally {
       setVersionsLoading(false);
@@ -813,18 +500,13 @@ export default function DatasetWorkspacePage() {
     try {
       const response = await restoreDatasetVersion(workspace.dataset.id, version.id, token);
       setWorkspace({ ...workspace, dataset: response.dataset });
-      setCleaningResult(null);
-      setCleaningDetection(null);
-      setCumulativeAppliedOperations([]);
-      setOverviewExtraRows([]);
-      setOverviewTotalRows(null);
-      setFeedback(response.message, "success");
-      const refreshed = await listDatasetVersions(workspace.dataset.id, token);
-      setVersionList(refreshed);
-      setPendingRestore(null);
-      setShowHistoryModal(false);
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not restore version.", "error");
+      setCleaningResult(null); setCleaningDetection(null); setCumulativeAppliedOperations([]);
+      setOverviewExtraRows([]); setOverviewTotalRows(null);
+      toast.success(response.message);
+      setVersionList(await listDatasetVersions(workspace.dataset.id, token));
+      setPendingRestore(null); setShowHistoryModal(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not restore version.");
     } finally {
       setRestoringVersionId(null);
     }
@@ -832,49 +514,33 @@ export default function DatasetWorkspacePage() {
 
   async function handleLoadMoreOverviewRows() {
     if (!token || !workspace) return;
-    const initialRows = workspace.dataset.preview_json ?? [];
-    const loaded = initialRows.length + overviewExtraRows.length;
+    const loaded = (workspace.dataset.preview_json ?? []).length + overviewExtraRows.length;
     setOverviewLoadingMore(true);
     try {
       const res = await getDatasetRows(workspace.dataset.id, loaded, 10, token);
       setOverviewExtraRows((prev) => [...prev, ...res.rows]);
       setOverviewTotalRows(res.total);
     } catch {
-      setFeedback("Could not load more rows.", "error");
+      toast.error("Could not load more rows.");
     } finally {
       setOverviewLoadingMore(false);
     }
   }
 
   async function handleExportResult() {
-    if (!workspace || !token) {
-      return;
-    }
-
+    if (!workspace || !token) return;
     setExporting(true);
-    setFeedback("");
-
     try {
-      // Prefer exporting the most recent unsaved session result when available.
       const sessionSnapshot = (cleaningResult?.data_snapshot ?? null) as Record<string, unknown> | null;
-      const { blob, filename } = await exportDataset(
-        workspace.dataset.id,
-        { format: exportFormat, data_snapshot: sessionSnapshot },
-        token,
-      );
-
+      const { blob, filename } = await exportDataset(workspace.dataset.id, { format: exportFormat, data_snapshot: sessionSnapshot }, token);
       const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
       window.URL.revokeObjectURL(url);
-
-      setFeedback("Export started.", "success");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not export dataset.", "error");
+      toast.success("Export started.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not export dataset.");
     } finally {
       setExporting(false);
     }
@@ -883,16 +549,10 @@ export default function DatasetWorkspacePage() {
   async function handleGenerateAggregation() {
     if (!workspace || !token) return;
     setGroupLoading(true);
-    setFeedback("");
     try {
-      const result = await groupDataset(
-        workspace.dataset.id,
-        { group_by: aggregationGroupBy, aggregate_column: aggregateColumn, aggregate_func: aggregationOperation },
-        token,
-      );
-      setGroupResult(result);
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not generate aggregation.", "error");
+      setGroupResult(await groupDataset(workspace.dataset.id, { group_by: aggregationGroupBy, aggregate_column: aggregateColumn, aggregate_func: aggregationOperation }, token));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not generate aggregation.");
     } finally {
       setGroupLoading(false);
     }
@@ -907,9 +567,7 @@ export default function DatasetWorkspacePage() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `${groupResult.group_by}_${aggregationOperation}_${groupResult.aggregate_column}.csv`;
-    a.click();
+    a.href = url; a.download = `${groupResult.group_by}_${aggregationOperation}_${groupResult.aggregate_column}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -924,11 +582,10 @@ export default function DatasetWorkspacePage() {
     setSaveGroupAsSaving(true);
     try {
       await uploadDataset(file, `Aggregation: ${opLabel} of ${groupResult.aggregate_column} grouped by ${groupResult.group_by}`, token);
-      setFeedback(`Saved "${name}" as a new dataset.`, "success");
-      setSaveGroupAsOpen(false);
-      setSaveGroupAsName("");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not save dataset.", "error");
+      toast.success(`Saved "${name}" as a new dataset.`);
+      setSaveGroupAsOpen(false); setSaveGroupAsName("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save dataset.");
     } finally {
       setSaveGroupAsSaving(false);
     }
@@ -937,2654 +594,422 @@ export default function DatasetWorkspacePage() {
   async function handleRunPrediction() {
     if (!workspace || !token) return;
     setPredictionLoading(true);
-    setFeedback("");
     try {
-      const result = await predictDataset(
-        workspace.dataset.id,
-        { input_column: predictionInputColumn, target_column: predictionTargetColumn, future_steps: predictionSteps },
-        token,
-      );
-      setPredictionResult(result);
-    } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "Could not run prediction.", "error");
+      setPredictionResult(await predictDataset(workspace.dataset.id, { input_column: predictionInputColumn, target_column: predictionTargetColumn, future_steps: predictionSteps }, token));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not run prediction.");
     } finally {
       setPredictionLoading(false);
     }
   }
 
-  function renderPreviewTable(previewRows: Array<Record<string, unknown>> = workspace?.dataset.preview_json ?? []) {
-    if (previewRows.length === 0) {
-      return <p className="text-sm text-slate-600">No preview available.</p>;
-    }
-
-    const columns = Object.keys(previewRows[0] ?? {});
-    return (
-      <div className="overflow-x-auto rounded-2xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50">
-            <tr>
-              {columns.map((column) => (
-                <th key={column} className="px-4 py-3 text-left font-medium text-slate-600">
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {previewRows.map((row, index) => (
-              <tr key={index}>
-                {columns.map((column) => (
-                  <td key={column} className="px-4 py-3 text-slate-800">
-                    {String((row as Record<string, unknown>)[column] ?? "-")}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  function renderIssuesPanel() {
-    if (!cleaningDetection) return null;
-
-    const missingEntries = Object.entries(cleaningDetection.missing_values ?? {}).filter(([, count]) => count > 0);
-    const typeIssues = cleaningIssues.filter((issue) => issue.kind === "type_inconsistency" && issue.column);
-    const hasDuplicates = (cleaningDetection.duplicates ?? 0) > 0;
-    const totalIssueCount = missingEntries.length + typeIssues.length + (hasDuplicates ? 1 : 0);
-
-    if (totalIssueCount === 0) return null;
-
-    const rowCount = workspace?.dataset.row_count ?? 0;
-
-    return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 shadow-sm">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between px-5 py-4 text-left"
-          onClick={() => setIssuesPanelOpen((prev) => !prev)}
-        >
-          <div className="flex items-center gap-3">
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-            <span className="font-semibold text-slate-950">
-              {totalIssueCount} Issue{totalIssueCount === 1 ? "" : "s"} Detected
-            </span>
-            <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-800">
-              Review before applying
-            </span>
-          </div>
-          <span className="text-sm text-slate-500">{issuesPanelOpen ? "▲ Collapse" : "▼ Expand"}</span>
-        </button>
-
-        {issuesPanelOpen && (
-          <div className="space-y-2 border-t border-amber-200 px-5 pb-5 pt-4">
-            {hasDuplicates && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                <div className="text-sm text-red-800">
-                  <span className="font-semibold">{cleaningDetection.duplicates} duplicate row{cleaningDetection.duplicates === 1 ? "" : "s"}</span> found across the dataset.
-                </div>
-                <button
-                  type="button"
-                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${hasQueuedOperation(buildDuplicateOperation()) ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-600 text-white hover:bg-red-500"}`}
-                  onClick={toggleDuplicateRows}
-                >
-                  {hasQueuedOperation(buildDuplicateOperation()) ? "Added" : "Add fix"}
-                </button>
-              </div>
-            )}
-
-            {missingEntries.map(([col, count]) => {
-              const pct = rowCount > 0 ? ((count / rowCount) * 100).toFixed(1) : "0.0";
-              const strategy = missingValueStrategies[col] ?? getDefaultMissingStrategy(col, cleaningDetection);
-              const op = buildMissingValueOperation(col, strategy);
-              const queued = hasQueuedOperation(op);
-              return (
-                <div key={col} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3">
-                  <div className="text-sm text-amber-900">
-                    Column <span className="font-semibold">'{col}'</span> has{" "}
-                    <span className="font-semibold">{count} missing cell{count === 1 ? "" : "s"}</span>{" "}
-                    ({pct}% missing)
-                  </div>
-                  <button
-                    type="button"
-                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-amber-600 text-white hover:bg-amber-500"}`}
-                    onClick={() => addMissingValueOperation(col)}
-                  >
-                    {queued ? "Added" : "Add fix"}
-                  </button>
-                </div>
-              );
-            })}
-
-            {typeIssues.map((issue) => {
-              const col = issue.column ?? "";
-              const inferredType = String(issue.details?.inferred_type ?? "");
-              const targetType: "numeric" | "datetime" = inferredType === "datetime_string" ? "datetime" : "numeric";
-              const op = buildConvertTypeOperation(col, targetType);
-              const queued = hasQueuedOperation(op);
-              return (
-                <div key={col} className="flex items-center justify-between gap-3 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
-                  <div className="text-sm text-purple-900">
-                    Column <span className="font-semibold">'{col}'</span> is stored as text but looks like{" "}
-                    <span className="font-semibold text-purple-700">{targetType}</span>.
-                  </div>
-                  <button
-                    type="button"
-                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-purple-600 text-white hover:bg-purple-500"}`}
-                    onClick={() => toggleConvertType(col, targetType)}
-                  >
-                    {queued ? "Added" : "Add fix"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function renderCleaningTab() {
-    if (cleaningDetecting) {
-      return (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
-          Detecting cleaning issues...
-        </div>
-      );
-    }
-
-    const duplicateCount = cleaningDetection?.duplicates ?? 0;
-    const missingIssues = cleaningIssues.filter((issue) => issue.kind === "missing_values" && issue.column);
-    const textColumns = getTextColumns(cleaningDetection, availableColumns);
-    const duplicateOperation = buildDuplicateOperation();
-    const trimWhitespaceOperation = buildTrimWhitespaceOperation(textColumns);
-    const duplicateQueued = hasQueuedOperation(duplicateOperation);
-    const trimQueued = hasQueuedOperation(trimWhitespaceOperation);
-    const originalRows = workspace?.dataset.row_count;
-    const afterCleaningRows = cleaningResult?.summary.row_count ?? originalRows;
-    const rowsRemoved = typeof originalRows === "number" && typeof afterCleaningRows === "number" ? Math.max(originalRows - afterCleaningRows, 0) : 0;
-
-    return (
-      <div className="space-y-6">
-        {message ? <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${getFeedbackClasses(messageTone)}`}>{message}</div> : null}
-
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Original Rows</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-950">{workspace?.dataset.row_count ?? "-"}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">After Cleaning</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-950">{String(cleaningResult?.summary.row_count ?? workspace?.dataset.row_count ?? "-")}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Rows Removed</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-950">{rowsRemoved}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">Ops Selected</p>
-            <p className="mt-1 text-2xl font-semibold text-indigo-600">{cleaningOperations.length}</p>
-          </div>
-        </div>
-
-        {!cleaningDetecting && cleaningDetection && (() => {
-          const hasDuplicates = (cleaningDetection.duplicates ?? 0) > 0;
-          const missingColCount = cleaningIssues.filter((i) => i.kind === "missing_values" && i.column).length;
-          const hasIssues = hasDuplicates || missingColCount > 0;
-          const summaryParts: string[] = [];
-          if (hasDuplicates) summaryParts.push(`${cleaningDetection.duplicates} duplicate row${cleaningDetection.duplicates === 1 ? "" : "s"}`);
-          if (missingColCount > 0) summaryParts.push(`${missingColCount} column${missingColCount === 1 ? "" : "s"} with missing values`);
-          return (
-            <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${hasIssues ? "border-amber-200 bg-amber-50" : "border-green-200 bg-green-50"}`}>
-              <div className={`text-sm ${hasIssues ? "text-amber-800" : "text-green-800"}`}>
-                {hasIssues ? (
-                  <>
-                    <p className="font-medium">Issues detected — apply fixes below to clean your data.</p>
-                    <p className="mt-0.5 text-xs">{summaryParts.join(", ")}</p>
-                  </>
-                ) : (
-                  <p className="font-medium">No issues detected — your data looks clean.</p>
-                )}
-              </div>
-              <button
-                type="button"
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${hasIssues ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}
-                onClick={handleRescanData}
-              >
-                Re-scan
-              </button>
-            </div>
-          );
-        })()}
-
-        {renderIssuesPanel()}
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-6">
-            <section className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                    <h3 className="text-lg font-semibold text-slate-950">Duplicate Rows</h3>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">{duplicateCount > 0 ? `${duplicateCount} duplicate rows found.` : "No duplicates detected right now."}</p>
-                </div>
-                <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
-                  {duplicateCount > 0 ? `${duplicateCount} found` : "Clear"}
-                </span>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div>
-                  <p className="font-medium text-slate-950">Remove duplicate rows</p>
-                  <p className="text-sm text-slate-600">Keep one copy of each repeated record.</p>
-                </div>
-                <button
-                  type="button"
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${duplicateQueued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-red-600 text-white hover:bg-red-500"}`}
-                  onClick={toggleDuplicateRows}
-                >
-                  {duplicateQueued ? "Added" : "Add"}
-                </button>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-yellow-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
-                    <h3 className="text-lg font-semibold text-slate-950">Missing Values</h3>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">Choose a simple fix for each affected column.</p>
-                </div>
-                <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
-                  {missingIssues.length > 0 ? `${missingIssues.length} columns` : "None detected"}
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {missingIssues.length > 0 ? (
-                  missingIssues.map((issue) => {
-                    const columnName = issue.column ?? "";
-                    const columnType = getColumnType(columnName, cleaningDetection);
-                    const selectedStrategy = missingValueStrategies[columnName] ?? getDefaultMissingStrategy(columnName, cleaningDetection);
-                    const operation = buildMissingValueOperation(columnName, selectedStrategy);
-                    const queued = hasQueuedOperation(operation);
-                    const missingCount = Number(issue.details?.missing_values ?? 0);
-                    const rowCount = Number(workspace?.dataset.row_count ?? 0);
-                    const percentage = rowCount > 0 ? ((missingCount / rowCount) * 100).toFixed(1) : "0.0";
-
-                    return (
-                      <div key={columnName} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-slate-950">Column: {columnName}</p>
-                            <p className="mt-1 text-sm text-slate-600">{missingCount} missing values ({percentage}%)</p>
-                          </div>
-                          <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-medium text-yellow-700">{columnType}</span>
-                        </div>
-
-                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                          <select
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none sm:max-w-xs"
-                            value={selectedStrategy}
-                            onChange={(event) =>
-                              setMissingValueStrategies((currentStrategies) => ({
-                                ...currentStrategies,
-                                [columnName]: event.target.value as MissingStrategy,
-                              }))
-                            }
-                          >
-                            <option value="fill_mean">Fill with average</option>
-                            <option value="fill_median">Fill with median</option>
-                            <option value="fill_mode">Fill with mode</option>
-                            <option value="drop_rows">Drop rows</option>
-                          </select>
-
-                          <button
-                            type="button"
-                            className={`rounded-xl px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
-                            onClick={() => addMissingValueOperation(columnName)}
-                          >
-                            {queued ? "Added" : "Add"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                    No missing-value issues detected.
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-orange-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
-                    <h3 className="text-lg font-semibold text-slate-950">Text Standardization</h3>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">Quick cleanup for text-heavy columns.</p>
-                </div>
-                <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                  {textColumns.length > 0 ? `${textColumns.length} columns` : "No text columns"}
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div>
-                    <p className="font-medium text-slate-950">Trim whitespace</p>
-                    <p className="text-sm text-slate-600">Remove leading and trailing spaces from text columns.</p>
-                  </div>
-                  <button
-                    type="button"
-                    className={`rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${trimQueued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
-                    onClick={toggleTrimWhitespace}
-                    disabled={textColumns.length === 0}
-                  >
-                    {trimQueued ? "Added" : "Add"}
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {textColumns.length > 0 ? (
-                    textColumns.map((columnName) => {
-                      const columnType = getColumnType(columnName, cleaningDetection);
-                      if (!isLowercaseCandidate(columnType)) {
-                        return null;
-                      }
-
-                      const operation = buildLowercaseOperation(columnName);
-                      const queued = hasQueuedOperation(operation);
-
-                      return (
-                        <div key={columnName} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <div>
-                            <p className="font-medium text-slate-950">Lowercase {columnName}</p>
-                            <p className="text-sm text-slate-600">Make text consistent.</p>
-                          </div>
-                          <button
-                            type="button"
-                            className={`rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-indigo-600 text-white hover:bg-indigo-500"}`}
-                            onClick={() => toggleLowercaseColumn(columnName)}
-                          >
-                            {queued ? "Added" : "Add"}
-                          </button>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                      No text columns were detected for standardization.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-purple-200 bg-white p-5 shadow-sm">
-              {(() => {
-                const typeIssues = cleaningIssues.filter((issue) => issue.kind === "type_inconsistency" && issue.column);
-                return (
-                  <>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
-                          <h3 className="text-lg font-semibold text-slate-950">Type Inconsistencies</h3>
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">Columns stored as the wrong data type. Converting allows aggregation and analysis.</p>
-                      </div>
-                      <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-700">
-                        {typeIssues.length > 0 ? `${typeIssues.length} column${typeIssues.length !== 1 ? "s" : ""}` : "None detected"}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      {typeIssues.length > 0 ? (
-                        typeIssues.map((issue) => {
-                          const columnName = issue.column ?? "";
-                          const inferredType = String(issue.details?.inferred_type ?? "");
-                          const targetType: "numeric" | "datetime" = inferredType === "datetime_string" ? "datetime" : "numeric";
-                          const operation = buildConvertTypeOperation(columnName, targetType);
-                          const queued = hasQueuedOperation(operation);
-
-                          return (
-                            <div key={columnName} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div>
-                                <p className="font-medium text-slate-950">Column: {columnName}</p>
-                                <p className="mt-1 text-sm text-slate-600">
-                                  Stored as text — looks like{" "}
-                                  <span className="font-medium text-purple-700">{targetType}</span>.
-                                  Non-convertible values will become empty.
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-purple-600 text-white hover:bg-purple-500"}`}
-                                onClick={() => toggleConvertType(columnName, targetType)}
-                              >
-                                {queued ? "Added" : `Convert to ${targetType}`}
-                              </button>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                          No type inconsistencies detected.
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </section>
-
-            <section className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
-              {(() => {
-                const dateColumns = availableColumns.filter((columnName) => {
-                  const columnType = getColumnType(columnName, cleaningDetection);
-                  return columnType === "datetime" || columnType === "datetime_string";
-                });
-                const unparseableMap = (cleaningResult?.summary.unparseable_dates ?? {}) as Record<string, UnparseableDateRow[]>;
-
-                return (
-                  <>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                          <h3 className="text-lg font-semibold text-slate-950">Date Standardization</h3>
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Rewrite messy date strings (e.g. <span className="font-mono">Jan 07 2024</span>) to a single uniform format.
-                          Cells that can&apos;t be parsed are kept as-is and flagged below.
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                        {dateColumns.length > 0 ? `${dateColumns.length} column${dateColumns.length !== 1 ? "s" : ""}` : "None detected"}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      {dateColumns.length > 0 ? (
-                        dateColumns.map((columnName) => {
-                          const outputFormat = dateFormatChoices[columnName] ?? "iso";
-                          const dayfirstHint = dayfirstChoices[columnName] ?? "auto";
-                          const queuedOperation = buildStandardizeDatesOperation(columnName, outputFormat, dayfirstHint);
-                          const queued = hasQueuedOperation(queuedOperation);
-                          const unparseable = unparseableMap[columnName] ?? [];
-
-                          return (
-                            <div key={columnName} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <p className="font-medium text-slate-950">Column: {columnName}</p>
-                                <button
-                                  type="button"
-                                  className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-amber-600 text-white hover:bg-amber-500"}`}
-                                  onClick={() => toggleStandardizeDates(columnName)}
-                                >
-                                  {queued ? "Added" : "Standardize"}
-                                </button>
-                              </div>
-                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-                                  Output format
-                                  <select
-                                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none"
-                                    value={outputFormat}
-                                    onChange={(event) =>
-                                      setDateFormatChoices((current) => ({
-                                        ...current,
-                                        [columnName]: event.target.value as DateOutputFormat,
-                                      }))
-                                    }
-                                  >
-                                    <option value="iso">{DATE_FORMAT_LABELS.iso}</option>
-                                    <option value="us">{DATE_FORMAT_LABELS.us}</option>
-                                    <option value="eu">{DATE_FORMAT_LABELS.eu}</option>
-                                  </select>
-                                </label>
-                                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-                                  Day/Month order
-                                  <select
-                                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none"
-                                    value={dayfirstHint}
-                                    onChange={(event) =>
-                                      setDayfirstChoices((current) => ({
-                                        ...current,
-                                        [columnName]: event.target.value as DayFirstHint,
-                                      }))
-                                    }
-                                  >
-                                    <option value="auto">{DAYFIRST_LABELS.auto}</option>
-                                    <option value="day">{DAYFIRST_LABELS.day}</option>
-                                    <option value="month">{DAYFIRST_LABELS.month}</option>
-                                  </select>
-                                </label>
-                              </div>
-                              {unparseable.length > 0 ? (
-                                <div className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-900">
-                                  <p className="font-semibold">
-                                    {unparseable.length} cell{unparseable.length === 1 ? "" : "s"} could not be parsed — original values preserved.
-                                  </p>
-                                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                                    {unparseable.slice(0, 5).map((row) => (
-                                      <li key={row.row}>
-                                        Row {row.row}: <span className="font-mono">{row.original === "" ? "(empty)" : row.original}</span>
-                                      </li>
-                                    ))}
-                                    {unparseable.length > 5 ? (
-                                      <li className="italic text-yellow-800">…and {unparseable.length - 5} more.</li>
-                                    ) : null}
-                                  </ul>
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                          No date columns were detected for standardization.
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </section>
-
-            {(() => {
-              const suggestions = cleaningDetection?.pattern_suggestions ?? [];
-              if (suggestions.length === 0) return null;
-              return (
-                <section className="rounded-2xl border border-teal-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full bg-teal-500" />
-                        <h3 className="text-lg font-semibold text-slate-950">Smart Fill (Pattern Imputation)</h3>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-600">Detected patterns where one column predicts missing values in another.</p>
-                    </div>
-                    <span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-700">{suggestions.length} suggestion{suggestions.length !== 1 ? "s" : ""}</span>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {suggestions.map((s) => {
-                      const op = buildPatternImputationOperation(s.target_column, s.key_column);
-                      const queued = hasQueuedOperation(op);
-                      const confidencePct = Math.round(s.weighted_confidence * 100);
-                      const avgConsistency = s.groups.length > 0
-                        ? Math.round((s.groups.reduce((acc, g) => acc + (g.consistency_ratio ?? 0), 0) / s.groups.length) * 100)
-                        : 0;
-                      const insightText = confidencePct >= 90
-                        ? `Strong pattern (${avgConsistency}% avg consistency) — very safe to apply.`
-                        : avgConsistency < 70
-                        ? `Low consistency (${avgConsistency}%) — known values in some groups disagree on the fill. Review groups before applying.`
-                        : `Moderate confidence — review the group breakdown below before applying.`;
-                      return (
-                        <div key={`${s.key_column}-${s.target_column}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="font-medium text-slate-950">
-                                Fill <span className="text-teal-700">"{s.target_column}"</span> using <span className="text-slate-700">"{s.key_column}"</span>
-                              </p>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-200">
-                                  <div className="h-full rounded-full bg-teal-500" style={{ width: `${confidencePct}%` }} />
-                                </div>
-                                <span className="text-xs text-teal-700 font-medium">{confidencePct}% confidence</span>
-                                <span className="text-xs text-slate-400">·</span>
-                                <span className="text-xs text-slate-500">{avgConsistency}% avg consistent</span>
-                                <span className="text-xs text-slate-400">·</span>
-                                <span className="text-xs text-slate-500">{s.groups.length} group{s.groups.length !== 1 ? "s" : ""}</span>
-                              </div>
-                              {s.low_sample_groups.length > 0 && (
-                                <p className="text-xs text-amber-600">⚠ Groups with fewer than 5 values ({s.low_sample_groups.slice(0, 3).join(", ")}{s.low_sample_groups.length > 3 ? "…" : ""}) — fill values here are less reliable</p>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-teal-600 text-white hover:bg-teal-500"}`}
-                              onClick={() => togglePatternImputation(s.target_column, s.key_column)}
-                            >
-                              {queued ? "Added" : "Add"}
-                            </button>
-                          </div>
-                          <InsightCard text={insightText} />
-                          {s.groups.length > 0 && (
-                            <div className="overflow-hidden rounded-lg border border-slate-200">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="bg-slate-100 text-left text-slate-500">
-                                    <th className="px-3 py-2 font-medium">{s.key_column}</th>
-                                    <th className="px-3 py-2 font-medium">Fill value</th>
-                                    <th className="px-3 py-2 font-medium">Consistent</th>
-                                    <th className="px-3 py-2 font-normal text-slate-400 hidden lg:table-cell">Detail</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {s.groups.map((g) => {
-                                    const consistPct = Math.round((g.consistency_ratio ?? 0) * 100);
-                                    const isLowSample = s.low_sample_groups.includes(g.key_value);
-                                    return (
-                                      <tr
-                                        key={g.key_value}
-                                        title={g.explanation ?? ""}
-                                        className="border-t border-slate-100 hover:bg-white transition"
-                                      >
-                                        <td className="px-3 py-2 font-medium text-slate-800">
-                                          {g.key_value}
-                                          {isLowSample && <span className="ml-1 text-amber-500" title="Fewer than 5 supporting records">⚠</span>}
-                                        </td>
-                                        <td className="px-3 py-2 text-teal-700 font-medium">{g.fill_value ?? "—"}</td>
-                                        <td className="px-3 py-2">
-                                          <span className={`font-medium ${consistPct >= 90 ? "text-green-600" : consistPct >= 70 ? "text-amber-600" : "text-red-500"}`}>
-                                            {consistPct}%
-                                          </span>
-                                        </td>
-                                        <td className="px-3 py-2 text-slate-400 hidden lg:table-cell truncate max-w-xs">{g.explanation ?? ""}</td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              );
-            })()}
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                    <h3 className="text-lg font-semibold text-slate-950">Derived Column</h3>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Compute a new column from a formula. Reference existing columns by name.
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Allowed: <code className="rounded bg-slate-100 px-1">+ - * / % **</code>, comparisons, <code className="rounded bg-slate-100 px-1">and / or</code>, helpers <code className="rounded bg-slate-100 px-1">abs round min max int float str len</code>, and <code className="rounded bg-slate-100 px-1">a if cond else b</code>.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
-                <input
-                  type="text"
-                  value={derivedColumnName}
-                  onChange={(e) => setDerivedColumnName(e.target.value)}
-                  placeholder="new column name"
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
-                />
-                <input
-                  type="text"
-                  value={derivedExpression}
-                  onChange={(e) => setDerivedExpression(e.target.value)}
-                  placeholder="e.g. price * qty"
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-emerald-500 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={addDerivedColumn}
-                  disabled={!derivedColumnName.trim() || !derivedExpression.trim()}
-                >
-                  Add
-                </button>
-              </div>
-              {availableColumns.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
-                  <span className="text-slate-500">Available columns:</span>
-                  {availableColumns.slice(0, 12).map((col) => (
-                    <button
-                      key={col}
-                      type="button"
-                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
-                      onClick={() => setDerivedExpression((prev) => (prev ? prev + " " + col : col))}
-                    >
-                      {col}
-                    </button>
-                  ))}
-                  {availableColumns.length > 12 ? <span className="text-slate-400">+{availableColumns.length - 12} more</span> : null}
-                </div>
-              ) : null}
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
-                    <h3 className="text-lg font-semibold text-slate-950">Sort Data</h3>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">Reorder rows by any column, ascending or descending.</p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <select
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
-                  value={sortColumn}
-                  onChange={(e) => setSortColumn(e.target.value)}
-                >
-                  {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
-                </select>
-                <select
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
-                  value={sortAscending ? "asc" : "desc"}
-                  onChange={(e) => setSortAscending(e.target.value === "asc")}
-                >
-                  <option value="asc">Ascending (A→Z, 0→9)</option>
-                  <option value="desc">Descending (Z→A, 9→0)</option>
-                </select>
-                {(() => {
-                  const op = sortColumn ? buildSortValuesOperation(sortColumn, sortAscending) : null;
-                  const queued = op ? hasQueuedOperation(op) : false;
-                  return (
-                    <button
-                      type="button"
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`}
-                      onClick={toggleSortValues}
-                      disabled={!sortColumn}
-                    >
-                      {queued ? "Added" : "Add"}
-                    </button>
-                  );
-                })()}
-              </div>
-            </section>
-          </div>
-
-          <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-18 h-fit">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-950">Selected Operations</h3>
-                <p className="text-sm text-slate-600">Review the queue before applying.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{cleaningOperations.length}</span>
-                {cleaningOperations.length > 0 && (
-                  <button
-                    type="button"
-                    className="rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setCleaningOperations([])}
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {cumulativeAppliedOperations.length > 0 && cleaningResult && (
-                <div className="flex items-start gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5 text-xs text-teal-800">
-                  <span className="mt-0.5 shrink-0">↑</span>
-                  <span>
-                    Building on cleaned result — {cumulativeAppliedOperations.length} previous operation{cumulativeAppliedOperations.length !== 1 ? "s" : ""} will be re-run before these.
-                  </span>
-                </div>
-              )}
-              {cleaningOperations.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                  {cleaningResult ? "No new operations queued." : "No operations selected yet."}
-                </div>
-              ) : (
-                cleaningOperations.map((operation, index) => (
-                  <div key={`${operation.operation_type}-${index}`} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm shadow-sm">
-                    <div>
-                      <p className="font-medium text-slate-950">{getOperationLabel(operation)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{getOperationDetail(operation)}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-full px-2 py-1 text-sm font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-700"
-                      onClick={() => setCleaningOperations((currentOperations) => currentOperations.filter((_, operationIndex) => operationIndex !== index))}
-                      aria-label={`Remove ${getOperationLabel(operation)}`}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <button
-              type="button"
-              className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-              onClick={handleApplyCleaning}
-              disabled={applying || cleaningOperations.length === 0}
-            >
-              {applying ? "Applying..." : `Apply ${cleaningOperations.length} Operation${cleaningOperations.length === 1 ? "" : "s"}`}
-            </button>
-          </aside>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="font-semibold text-slate-950">Cleaned Preview</h3>
-          <p className="mt-1 text-sm text-slate-600">Preview the result before saving a new version.</p>
-          <div className="mt-4 min-h-50 max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
-            {cleaningResult ? renderPreviewTable(cleaningResult.preview) : <p className="text-sm text-slate-600">No cleaned preview yet.</p>}
-          </div>
-          {cleaningResult ? (
-            <dl className="mt-4 grid grid-cols-4 gap-3 text-sm">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-slate-500">Rows</dt>
-                <dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <dt className="text-slate-500">Columns</dt>
-                <dd className="font-medium text-slate-950">{String(cleaningResult.summary.column_count ?? "-")}</dd>
-              </div>
-              <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.missing_cells ?? 0) > 0 ? "warning" : "success")}`}>
-                <dt className="text-slate-500">Missing</dt>
-                <dd className="font-medium">{String(cleaningResult.summary.missing_cells ?? "-")}</dd>
-              </div>
-              <div className={`rounded-xl border p-3 ${getFeedbackClasses(Number(cleaningResult.summary.duplicate_rows ?? 0) > 0 ? "error" : "success")}`}>
-                <dt className="text-slate-500">Duplicates</dt>
-                <dd className="font-medium">{String(cleaningResult.summary.duplicate_rows ?? "-")}</dd>
-              </div>
-            </dl>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  function renderTabContent() {
-    if (!workspace) {
-      return null;
-    }
-
-    if (activeTab === "overview") {
-      const allOverviewRows = [...(workspace.dataset.preview_json ?? []), ...overviewExtraRows];
-      const overviewTotal = overviewTotalRows ?? workspace.dataset.row_count ?? 0;
-      const overviewLoaded = allOverviewRows.length;
-      const canLoadMore = overviewLoaded < overviewTotal;
-
-      // When a cleaning result is pending (unsaved), show the cleaned working copy
-      const displayRowCount = cleaningResult?.summary.row_count ?? workspace.dataset.row_count;
-      const displayColCount = cleaningResult?.summary.column_count ?? workspace.dataset.column_count;
-      const displayMissing = cleaningResult?.summary.missing_cells ?? workspace.dataset.summary_json?.missing_cells;
-      const displayDuplicates = cleaningResult?.summary.duplicate_rows ?? workspace.dataset.summary_json?.duplicate_rows;
-      const displayPreview = cleaningResult ? cleaningResult.preview : allOverviewRows;
-
-      return (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Rows</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{String(displayRowCount ?? "-")}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Columns</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{String(displayColCount ?? "-")}</p>
-            </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Missing cells", displayMissing as number | string | null | undefined)}`}>
-              <p className="text-sm text-slate-500">Missing cells</p>
-              <p className="mt-1 text-2xl font-semibold">{String(displayMissing ?? "-")}</p>
-            </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Duplicates", displayDuplicates as number | string | null | undefined)}`}>
-              <p className="text-sm text-slate-500">Duplicates</p>
-              <p className="mt-1 text-2xl font-semibold">{String(displayDuplicates ?? "-")}</p>
-            </div>
-          </div>
-          {cleaningResult ? (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <span>Showing cleaned preview — save to make this permanent.</span>
-              <button
-                type="button"
-                className="shrink-0 font-medium underline underline-offset-4 decoration-amber-400 hover:text-amber-900"
-                onClick={() => setShowSaveModal(true)}
-              >
-                Save →
-              </button>
-            </div>
-          ) : (() => {
-            const missingCells = Number(workspace.dataset.summary_json?.missing_cells ?? 0);
-            const duplicateRows = Number(workspace.dataset.summary_json?.duplicate_rows ?? 0);
-            if (missingCells === 0 && duplicateRows === 0) return null;
-            const parts: string[] = [];
-            if (missingCells > 0) parts.push(`${missingCells} missing value${missingCells === 1 ? "" : "s"}`);
-            if (duplicateRows > 0) parts.push(`${duplicateRows} duplicate row${duplicateRows === 1 ? "" : "s"}`);
-            return (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-                <span>Your data has {parts.join(" and ")}.</span>
-                <button
-                  type="button"
-                  className="shrink-0 font-medium underline underline-offset-4 decoration-teal-400 hover:text-teal-900"
-                  onClick={() => setActiveTab("cleaning")}
-                >
-                  Go to Cleaning →
-                </button>
-              </div>
-            );
-          })()}
-
-          {(() => {
-            const ops: { value: FilterOp; label: string }[] = [
-              { value: "eq", label: "= equals" },
-              { value: "neq", label: "≠ not equal" },
-              { value: "gt", label: "> greater than" },
-              { value: "gte", label: "≥ greater or equal" },
-              { value: "lt", label: "< less than" },
-              { value: "lte", label: "≤ less or equal" },
-              { value: "contains", label: "contains" },
-              { value: "starts_with", label: "starts with" },
-              { value: "in", label: "in (comma list)" },
-              { value: "between", label: "between" },
-              { value: "is_null", label: "is empty" },
-              { value: "not_null", label: "is not empty" },
-            ];
-            const opLabel = (op: FilterOp): string => ops.find((o) => o.value === op)?.label ?? op;
-            const predicateChip = (p: FilterPredicate): string => {
-              if (p.op === "is_null") return `${p.column} is empty`;
-              if (p.op === "not_null") return `${p.column} is not empty`;
-              if (p.op === "between") return `${p.column} between ${String(p.lower)} and ${String(p.upper)}`;
-              if (p.op === "in") return `${p.column} in (${(p.values ?? []).map(String).join(", ")})`;
-              return `${p.column} ${opLabel(p.op).split(" ")[0]} ${String(p.value)}`;
-            };
-            const isUnary = draftFilterOp === "is_null" || draftFilterOp === "not_null";
-            const isRange = draftFilterOp === "between";
-            return (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between text-left"
-                  onClick={() => setFilterPanelOpen((open) => !open)}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-950">Filters</span>
-                    {filterPredicates.length > 0 ? (
-                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                        {filterPredicates.length} active
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-500">Narrow your dataset by column predicates.</span>
-                    )}
-                  </span>
-                  <span className="text-slate-400">{filterPanelOpen ? "▾" : "▸"}</span>
-                </button>
-
-                {filterPredicates.length > 0 ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {filterPredicates.map((p, i) => (
-                      <span
-                        key={`${p.column}-${p.op}-${i}`}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
-                      >
-                        {predicateChip(p)}
-                        <button
-                          type="button"
-                          className="text-indigo-500 hover:text-indigo-900"
-                          onClick={() => removeFilterPredicate(i)}
-                          aria-label="Remove filter"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                    {filterPredicates.length > 1 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
-                        Combine:
-                        <button
-                          type="button"
-                          className={`rounded-full px-2 py-0.5 ${filterCombine === "and" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}
-                          onClick={() => setFilterCombine("and")}
-                        >
-                          AND
-                        </button>
-                        <button
-                          type="button"
-                          className={`rounded-full px-2 py-0.5 ${filterCombine === "or" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}
-                          onClick={() => setFilterCombine("or")}
-                        >
-                          OR
-                        </button>
-                      </span>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="ml-auto text-xs font-medium text-slate-500 underline-offset-4 hover:text-slate-900 hover:underline"
-                      onClick={clearAllFilters}
-                    >
-                      Clear all
-                    </button>
-                  </div>
-                ) : null}
-
-                {filterPanelOpen ? (
-                  <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,180px)_minmax(0,1fr)_auto]">
-                    <select
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
-                      value={draftFilterColumn}
-                      onChange={(e) => setDraftFilterColumn(e.target.value)}
-                    >
-                      <option value="">Column…</option>
-                      {availableColumns.map((col) => (
-                        <option key={col} value={col}>{col}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
-                      value={draftFilterOp}
-                      onChange={(e) => setDraftFilterOp(e.target.value as FilterOp)}
-                    >
-                      {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    {isUnary ? (
-                      <div className="text-xs text-slate-500 self-center px-2">No value needed.</div>
-                    ) : isRange ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="lower"
-                          value={draftFilterLower}
-                          onChange={(e) => setDraftFilterLower(e.target.value)}
-                          className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
-                        />
-                        <span className="text-xs text-slate-500">to</span>
-                        <input
-                          type="text"
-                          placeholder="upper"
-                          value={draftFilterUpper}
-                          onChange={(e) => setDraftFilterUpper(e.target.value)}
-                          className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                    ) : (
-                      <input
-                        type="text"
-                        placeholder={draftFilterOp === "in" ? "value1, value2, …" : "value"}
-                        value={draftFilterValue}
-                        onChange={(e) => setDraftFilterValue(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFilterPredicate(); } }}
-                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500"
-                      />
-                    )}
-                    <button
-                      type="button"
-                      className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={addFilterPredicate}
-                      disabled={!draftFilterColumn}
-                    >
-                      Add filter
-                    </button>
-                  </div>
-                ) : null}
-
-                {filterPredicates.length > 0 ? (
-                  <p className="mt-3 text-xs text-slate-500">
-                    {filterLoading
-                      ? "Filtering…"
-                      : filterResult
-                      ? `Showing ${Math.min(filterResult.limit, filterResult.rows.length)} of ${filterResult.total_matched.toLocaleString()} matching rows (out of ${filterResult.total_rows.toLocaleString()} total).`
-                      : "No filter result yet."}
-                  </p>
-                ) : null}
-              </div>
-            );
-          })()}
-
-          {filterPredicates.length > 0 && filterResult ? (
-            renderPreviewTable(filterResult.rows)
-          ) : (
-            <>
-              {renderPreviewTable(displayPreview)}
-              {!cleaningResult && canLoadMore ? (
-                <button
-                  onClick={handleLoadMoreOverviewRows}
-                  disabled={overviewLoadingMore}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {overviewLoadingMore ? "Loading…" : `Load 10 more (${overviewLoaded} of ${overviewTotal} shown)`}
-                </button>
-              ) : !cleaningResult && overviewLoaded > 10 ? (
-                <p className="text-center text-xs text-slate-400">All {overviewTotal} rows shown</p>
-              ) : null}
-            </>
-          )}
-        </div>
-      );
-    }
-
-    if (activeTab === "cleaning") {
-      return renderCleaningTab();
-    }
-
-    if (activeTab === "analysis") {
-      if (analysisLoading) {
-        return <p className="text-sm text-slate-600">Loading column statistics...</p>;
-      }
-
-      const stats = analysisStats;
-      const numericCols = stats?.column_stats.filter((c) => c.dtype === "numeric") ?? [];
-      const colsWithMissing = stats?.column_stats.filter((c) => c.missing > 0) ?? [];
-      const mostMissingCol = colsWithMissing.sort((a, b) => b.missing_pct - a.missing_pct)[0] ?? null;
-
-      return (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Total rows</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{stats?.row_count ?? workspace.dataset.row_count ?? "-"}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Total columns</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{stats?.col_count ?? workspace.dataset.column_count ?? "-"}</p>
-            </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${colsWithMissing.length > 0 ? "border-yellow-200 bg-yellow-50 text-yellow-800" : "border-green-200 bg-green-50 text-green-800"}`}>
-              <p className="text-sm text-slate-500">Columns with missing</p>
-              <p className="mt-1 text-2xl font-semibold">{stats ? colsWithMissing.length : "-"}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Numeric columns</p>
-              <p className="mt-1 text-2xl font-semibold text-indigo-600">{stats ? numericCols.length : "-"}</p>
-            </div>
-          </div>
-
-          {cleaningResult && (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <span>Analysis reflects original data. Save your cleaned result to analyze the cleaned version.</span>
-              <button
-                type="button"
-                className="shrink-0 font-medium underline underline-offset-4 decoration-amber-400 hover:text-amber-900"
-                onClick={() => setShowSaveModal(true)}
-              >
-                Save now →
-              </button>
-            </div>
-          )}
-
-          {structureSummary && structureSummary.columns.length > 0 && (
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Column Overview</h3>
-              <p className="mt-1 text-sm text-slate-500">Quick breakdown of each column — type, missing values, and most common value.</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {structureSummary.columns.map((col) => {
-                  const kindColors: Record<string, string> = {
-                    Numbers: "bg-indigo-100 text-indigo-700",
-                    Text: "bg-slate-100 text-slate-600",
-                    Dates: "bg-purple-100 text-purple-700",
-                    Boolean: "bg-orange-100 text-orange-700",
-                  };
-                  const kindTooltips: Record<string, string> = {
-                    Numbers: "Numeric column — supports mean, sum, and correlation",
-                    Text: "Text column — supports grouping and frequency analysis",
-                    Dates: "Date column — supports trend analysis",
-                    Boolean: "True/False column",
-                  };
-                  const kindClass = kindColors[col.kind] ?? "bg-slate-100 text-slate-600";
-                  const topVal = col.top_values[0];
-                  return (
-                    <div key={col.name} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate font-medium text-slate-950 text-sm">{col.name}</p>
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium cursor-help ${kindClass}`}
-                          title={kindTooltips[col.kind] ?? col.kind}
-                        >
-                          {col.kind}
-                        </span>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-slate-500">
-                        <span>
-                          Unique: <span className="font-medium text-slate-700">{col.unique_values}</span>
-                          {col.unique_values === 1 && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-700" title="Only 1 unique value — consider dropping this column">1 value</span>}
-                        </span>
-                        <span className={col.missing_values > 0 ? "text-amber-600" : ""}>
-                          Missing: <span className="font-medium">{col.missing_values}</span>
-                        </span>
-                        {topVal != null && (
-                          <span className="col-span-2 truncate">Top: <span className="font-medium text-slate-700">{String(topVal.value)}</span></span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Column summaries</h3>
-              {stats ? (
-                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Column</th>
-                        <th className="px-4 py-3 font-medium">Type</th>
-                        <th className="px-4 py-3 font-medium">Non-null</th>
-                        <th className="px-4 py-3 font-medium">Missing %</th>
-                        <th className="px-4 py-3 font-medium">Unique</th>
-                        <th className="px-4 py-3 font-medium">Mean / Min / Max</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                      {stats.column_stats.map((col) => {
-                        const isSelected = selectedDistColumn === col.name;
-                        return (
-                          <tr
-                            key={col.name}
-                            className={`cursor-pointer transition hover:bg-indigo-50/40 ${isSelected ? "bg-indigo-50/60" : ""}`}
-                            onClick={() => setSelectedDistColumn(isSelected ? null : col.name)}
-                            title="Click to view distribution"
-                          >
-                            <td className="px-4 py-3 font-medium text-slate-950">
-                              <span className="inline-flex items-center gap-2">
-                                {isSelected ? <span className="text-indigo-600">▾</span> : <span className="text-slate-300">▸</span>}
-                                {col.name}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                                col.dtype === "numeric" ? "bg-indigo-100 text-indigo-700" :
-                                col.dtype === "datetime" ? "bg-purple-100 text-purple-700" :
-                                col.dtype === "boolean" ? "bg-orange-100 text-orange-700" :
-                                "bg-slate-100 text-slate-600"
-                              }`}>
-                                {col.dtype}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">{col.count}</td>
-                            <td className={`px-4 py-3 font-medium ${col.missing_pct > 0 ? "text-yellow-700" : "text-green-700"}`}>
-                              {col.missing_pct > 0 ? `${col.missing_pct}%` : "—"}
-                            </td>
-                            <td className="px-4 py-3">{col.unique}</td>
-                            <td className="px-4 py-3 text-slate-500">
-                              {col.dtype === "numeric" && col.mean != null
-                                ? `${col.mean} / ${col.min ?? "?"} / ${col.max ?? "?"}`
-                                : col.top_values[0] != null
-                                ? String(col.top_values[0].value)
-                                : "—"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-slate-600">Switch to this tab to load statistics.</p>
-              )}
-
-              {selectedDistColumn ? (
-                <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wider text-indigo-600">Distribution</p>
-                      <h4 className="mt-0.5 text-base font-semibold text-slate-950">{selectedDistColumn}</h4>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-full px-2 py-0.5 text-lg leading-none text-slate-400 transition hover:bg-white hover:text-slate-700"
-                      onClick={() => { setSelectedDistColumn(null); setDistributionData(null); }}
-                      aria-label="Close distribution"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  {distributionLoading ? (
-                    <p className="mt-3 text-sm text-slate-600">Loading distribution…</p>
-                  ) : !distributionData || distributionData.bins.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-600">No distribution data available for this column.</p>
-                  ) : (() => {
-                    const dist = distributionData;
-                    const maxCount = Math.max(...dist.bins.map((b) => b.count), 1);
-                    return (
-                      <div className="mt-4 space-y-3">
-                        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-                          <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">{dist.kind}</span>
-                          <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">{dist.total_count} rows</span>
-                          {dist.missing_count > 0 ? (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">{dist.missing_count} missing</span>
-                          ) : null}
-                          <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">{dist.unique_count} unique</span>
-                          {dist.kind === "numeric" && dist.mean != null ? (
-                            <>
-                              <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">mean {dist.mean}</span>
-                              {dist.median != null ? <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">median {dist.median}</span> : null}
-                              {dist.std != null ? <span className="rounded-full bg-white px-2 py-0.5 border border-slate-200">σ {dist.std}</span> : null}
-                            </>
-                          ) : null}
-                        </div>
-                        {dist.kind === "categorical" || dist.kind === "boolean" || dist.kind === "datetime" ? (
-                          <div className="space-y-1.5">
-                            {dist.bins.map((bin) => {
-                              const widthPct = (bin.count / maxCount) * 100;
-                              return (
-                                <div key={bin.label} className="flex items-center gap-3 text-xs">
-                                  <span className="w-32 shrink-0 truncate text-slate-700" title={bin.label}>{bin.label}</span>
-                                  <div className="relative h-5 flex-1 overflow-hidden rounded bg-white">
-                                    <div className="h-full rounded bg-indigo-500" style={{ width: `${Math.max(widthPct, 2)}%` }} />
-                                  </div>
-                                  <span className="w-12 shrink-0 text-right font-medium text-slate-700">{bin.count}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          (() => {
-                            const W = 600;
-                            const H = 180;
-                            const PAD = 16;
-                            const barWidth = (W - PAD * 2) / dist.bins.length;
-                            return (
-                              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-                                {dist.bins.map((bin, i) => {
-                                  const h = (bin.count / maxCount) * (H - PAD * 2);
-                                  const x = PAD + i * barWidth;
-                                  const y = H - PAD - h;
-                                  return (
-                                    <g key={i}>
-                                      <rect x={x + 0.5} y={y} width={Math.max(barWidth - 1, 1)} height={h} fill="#6366f1" rx="1.5" />
-                                      {dist.bins.length <= 24 ? (
-                                        <text x={x + barWidth / 2} y={H - 4} textAnchor="middle" fontSize="8" fill="#64748b">
-                                          {bin.bin_start != null ? Number(bin.bin_start).toFixed(1) : ""}
-                                        </text>
-                                      ) : null}
-                                    </g>
-                                  );
-                                })}
-                                {dist.kind === "numeric" && dist.mean != null && dist.bins.length > 0 ? (() => {
-                                  const first = dist.bins[0];
-                                  const last = dist.bins[dist.bins.length - 1];
-                                  const lo = first.bin_start ?? 0;
-                                  const hi = last.bin_end ?? 1;
-                                  if (hi <= lo) return null;
-                                  const xMean = PAD + ((dist.mean - lo) / (hi - lo)) * (W - PAD * 2);
-                                  return (
-                                    <g>
-                                      <line x1={xMean} x2={xMean} y1={PAD} y2={H - PAD} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="3 3" />
-                                      <text x={xMean + 4} y={PAD + 10} fontSize="9" fill="#dc2626">mean</text>
-                                    </g>
-                                  );
-                                })() : null}
-                              </svg>
-                            );
-                          })()
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : (
-                stats ? (
-                  <p className="mt-4 text-xs text-slate-500">Click any column above to see its distribution.</p>
-                ) : null
-              )}
-            </div>
-
-            <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Insights</h3>
-              {stats ? (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-800">
-                    {numericCols.length > 0
-                      ? `${numericCols.length} numeric column${numericCols.length === 1 ? "" : "s"} detected. Use the Aggregation tab to summarize them.`
-                      : "No numeric columns detected in this dataset."}
-                  </div>
-                  {colsWithMissing.length > 0 ? (
-                    <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <span>
-                          {colsWithMissing.length} column{colsWithMissing.length === 1 ? "" : "s"} have missing values.
-                          {mostMissingCol ? ` Highest: "${mostMissingCol.name}" (${mostMissingCol.missing_pct}%).` : ""}
-                        </span>
-                        <button
-                          type="button"
-                          className="shrink-0 font-medium underline underline-offset-4 decoration-yellow-500 hover:text-yellow-900"
-                          onClick={() => setActiveTab("cleaning")}
-                        >
-                          Fix in Cleaning →
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-                      No missing values detected across all columns.
-                    </div>
-                  )}
-                  {(workspace.dataset.summary_json?.duplicate_rows as number) > 0 ? (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                      {String(workspace.dataset.summary_json?.duplicate_rows)} duplicate rows found. Clean them in the Cleaning tab.
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-600">Insights will appear once statistics are loaded.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === "aggregation") {
-      return (
-        <div className="space-y-6">
-          {message ? <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${getFeedbackClasses(messageTone)}`}>{message}</div> : null}
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Group by</span>
-              <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                value={aggregationGroupBy}
-                onChange={(event) => setAggregationGroupBy(event.target.value)}
-              >
-                {availableColumns.map((columnName) => (
-                  <option key={columnName} value={columnName}>
-                    {columnName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Aggregate column</span>
-              <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                value={aggregateColumn}
-                onChange={(event) => setAggregateColumn(event.target.value)}
-              >
-                {availableColumns.map((columnName) => (
-                  <option key={columnName} value={columnName}>
-                    {columnName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Function</span>
-              <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                value={aggregationOperation}
-                onChange={(event) => setAggregationOperation(event.target.value)}
-              >
-                <option value="sum">Sum</option>
-                <option value="mean">Average (mean)</option>
-                <option value="count">Count</option>
-                <option value="min">Min</option>
-                <option value="max">Max</option>
-              </select>
-            </label>
-
-            <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <button
-                type="button"
-                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-                onClick={handleGenerateAggregation}
-                disabled={groupLoading || availableColumns.length === 0}
-              >
-                {groupLoading ? "Generating..." : "Generate result"}
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-950">Result table</h3>
-            {groupResult ? (
-              <p className="mt-1 text-sm text-slate-600">
-                {aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1)} of <strong>{groupResult.aggregate_column}</strong> grouped by <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by value.
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-slate-600">Choose columns and a function, then click Generate result.</p>
-            )}
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-              {groupResult && groupResult.results.length > 0 ? (
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium text-slate-600">{groupResult.group_by}</th>
-                      <th className="px-4 py-3 text-left font-medium text-slate-600">
-                        {aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1)} of {groupResult.aggregate_column}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {groupResult.results.map((row, index) => (
-                      <tr key={index}>
-                        <td className="px-4 py-3 font-medium text-slate-950">{row.group}</td>
-                        <td className="px-4 py-3 text-slate-800">{row.value.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="p-6 text-sm text-slate-600">
-                  {groupResult ? "No groups found in the selected column." : "Results will appear here after you generate."}
-                </div>
-              )}
-            </div>
-
-            {groupResult && groupResult.results.length > 0 && (() => {
-              const W = 560, BAR_H = 26, GAP = 8, LABEL_W = 130, PAD = 16, VALUE_W = 72;
-              const bars = groupResult.results.slice(0, 15);
-              const H = PAD * 2 + bars.length * (BAR_H + GAP) - GAP;
-              const maxVal = Math.max(...bars.map((r) => Math.abs(r.value)), 1);
-              const availW = W - LABEL_W - PAD - VALUE_W;
-              return (
-                <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-                    {bars.map((row, i) => {
-                      const y = PAD + i * (BAR_H + GAP);
-                      const barW = Math.max((Math.abs(row.value) / maxVal) * availW, 2);
-                      const label = row.group.length > 17 ? row.group.slice(0, 16) + "…" : row.group;
-                      const valLabel = row.value.toLocaleString(undefined, { maximumFractionDigits: 1 });
-                      return (
-                        <g key={i}>
-                          <text x={LABEL_W - 8} y={y + BAR_H / 2 + 4} textAnchor="end" fontSize="12" fill="#64748b">{label}</text>
-                          <rect x={LABEL_W} y={y} width={barW} height={BAR_H} fill="#6366f1" rx="4" />
-                          <text x={LABEL_W + barW + 6} y={y + BAR_H / 2 + 4} fontSize="12" fill="#4f46e5" fontWeight="600">{valLabel}</text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                </div>
-              );
-            })()}
-
-            {groupResult && groupResult.results.length > 0 && (
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleExportGroupCSV}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Export CSV
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setSaveGroupAsOpen((v) => !v); setSaveGroupAsName(""); }}
-                    className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100"
-                  >
-                    Save as new dataset
-                  </button>
-                </div>
-
-                {saveGroupAsOpen && (
-                  <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
-                    <p className="mb-3 text-sm font-medium text-slate-800">Save aggregation as a new dataset</p>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <input
-                        type="text"
-                        placeholder={`${groupResult.group_by} ${aggregationOperation} ${groupResult.aggregate_column}`}
-                        value={saveGroupAsName}
-                        onChange={(e) => setSaveGroupAsName(e.target.value)}
-                        className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveGroupAsDataset}
-                        disabled={saveGroupAsSaving}
-                        className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-70"
-                      >
-                        {saveGroupAsSaving ? "Saving..." : "Save"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSaveGroupAsOpen(false)}
-                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">Leave the name blank to use the default. The dataset will appear in your dashboard.</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === "trends") {
-      if (trendLoading) return <p className="text-sm text-slate-600">Loading trend analysis...</p>;
-
-      const numericCols = trendData?.columns ?? [];
-      const activeTrend = numericCols.find((c) => c.column === selectedTrendColumn) ?? numericCols[0] ?? null;
-
-      function directionBadge(dir: string) {
-        const map: Record<string, string> = {
-          increasing: "bg-green-100 text-green-700",
-          decreasing: "bg-red-100 text-red-700",
-          stable: "bg-yellow-100 text-yellow-700",
-          volatile: "bg-orange-100 text-orange-700",
-        };
-        return map[dir] ?? "bg-slate-100 text-slate-600";
-      }
-
-      function directionLabel(dir: string) {
-        const map: Record<string, string> = {
-          increasing: "Going up over time",
-          decreasing: "Going down over time",
-          stable: "Relatively flat — little change over time",
-          volatile: "High variation — no clear direction",
-        };
-        return map[dir] ?? dir;
-      }
-
-      function renderTrendChart(trend: typeof activeTrend) {
-        if (!trend || trend.chart_points.length < 2) {
-          return <p className="text-sm text-slate-500">Not enough data points to render chart.</p>;
-        }
-        const W = 560;
-        const H = 180;
-        const PAD = 32;
-        const pts = trend.chart_points;
-        const minY = Math.min(...pts.map((p) => p.y));
-        const maxY = Math.max(...pts.map((p) => p.y));
-        const rangeY = maxY - minY || 1;
-        const maxX = pts[pts.length - 1]?.x ?? 1;
-
-        function px(p: { x: number; y: number }) {
-          return {
-            cx: PAD + (p.x / maxX) * (W - 2 * PAD),
-            cy: H - PAD - ((p.y - minY) / rangeY) * (H - 2 * PAD),
-          };
-        }
-
-        const tl = trend.trend_line;
-        const tl0 = px(tl[0]!);
-        const tl1 = px(tl[1]!);
-        const isUp = trend.direction === "increasing";
-
-        return (
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-            <polyline
-              points={pts.map((p) => { const { cx, cy } = px(p); return `${cx.toFixed(1)},${cy.toFixed(1)}`; }).join(" ")}
-              fill="none" stroke="#6366f1" strokeWidth="2" strokeLinejoin="round"
-            />
-            <line
-              x1={tl0.cx} y1={tl0.cy} x2={tl1.cx} y2={tl1.cy}
-              stroke={isUp ? "#22c55e" : "#ef4444"} strokeWidth="1.5" strokeDasharray="6 4"
-            />
-            <text x={PAD} y={PAD - 8} fontSize="10" fill="#94a3b8">{maxY.toFixed(1)}</text>
-            <text x={PAD} y={H - PAD + 14} fontSize="10" fill="#94a3b8">{minY.toFixed(1)}</text>
-          </svg>
-        );
-      }
-
-      return (
-        <div className="space-y-6">
-          {numericCols.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-              No numeric columns found. Upload a dataset with numeric data to see trends.
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-900">Column</span>
-                  <select
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                    value={selectedTrendColumn}
-                    onChange={(e) => setSelectedTrendColumn(e.target.value)}
-                  >
-                    {numericCols.map((c) => (
-                      <option key={c.column} value={c.column}>{c.column}</option>
-                    ))}
-                  </select>
-                </label>
-                {activeTrend ? (
-                  <span className={`mt-5 rounded-full px-3 py-1 text-xs font-semibold ${directionBadge(activeTrend.direction)}`}>
-                    {directionLabel(activeTrend.direction)}
-                  </span>
-                ) : null}
-              </div>
-
-              {activeTrend ? (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
-                    {[
-                      { label: "Min", value: activeTrend.min },
-                      { label: "Max", value: activeTrend.max },
-                      { label: "Mean", value: activeTrend.mean },
-                      { label: "Slope", value: activeTrend.slope },
-                      { label: "R²", value: activeTrend.r_squared },
-                      { label: "Points", value: activeTrend.count },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <p className="text-sm text-slate-500">{label}</p>
-                        <p className="mt-1 text-lg font-semibold text-slate-950">{String(value)}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <InsightCard text="R² measures how well the trend line fits your data. Above 0.7 = strong trend. Below 0.3 = weak or noisy pattern — the trend line may not be reliable." />
-
-                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-sm font-semibold text-slate-950 mb-3">
-                      Trend chart — <span className="text-indigo-600">{activeTrend.column}</span>
-                      <span className="ml-2 text-xs text-slate-400">(blue = data, dashed = trend line)</span>
-                    </h3>
-                    {renderTrendChart(activeTrend)}
-                  </div>
-                </>
-              ) : null}
-            </>
-          )}
-        </div>
-      );
-    }
-
-    if (activeTab === "anomaly") {
-      if (anomalyLoading) return <p className="text-sm text-slate-600">Running anomaly detection...</p>;
-
-      const anomaly = anomalyData;
-
-      return (
-        <div className="space-y-6">
-          <TipCard text="Outliers are values unusually far from the typical range of a column. They may be data entry errors or genuine extremes worth investigating." />
-
-          {!anomaly ? (
-            <p className="text-sm text-slate-600">Switch to this tab to run anomaly detection.</p>
-          ) : anomaly.columns_analyzed === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-              No numeric columns found. Anomaly detection requires at least one numeric column.
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm text-slate-500">Columns analyzed</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-950">{anomaly.columns_analyzed}</p>
-                </div>
-                <div className={`rounded-2xl border p-4 shadow-sm ${anomaly.total_flagged_rows > 0 ? "border-orange-200 bg-orange-50" : "border-green-200 bg-green-50"}`}>
-                  <p className="text-sm text-slate-500">Total flagged rows</p>
-                  <p className={`mt-1 text-2xl font-semibold ${anomaly.total_flagged_rows > 0 ? "text-orange-700" : "text-green-700"}`}>{anomaly.total_flagged_rows}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm text-slate-500">Columns with outliers</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-950">{anomaly.columns.filter((c) => c.outlier_count > 0).length}</p>
-                </div>
-              </div>
-
-              {anomaly.columns.length > 0 && (() => {
-                const W = 560, BAR_H = 26, GAP = 8, LABEL_W = 130, PAD = 16, VALUE_W = 72;
-                const cols = anomaly.columns;
-                const H = PAD * 2 + cols.length * (BAR_H + GAP) - GAP;
-                const maxPct = Math.max(...cols.map((c) => c.outlier_pct), 1);
-                const availW = W - LABEL_W - PAD - VALUE_W;
-                return (
-                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-lg font-semibold text-slate-950">Outlier rate by column</h3>
-                    <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-                        {cols.map((col, i) => {
-                          const y = PAD + i * (BAR_H + GAP);
-                          const barW = Math.max((col.outlier_pct / maxPct) * availW, 2);
-                          const label = col.column.length > 17 ? col.column.slice(0, 16) + "…" : col.column;
-                          const pctLabel = `${col.outlier_pct.toFixed(1)}%`;
-                          const barColor = col.outlier_pct >= 10 ? "#ef4444" : col.outlier_pct >= 5 ? "#f59e0b" : "#6366f1";
-                          return (
-                            <g key={i}>
-                              <text x={LABEL_W - 8} y={y + BAR_H / 2 + 4} textAnchor="end" fontSize="12" fill="#64748b">{label}</text>
-                              <rect x={LABEL_W} y={y} width={barW} height={BAR_H} fill={barColor} rx="4" />
-                              <text x={LABEL_W + barW + 6} y={y + BAR_H / 2 + 4} fontSize="12" fill={barColor} fontWeight="600">{pctLabel}</text>
-                            </g>
-                          );
-                        })}
-                      </svg>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-lg font-semibold text-slate-950">Outliers per column</h3>
-                <p className="mt-1 text-sm text-slate-600">Statistical range method — flags values that fall far outside the typical spread of each column.</p>
-
-                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Column</th>
-                        <th className="px-4 py-3 font-medium">Outliers</th>
-                        <th className="px-4 py-3 font-medium">%</th>
-                        <th className="px-4 py-3 font-medium">Lower fence</th>
-                        <th className="px-4 py-3 font-medium">Upper fence</th>
-                        <th className="px-4 py-3 font-medium">Samples</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {anomaly.columns.map((col) => (
-                        <tr key={col.column}>
-                          <td className="px-4 py-3 font-medium text-slate-950">{col.column}</td>
-                          <td className="px-4 py-3">
-                            <span className={col.outlier_count > 0 ? "font-semibold text-orange-700" : "text-slate-400"}>{col.outlier_count}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
-                                  <div
-                                    className={`h-full rounded-full ${col.outlier_pct > 15 ? "bg-red-500" : col.outlier_pct > 5 ? "bg-orange-400" : "bg-yellow-400"}`}
-                                    style={{ width: `${Math.min(col.outlier_pct, 100)}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs text-slate-500">{col.outlier_pct}%</span>
-                              </div>
-                              <span className={`text-xs font-medium ${col.outlier_pct > 15 ? "text-red-600" : col.outlier_pct > 5 ? "text-amber-600" : "text-green-600"}`}>
-                                {col.outlier_pct > 15 ? "High — possible data quality issue" : col.outlier_pct > 5 ? "Moderate — worth reviewing" : "Low — likely safe to ignore"}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{col.lower_fence}</td>
-                          <td className="px-4 py-3 text-slate-600">{col.upper_fence}</td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">{col.sample_outliers.slice(0, 3).map(String).join(", ")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      );
-    }
-
-    if (activeTab === "prediction") {
-      function getPredictionConfidence(rSquared: number): { label: string; badgeClasses: string } {
-        if (rSquared >= 0.7) return { label: "High confidence — consistent historical data", badgeClasses: "bg-green-100 text-green-700" };
-        if (rSquared >= 0.4) return { label: "Medium confidence — some variation in historical data", badgeClasses: "bg-yellow-100 text-yellow-700" };
-        return { label: "Low confidence — irregular data; treat as a rough estimate", badgeClasses: "bg-red-100 text-red-700" };
-      }
-
-      function getPredictionTrend(slope: number): { label: "Trending Up" | "Trending Down" | "Stable"; badgeClasses: string } {
-        if (slope > 0.01) return { label: "Trending Up", badgeClasses: "bg-green-100 text-green-700" };
-        if (slope < -0.01) return { label: "Trending Down", badgeClasses: "bg-red-100 text-red-700" };
-        return { label: "Stable", badgeClasses: "bg-slate-100 text-slate-600" };
-      }
-
-      const W = 560, H = 140, PAD = 32;
-      let chartEl: React.ReactNode = null;
-      if (predictionResult && predictionResult.predictions.length > 0) {
-        const pts = predictionResult.predictions;
-        const allY = pts.flatMap((p) => [p.lower_bound, p.upper_bound]);
-        const yMin = Math.min(...allY);
-        const yMax = Math.max(...allY);
-        const yRange = yMax - yMin || 1;
-        const px = (i: number) => PAD + (i / (pts.length - 1 || 1)) * (W - PAD * 2);
-        const py = (v: number) => PAD + (1 - (v - yMin) / yRange) * (H - PAD * 2);
-
-        const bandPoints = [
-          ...pts.map((p, i) => `${px(i)},${py(p.upper_bound)}`),
-          ...[...pts].reverse().map((p, i) => `${px(pts.length - 1 - i)},${py(p.lower_bound)}`),
-        ].join(" ");
-        const linePoints = pts.map((p, i) => `${px(i)},${py(p.predicted_value)}`).join(" ");
-
-        chartEl = (
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 140 }}>
-            <polygon points={bandPoints} fill="#6366f1" fillOpacity={0.12} />
-            <polyline points={linePoints} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" />
-            {pts.map((p, i) => (
-              <circle key={i} cx={px(i)} cy={py(p.predicted_value)} r={3} fill="#6366f1" />
-            ))}
-          </svg>
-        );
-      }
-
-      return (
-        <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-4">
-            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-1 block text-sm font-medium text-slate-900">Date column (optional)</span>
-              <span className="mb-2 block text-xs text-slate-400">Select a date column to plot predictions over time</span>
-              <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                value={predictionInputColumn}
-                onChange={(event) => setPredictionInputColumn(event.target.value)}
-              >
-                {availableColumns.map((columnName) => (
-                  <option key={columnName} value={columnName}>{columnName}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Column to forecast</span>
-              <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                value={predictionTargetColumn}
-                onChange={(event) => setPredictionTargetColumn(event.target.value)}
-              >
-                {availableColumns.map((columnName) => (
-                  <option key={columnName} value={columnName}>{columnName}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="mb-2 block text-sm font-medium text-slate-900">Steps ahead</span>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-                value={predictionSteps}
-                onChange={(e) => setPredictionSteps(Math.max(1, Math.min(20, Number(e.target.value))))}
-              />
-            </label>
-
-            <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <button
-                type="button"
-                className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-70"
-                onClick={handleRunPrediction}
-                disabled={predictionLoading}
-              >
-                {predictionLoading ? "Running..." : "Run prediction"}
-              </button>
-            </div>
-          </div>
-
-          {predictionResult && (() => {
-            const lastPrediction = predictionResult.predictions[predictionResult.predictions.length - 1];
-            const lastValue = lastPrediction ? lastPrediction.predicted_value : null;
-            const confidence = getPredictionConfidence(predictionResult.r_squared);
-            const trend = getPredictionTrend(predictionResult.slope);
-            return (
-              <div className="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${trend.badgeClasses}`}>{trend.label}</span>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${confidence.badgeClasses}`}>{confidence.label} confidence</span>
-                </div>
-                <p className="mt-3 text-sm text-slate-700">
-                  If this continues,{" "}
-                  <span className="font-semibold text-slate-950">{predictionResult.target_column}</span>{" "}
-                  is expected to reach approximately{" "}
-                  <span className="font-semibold text-indigo-700">
-                    {lastValue !== null ? lastValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"}
-                  </span>{" "}
-                  in <span className="font-semibold text-slate-950">{predictionResult.future_steps}</span>{" "}
-                  {predictionResult.future_steps === 1 ? "step" : "steps"}.
-                </p>
-              </div>
-            );
-          })()}
-
-          {predictionResult && (
-            <InsightCard text="Predictions use a linear trend model. Accuracy improves with more data — best results with 20 or more rows. Use the confidence badge above to judge how much to rely on these estimates." />
-          )}
-
-          {predictionResult && (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-lg font-semibold text-slate-950">Forecast — {predictionResult.target_column}</h3>
-                <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Period</th>
-                        <th className="px-4 py-3 font-medium">Expected</th>
-                        <th className="px-4 py-3 font-medium">Est. Range</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {predictionResult.predictions.map((p) => (
-                        <tr key={p.step}>
-                          <td className="px-4 py-3 font-medium text-slate-700">Period {p.step}</td>
-                          <td className="px-4 py-3 font-semibold text-indigo-700">
-                            {p.predicted_value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {p.lower_bound.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                            {" – "}
-                            {p.upper_bound.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {chartEl && (
-                  <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                    {chartEl}
-                  </div>
-                )}
-              </div>
-
-              {(() => {
-                const confidence = getPredictionConfidence(predictionResult.r_squared);
-                const slopeAbs = Math.abs(predictionResult.slope);
-                const slopeSign = predictionResult.slope >= 0 ? "+" : "−";
-                return (
-                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-lg font-semibold text-slate-950">Model</h3>
-                    <div className="mt-4 space-y-3 text-sm text-slate-700">
-                      <div className="flex justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <span className="text-slate-500">Trend rate</span>
-                        <span className={`font-semibold ${predictionResult.slope >= 0 ? "text-green-700" : "text-red-700"}`}>
-                          {slopeSign}{slopeAbs.toFixed(1)} per period
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <span className="text-slate-500">Forecast confidence</span>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${confidence.badgeClasses}`}>
-                          {confidence.label}
-                        </span>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                        Forecast uses a linear trend model. Accuracy improves with more data.
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {!predictionResult && !predictionLoading && (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
-              Choose a column to forecast and the number of steps ahead, then click <span className="font-medium text-slate-700">Run prediction</span>.
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (activeTab === "correlation") {
-      if (correlationLoading) return <p className="text-sm text-slate-600">Computing correlation matrix...</p>;
-
-      const corr = correlationData;
-
-      if (!corr || corr.columns.length < 2) {
-        return (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-            Correlation requires at least 2 numeric columns. Switch to this tab after uploading a dataset with numeric data.
-          </div>
-        );
-      }
-
-      const cols = corr.columns;
-      const n = cols.length;
-      const CELL = 64;
-      const LABEL_W = 100;
-      const PAD = 8;
-      const W = LABEL_W + n * CELL + PAD;
-      const H = LABEL_W + n * CELL + PAD;
-
-      // Find strongest positive and negative pairs (off-diagonal)
-      let maxPos = { r: 0, a: "", b: "" };
-      let maxNeg = { r: 0, a: "", b: "" };
-      for (let i = 0; i < cols.length; i++) {
-        for (let j = i + 1; j < cols.length; j++) {
-          const val = corr.matrix[cols[i]]?.[cols[j]] ?? 0;
-          if (val > maxPos.r) maxPos = { r: val, a: cols[i], b: cols[j] };
-          if (val < maxNeg.r) maxNeg = { r: val, a: cols[i], b: cols[j] };
-        }
-      }
-
-      function cellColor(r: number): string {
-        const abs = Math.abs(r);
-        const lightness = Math.round(98 - abs * 48);
-        if (r >= 0) return `hsl(220,70%,${lightness}%)`;
-        return `hsl(0,70%,${lightness}%)`;
-      }
-
-      function textColor(r: number): string {
-        return Math.abs(r) > 0.5 ? "#fff" : "#334155";
-      }
-
-      return (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Columns analyzed</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{n}</p>
-            </div>
-            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Strongest positive</p>
-              {maxPos.a ? (
-                <>
-                  <p className="mt-1 text-lg font-semibold text-indigo-700">{maxPos.r.toFixed(3)}</p>
-                  <p className="text-xs text-slate-500 truncate">{maxPos.a} ↔ {maxPos.b}</p>
-                </>
-              ) : <p className="mt-1 text-sm text-slate-400">—</p>}
-            </div>
-            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Strongest negative</p>
-              {maxNeg.a ? (
-                <>
-                  <p className="mt-1 text-lg font-semibold text-red-700">{maxNeg.r.toFixed(3)}</p>
-                  <p className="text-xs text-slate-500 truncate">{maxNeg.a} ↔ {maxNeg.b}</p>
-                </>
-              ) : <p className="mt-1 text-sm text-slate-400">—</p>}
-            </div>
-          </div>
-
-          <InsightCard text="The diagonal always shows 1.0 — each column is perfectly correlated with itself. Values near +1 indicate columns that increase together; near −1 they move in opposite directions. Values near 0 mean no meaningful relationship." />
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-950">Correlation Heatmap</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  {correlationMethod === "pearson"
-                    ? "Pearson correlation — measures linear relationships. Blue = positive, red = negative. Diagonal is always 1."
-                    : "Spearman correlation — measures monotonic (rank-based) relationships. Robust to outliers and non-linear curves."}
-                </p>
-              </div>
-              <div className="inline-flex shrink-0 rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-medium">
-                <button
-                  type="button"
-                  onClick={() => setCorrelationMethod("pearson")}
-                  className={`rounded-full px-3 py-1.5 transition ${correlationMethod === "pearson" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-                  disabled={correlationLoading}
-                >
-                  Pearson
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCorrelationMethod("spearman")}
-                  className={`rounded-full px-3 py-1.5 transition ${correlationMethod === "spearman" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-                  disabled={correlationLoading}
-                >
-                  Spearman
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 overflow-x-auto">
-              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: W, height: H }}>
-                {/* Column headers (top) */}
-                {cols.map((col, j) => (
-                  <text
-                    key={`ch-${j}`}
-                    x={LABEL_W + j * CELL + CELL / 2}
-                    y={LABEL_W - 8}
-                    textAnchor="end"
-                    fontSize="10"
-                    fill="#64748b"
-                    transform={`rotate(-45, ${LABEL_W + j * CELL + CELL / 2}, ${LABEL_W - 8})`}
-                  >
-                    {col.length > 12 ? col.slice(0, 11) + "…" : col}
-                  </text>
-                ))}
-                {/* Row headers (left) */}
-                {cols.map((col, i) => (
-                  <text
-                    key={`rh-${i}`}
-                    x={LABEL_W - 8}
-                    y={LABEL_W + i * CELL + CELL / 2 + 4}
-                    textAnchor="end"
-                    fontSize="10"
-                    fill="#64748b"
-                  >
-                    {col.length > 12 ? col.slice(0, 11) + "…" : col}
-                  </text>
-                ))}
-                {/* Cells */}
-                {cols.map((row, i) =>
-                  cols.map((col, j) => {
-                    const val = corr.matrix[row]?.[col] ?? 0;
-                    const x = LABEL_W + j * CELL;
-                    const y = LABEL_W + i * CELL;
-                    return (
-                      <g key={`${i}-${j}`}>
-                        <rect x={x} y={y} width={CELL} height={CELL} fill={cellColor(val)} rx="2" />
-                        <text
-                          x={x + CELL / 2}
-                          y={y + CELL / 2 + 4}
-                          textAnchor="middle"
-                          fontSize="10"
-                          fill={textColor(val)}
-                          fontWeight={i === j ? "700" : "400"}
-                        >
-                          {val.toFixed(2)}
-                        </text>
-                      </g>
-                    );
-                  })
-                )}
-              </svg>
-            </div>
-            <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-6 rounded" style={{ background: cellColor(1) }} /> Strong positive (+1)</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-6 rounded" style={{ background: cellColor(0) }} /> No correlation (0)</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-6 rounded" style={{ background: cellColor(-1) }} /> Strong negative (−1)</span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">This tab is ready for more demo content.</div>
-    );
-  }
-
-  if (loading) {
-    return <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">Loading workspace...</main>;
-  }
-
-  if (!workspace) {
-    return null;
-  }
+  // ── Render ─────────────────────────────────────────────────────────────────
+  if (loading) return <main className="min-h-screen px-4 py-10 text-slate-900">Loading workspace...</main>;
+  if (!workspace) return null;
+
+  const tabs: { key: WorkspaceTab; label: string }[] = [
+    { key: "prepare", label: "Prepare" },
+    { key: "explore", label: "Explore" },
+    { key: "detect", label: "Detect" },
+    { key: "predict", label: "Predict" },
+  ];
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Dataset workspace</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight">{workspace.dataset.original_filename}</h1>
-              <p className="text-sm text-slate-600">Workspace for previewing, cleaning, analyzing, and saving results.</p>
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto w-full max-w-7xl px-4 py-8">
+        {/* Page header */}
+        <header className="mb-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-widest text-indigo-500">Dataset workspace</p>
+            <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">{workspace.dataset.original_filename}</h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {workspace.dataset.row_count?.toLocaleString() ?? "?"} rows · {workspace.dataset.column_count ?? "?"} cols
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {cleaningResult && (
+              <button
+                type="button"
+                className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100"
+                onClick={() => { setCodeExportCopied(false); setShowCodeExport(true); }}
+              >
+                Export Python
+              </button>
+            )}
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1">
+              <select
+                className="border-none bg-transparent py-1 text-sm text-slate-700 outline-none"
+                value={exportFormat}
+                onChange={(e) => setExportFormat(e.target.value as ExportDatasetFormat)}
+                disabled={exporting}
+              >
+                <option value="csv">CSV</option>
+                <option value="xlsx">XLSX</option>
+                <option value="json">JSON</option>
+                <option value="parquet">Parquet</option>
+              </select>
+              <button
+                type="button"
+                className="rounded-lg bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+                onClick={handleExportResult}
+                disabled={exporting}
+              >
+                {exporting ? "Exporting…" : "Export"}
+              </button>
             </div>
-            <Link className="text-sm font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-4" href="/dashboard">
-              Back to dashboard
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              onClick={openHistory}
+            >
+              History
+            </button>
+            <button
+              type="button"
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${cleaningResult ? "bg-indigo-600 text-white hover:bg-indigo-500" : "cursor-not-allowed bg-slate-100 text-slate-400"}`}
+              disabled={!cleaningResult}
+              onClick={() => setShowSaveModal(true)}
+            >
+              {saving ? "Saving…" : "Save Result"}
+            </button>
+            <Link
+              href="/dashboard"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              ← Dashboard
             </Link>
           </div>
         </header>
 
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
-              {(["overview", "cleaning", "analysis", "aggregation", "trends", "anomaly", "correlation", "prediction"] as WorkspaceTab[]).map((tab) => {
-                const hasUnsavedBadge = (tab === "cleaning" || tab === "overview") && cleaningResult !== null;
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setActiveTab(tab)}
-                    className={`relative rounded-full px-4 py-2 text-sm font-medium transition ${
-                      activeTab === tab ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
-                    }`}
-                  >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    {hasUnsavedBadge && (
-                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" />
-                    )}
-                  </button>
-                );
-              })}
+        {/* Unsaved cleaning banner */}
+        {cleaningResult && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="flex items-center gap-2">
+              <span>⚠</span>
+              <span>Cleaning applied — unsaved changes. Overview now shows the cleaned preview.</span>
             </div>
-
-            <div className="mt-6">
-              {cleaningResult && (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  <div className="flex items-center gap-2">
-                    <span>⚠</span>
-                    <span>Cleaning applied — unsaved changes. Overview now shows the cleaned preview.</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      className="font-medium text-slate-600 underline underline-offset-4 hover:text-slate-900"
-                      onClick={handleDiscardResult}
-                    >
-                      Discard
-                    </button>
-                    <button
-                      type="button"
-                      className="font-medium text-slate-700 underline underline-offset-4 decoration-slate-400 hover:text-slate-900"
-                      onClick={() => { setCodeExportCopied(false); setShowCodeExport(true); }}
-                      title="Export the applied operations as a runnable pandas script"
-                    >
-                      Export as Python
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full bg-amber-600 px-4 py-1.5 font-medium text-white hover:bg-amber-500"
-                      onClick={() => setShowSaveModal(true)}
-                    >
-                      Save changes →
-                    </button>
-                  </div>
-                </div>
-              )}
-              {renderTabContent()}
-            </div>
-          </div>
-
-          <aside className="space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Current result</h2>
-              <div className="mt-4 grid gap-3">
-                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm">
-                  <p className="font-medium text-slate-950">Ready to save</p>
-                  <p className="mt-1 text-slate-600">Use the save button to keep the current result or make a new dataset.</p>
-                </div>
-                <div className="rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-800">
-                  <p className="font-medium">Result summary</p>
-                  <p className="mt-1">Rows: {String(cleaningResult?.summary.row_count ?? workspace.dataset.row_count ?? "-")}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                  <p className="font-medium text-slate-950">Dataset name</p>
-                  <p className="mt-1">{workspace.dataset.original_filename}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">History</h2>
-                  <p className="mt-1 text-sm text-slate-600">Browse previous versions of this dataset and restore any of them as the current state.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                onClick={openHistory}
-              >
-                View version history
+            <div className="flex items-center gap-3">
+              <button type="button" className="font-medium text-slate-600 underline underline-offset-4 hover:text-slate-900" onClick={handleDiscardResult}>
+                Discard
+              </button>
+              <button type="button" className="rounded-full bg-amber-600 px-4 py-1.5 font-medium text-white hover:bg-amber-500" onClick={() => setShowSaveModal(true)}>
+                Save changes →
               </button>
             </div>
+          </div>
+        )}
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Export</h2>
-              <p className="mt-1 text-sm text-slate-600">Download the current result as CSV, Excel, JSON, or Parquet.</p>
+        {/* Sticky tab bar */}
+        <div className="sticky top-0 z-10 -mx-4 mb-6 flex gap-1 border-b border-slate-200 bg-slate-50 px-4 py-2 backdrop-blur-sm">
+          {tabs.map(({ key, label }) => {
+            const hasBadge = key === "prepare" && cleaningResult !== null;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key)}
+                className={`relative rounded-full px-5 py-2 text-sm font-medium transition ${
+                  activeTab === key ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-indigo-700"
+                }`}
+              >
+                {label}
+                {hasBadge && (
+                  <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-slate-50" />
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-              <div className="mt-4 grid gap-3">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-900">Format</span>
-                  <select
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500"
-                    value={exportFormat}
-                    onChange={(event) => setExportFormat(event.target.value as ExportDatasetFormat)}
-                    disabled={exporting}
-                  >
-                    <option value="csv">CSV</option>
-                    <option value="xlsx">XLSX</option>
-                    <option value="json">JSON</option>
-                    <option value="parquet">Parquet</option>
-                  </select>
-                </label>
+        {/* Tab content — full width */}
+        <div className="w-full">
+          {activeTab === "prepare" && workspace && (
+            <PrepareTab
+              workspace={workspace}
+              subTab={prepareSubTab}
+              setSubTab={setPrepareSubTab}
+              cleaningDetection={cleaningDetection}
+              cleaningDetecting={cleaningDetecting}
+              cleaningResult={cleaningResult}
+              cleaningOperations={cleaningOperations}
+              setCleaningOperations={setCleaningOperations}
+              missingValueStrategies={missingValueStrategies}
+              setMissingValueStrategies={setMissingValueStrategies}
+              dateFormatChoices={dateFormatChoices}
+              setDateFormatChoices={setDateFormatChoices}
+              dayfirstChoices={dayfirstChoices}
+              setDayfirstChoices={setDayfirstChoices}
+              overviewExtraRows={overviewExtraRows}
+              overviewTotalRows={overviewTotalRows}
+              overviewLoadingMore={overviewLoadingMore}
+              filterPredicates={filterPredicates}
+              setFilterPredicates={setFilterPredicates}
+              filterCombine={filterCombine}
+              setFilterCombine={setFilterCombine}
+              filterPanelOpen={filterPanelOpen}
+              setFilterPanelOpen={setFilterPanelOpen}
+              filterResult={filterResult}
+              filterLoading={filterLoading}
+              draftFilterColumn={draftFilterColumn}
+              setDraftFilterColumn={setDraftFilterColumn}
+              draftFilterOp={draftFilterOp}
+              setDraftFilterOp={setDraftFilterOp}
+              draftFilterValue={draftFilterValue}
+              setDraftFilterValue={setDraftFilterValue}
+              draftFilterLower={draftFilterLower}
+              setDraftFilterLower={setDraftFilterLower}
+              draftFilterUpper={draftFilterUpper}
+              setDraftFilterUpper={setDraftFilterUpper}
+              issuesPanelOpen={issuesPanelOpen}
+              setIssuesPanelOpen={setIssuesPanelOpen}
+              cumulativeAppliedOperations={cumulativeAppliedOperations}
+              applying={applying}
+              sortColumn={sortColumn}
+              setSortColumn={setSortColumn}
+              sortAscending={sortAscending}
+              setSortAscending={setSortAscending}
+              derivedColumnName={derivedColumnName}
+              setDerivedColumnName={setDerivedColumnName}
+              derivedExpression={derivedExpression}
+              setDerivedExpression={setDerivedExpression}
+              handleApplyCleaning={handleApplyCleaning}
+              handleLoadMoreOverviewRows={handleLoadMoreOverviewRows}
+              addFilterPredicate={addFilterPredicate}
+              removeFilterPredicate={removeFilterPredicate}
+              clearAllFilters={clearAllFilters}
+              handleRescanData={handleRescanData}
+              toggleDuplicateRows={toggleDuplicateRows}
+              toggleTrimWhitespace={toggleTrimWhitespace}
+              toggleLowercaseColumn={toggleLowercaseColumn}
+              toggleConvertType={toggleConvertType}
+              toggleSortValues={toggleSortValues}
+              toggleStandardizeDates={toggleStandardizeDates}
+              togglePatternImputation={togglePatternImputation}
+              addMissingValueOperation={addMissingValueOperation}
+              addDerivedColumn={addDerivedColumn}
+              hasQueuedOperation={hasQueuedOperation}
+              getColumnType={(col) => getColumnType(col, cleaningDetection)}
+              isLowercaseCandidate={isLowercaseCandidate}
+              getDefaultMissingStrategy={(col) => getDefaultMissingStrategy(col, cleaningDetection)}
+              buildDuplicateOperation={buildDuplicateOperation}
+              buildTrimWhitespaceOperation={(cols) => buildTrimWhitespaceOperation(cols)}
+              buildMissingValueOperation={buildMissingValueOperation}
+              buildConvertTypeOperation={buildConvertTypeOperation}
+              buildSortValuesOperation={buildSortValuesOperation}
+              buildStandardizeDatesOperation={buildStandardizeDatesOperation}
+              buildPatternImputationOperation={buildPatternImputationOperation}
+            />
+          )}
 
-                <button
-                  type="button"
-                  className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-                  onClick={handleExportResult}
-                  disabled={exporting}
-                >
-                  {exporting ? "Exporting..." : "Export"}
-                </button>
+          {activeTab === "explore" && (
+            <ExploreTab
+              workspace={workspace}
+              availableColumns={availableColumns}
+              analysisStats={analysisStats}
+              analysisLoading={analysisLoading}
+              structureSummary={structureSummary}
+              selectedDistColumn={selectedDistColumn}
+              setSelectedDistColumn={setSelectedDistColumn}
+              distributionData={distributionData}
+              setDistributionData={setDistributionData}
+              distributionLoading={distributionLoading}
+              aggregationGroupBy={aggregationGroupBy}
+              setAggregationGroupBy={setAggregationGroupBy}
+              aggregateColumn={aggregateColumn}
+              setAggregateColumn={setAggregateColumn}
+              aggregationOperation={aggregationOperation}
+              setAggregationOperation={setAggregationOperation}
+              groupResult={groupResult}
+              groupLoading={groupLoading}
+              saveGroupAsOpen={saveGroupAsOpen}
+              setSaveGroupAsOpen={setSaveGroupAsOpen}
+              saveGroupAsName={saveGroupAsName}
+              setSaveGroupAsName={setSaveGroupAsName}
+              saveGroupAsSaving={saveGroupAsSaving}
+              trendData={trendData}
+              trendLoading={trendLoading}
+              selectedTrendColumn={selectedTrendColumn}
+              setSelectedTrendColumn={setSelectedTrendColumn}
+              cleaningResult={cleaningResult}
+              setShowSaveModal={setShowSaveModal}
+              setActiveGroupTab={setActiveTab}
+              handleGenerateAggregation={handleGenerateAggregation}
+              handleExportGroupCSV={handleExportGroupCSV}
+              handleSaveGroupAsDataset={handleSaveGroupAsDataset}
+            />
+          )}
+
+          {activeTab === "detect" && (
+            <DetectTab
+              anomalyData={anomalyData}
+              anomalyLoading={anomalyLoading}
+              correlationData={correlationData}
+              correlationLoading={correlationLoading}
+              correlationMethod={correlationMethod}
+              setCorrelationMethod={setCorrelationMethod}
+            />
+          )}
+
+          {activeTab === "predict" && (
+            <PredictTab
+              availableColumns={availableColumns}
+              predictionResult={predictionResult}
+              predictionLoading={predictionLoading}
+              predictionInputColumn={predictionInputColumn}
+              setPredictionInputColumn={setPredictionInputColumn}
+              predictionTargetColumn={predictionTargetColumn}
+              setPredictionTargetColumn={setPredictionTargetColumn}
+              predictionSteps={predictionSteps}
+              setPredictionSteps={setPredictionSteps}
+              handleRunPrediction={handleRunPrediction}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* History modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-widest text-indigo-500">Version history</p>
+                <h2 className="mt-1 text-xl font-semibold text-slate-950">{workspace.dataset.original_filename}</h2>
+                <p className="mt-1 text-sm text-slate-500">Restoring copies the snapshot into a new version — nothing is overwritten.</p>
               </div>
+              <button type="button" className="rounded-full px-3 py-1 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={() => { setShowHistoryModal(false); setPendingRestore(null); }}>
+                ×
+              </button>
             </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Save Result</h2>
-              {!cleaningResult ? (
-                <div className="mt-4 space-y-3">
-                  <p className="text-sm text-slate-500">Apply cleaning operations first.</p>
-                  <button
-                    type="button"
-                    className="w-full cursor-not-allowed rounded-xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-400"
-                    disabled
-                  >
-                    Save Result
-                  </button>
-                </div>
+            <div className="mt-5 max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200">
+              {versionsLoading ? (
+                <p className="px-4 py-6 text-sm text-slate-500">Loading history…</p>
+              ) : !versionList || versionList.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-slate-500">No version history available yet.</p>
               ) : (
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-800">
-                    <p className="font-medium">Ready to save</p>
-                    <p className="mt-1">
-                      {String(cleaningResult.summary.row_count ?? "-")} rows,{" "}
-                      {String(cleaningResult.summary.column_count ?? "-")} columns
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-                    disabled={saving}
-                    onClick={() => setShowSaveModal(true)}
-                  >
-                    {saving ? "Saving..." : "Save Result"}
-                  </button>
-                </div>
+                <ul className="divide-y divide-slate-100">
+                  {versionList.map((v) => (
+                    <li key={v.id} className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${v.is_current ? "bg-indigo-50/40" : ""}`}>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="font-semibold text-slate-950">v{v.version_number}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{v.operation_type}</span>
+                          {v.is_current && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">current</span>}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {new Date(v.created_at).toLocaleString()} · {v.row_count ?? "?"} rows · {v.column_count ?? "?"} cols
+                          {v.missing_cells != null ? ` · ${v.missing_cells} missing` : ""}
+                          {v.duplicate_rows != null ? ` · ${v.duplicate_rows} duplicates` : ""}
+                        </p>
+                      </div>
+                      <button type="button" className="shrink-0 rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setPendingRestore(v)} disabled={v.is_current || restoringVersionId !== null}>
+                        Restore
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-          </aside>
-        </section>
+            {pendingRestore && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-medium">Restore v{pendingRestore.version_number}?</p>
+                <p className="mt-1">A new version will be created from this snapshot and become current.</p>
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <button type="button" className="rounded-xl border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100" onClick={() => setPendingRestore(null)} disabled={restoringVersionId !== null}>
+                    Cancel
+                  </button>
+                  <button type="button" className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-medium text-white hover:bg-amber-500 disabled:opacity-70" onClick={() => confirmRestore(pendingRestore)} disabled={restoringVersionId !== null}>
+                    {restoringVersionId === pendingRestore.id ? "Restoring…" : "Confirm restore"}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="mt-5 flex justify-end">
+              <button type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={() => { setShowHistoryModal(false); setPendingRestore(null); }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-        {showHistoryModal ? (
+      {/* Code export modal */}
+      {showCodeExport && cleaningResult && (() => {
+        const script = operationsToPandasScript(cleaningResult.operations_applied ?? [], workspace.dataset.original_filename);
+        const safeFile = (workspace.dataset.original_filename || "cleaning_script").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "");
+        async function copyScript() {
+          try { await navigator.clipboard.writeText(script); setCodeExportCopied(true); globalThis.setTimeout(() => setCodeExportCopied(false), 2000); } catch { setCodeExportCopied(false); }
+        }
+        function downloadScript() {
+          const blob = new Blob([script], { type: "text/x-python" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = `${safeFile}_cleaning.py`;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
+        return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-            <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
+            <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Version history</p>
-                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{workspace.dataset.original_filename}</h2>
-                  <p className="mt-1 text-sm text-slate-600">Newest versions are listed first. Restoring an older version copies its snapshot into a new current version — nothing is overwritten.</p>
+                  <p className="text-xs font-medium uppercase tracking-widest text-indigo-500">Reproducibility</p>
+                  <h2 className="mt-1 text-xl font-semibold text-slate-950">Export as Python (pandas) script</h2>
+                  <p className="mt-1 text-sm text-slate-500">{cleaningResult.operations_applied.length} applied operation{cleaningResult.operations_applied.length === 1 ? "" : "s"}.</p>
                 </div>
-                <button
-                  type="button"
-                  className="rounded-full px-3 py-1 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                  onClick={() => { setShowHistoryModal(false); setPendingRestore(null); }}
-                >
-                  ×
-                </button>
+                <button type="button" className="rounded-full px-3 py-1 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowCodeExport(false)}>×</button>
               </div>
-
-              <div className="mt-5 max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200">
-                {versionsLoading ? (
-                  <p className="px-4 py-6 text-sm text-slate-500">Loading history…</p>
-                ) : !versionList || versionList.length === 0 ? (
-                  <p className="px-4 py-6 text-sm text-slate-500">No version history available yet.</p>
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {versionList.map((v) => (
-                      <li key={v.id} className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${v.is_current ? "bg-indigo-50/40" : ""}`}>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 text-sm">
-                            <span className="font-semibold text-slate-950">v{v.version_number}</span>
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{v.operation_type}</span>
-                            {v.is_current ? <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">current</span> : null}
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {new Date(v.created_at).toLocaleString()} · {v.row_count ?? "?"} rows · {v.column_count ?? "?"} cols
-                            {v.missing_cells != null ? ` · ${v.missing_cells} missing` : ""}
-                            {v.duplicate_rows != null ? ` · ${v.duplicate_rows} duplicates` : ""}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            type="button"
-                            className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setPendingRestore(v)}
-                            disabled={v.is_current || restoringVersionId !== null}
-                          >
-                            Restore
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              {pendingRestore ? (
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  <p className="font-medium">Restore v{pendingRestore.version_number}?</p>
-                  <p className="mt-1">
-                    A new version will be created from v{pendingRestore.version_number}&apos;s snapshot and become the current dataset. The currently visible version stays in history.
-                  </p>
-                  <div className="mt-3 flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      className="rounded-xl border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 transition hover:bg-amber-100"
-                      onClick={() => setPendingRestore(null)}
-                      disabled={restoringVersionId !== null}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-70"
-                      onClick={() => confirmRestore(pendingRestore)}
-                      disabled={restoringVersionId !== null}
-                    >
-                      {restoringVersionId === pendingRestore.id ? "Restoring…" : "Confirm restore"}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="mt-5 flex justify-end">
-                <button
-                  type="button"
-                  className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => { setShowHistoryModal(false); setPendingRestore(null); }}
-                >
-                  Close
-                </button>
+              <pre className="mt-5 max-h-[55vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs leading-relaxed text-slate-100">{script}</pre>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={() => setShowCodeExport(false)}>Close</button>
+                <button type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={copyScript}>{codeExportCopied ? "Copied!" : "Copy script"}</button>
+                <button type="button" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500" onClick={downloadScript}>Download .py</button>
               </div>
             </div>
           </div>
-        ) : null}
+        );
+      })()}
 
-        {showCodeExport && cleaningResult ? (() => {
-          const script = operationsToPandasScript(
-            cleaningResult.operations_applied ?? [],
-            workspace.dataset.original_filename,
-          );
-          const safeFile = (workspace.dataset.original_filename || "cleaning_script").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "");
-          async function copyScript() {
-            try {
-              await navigator.clipboard.writeText(script);
-              setCodeExportCopied(true);
-              globalThis.setTimeout(() => setCodeExportCopied(false), 2000);
-            } catch {
-              setCodeExportCopied(false);
-            }
-          }
-          function downloadScript() {
-            const blob = new Blob([script], { type: "text/x-python" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${safeFile}_cleaning.py`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-              <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Reproducibility</p>
-                    <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Export as Python (pandas) script</h2>
-                    <p className="mt-1 text-sm text-slate-600">
-                      A runnable equivalent of your {cleaningResult.operations_applied.length} applied operation{cleaningResult.operations_applied.length === 1 ? "" : "s"}. Use this to reproduce the cleaning outside Smartalyze.
-                    </p>
-                  </div>
-                  <button type="button" className="rounded-full px-3 py-1 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowCodeExport(false)}>
-                    ×
-                  </button>
-                </div>
-
-                <pre className="mt-5 max-h-[55vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs leading-relaxed text-slate-100">
-{script}
-                </pre>
-
-                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                  <button type="button" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => setShowCodeExport(false)}>
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                    onClick={copyScript}
-                  >
-                    {codeExportCopied ? "Copied!" : "Copy script"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500"
-                    onClick={downloadScript}
-                  >
-                    Download .py
-                  </button>
-                </div>
+      {/* Save modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-widest text-indigo-500">Save Result</p>
+                <h2 className="mt-1 text-xl font-semibold text-slate-950">Choose how to save</h2>
               </div>
+              <button type="button" className="rounded-full px-3 py-1 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowSaveModal(false)}>×</button>
             </div>
-          );
-        })() : null}
-
-        {showSaveModal ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-            <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10">
-              <div className="flex items-start justify-between gap-3">
+            <div className="mt-6 space-y-3">
+              <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "replace" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
+                <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "replace"} onChange={() => setSaveMode("replace")} />
                 <div>
-                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Save Result</p>
-                  <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Choose how to save</h2>
+                  <p className="font-medium text-slate-950">Replace <span className="text-indigo-700">{workspace.dataset.original_filename}</span></p>
+                  <p className="mt-1 text-sm text-slate-500">Overwrites the current dataset with the cleaned result.</p>
+                  <p className="mt-1 text-xs font-medium text-red-600">This will permanently overwrite the current version.</p>
                 </div>
-                <button type="button" className="rounded-full px-3 py-1 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowSaveModal(false)}>
-                  ×
-                </button>
-              </div>
-
-              <div className="mt-6 space-y-3">
-                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "replace" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
-                  <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "replace"} onChange={() => setSaveMode("replace")} />
-                  <div>
-                    <p className="font-medium text-slate-950">Replace <span className="text-indigo-700">{workspace.dataset.original_filename}</span></p>
-                    <p className="mt-1 text-sm text-slate-600">Overwrites the current dataset with the cleaned result.</p>
-                    <p className="mt-1 text-xs font-medium text-red-600">This will permanently overwrite the current version.</p>
-                  </div>
-                </label>
-
-                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "new" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
-                  <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "new"} onChange={() => setSaveMode("new")} />
-                  <div className="w-full">
-                    <p className="font-medium text-slate-950">Save as new dataset</p>
-                    <p className="mt-1 text-sm text-slate-600">Create a separate dataset from this result.</p>
-
-                    {saveMode === "new" ? (
-                      <label className="mt-4 block">
-                        <span className="mb-2 block text-sm font-medium text-slate-900">Dataset Name</span>
-                        <input
-                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-500"
-                          value={newDatasetName}
-                          onChange={(event) => setNewDatasetName(event.target.value)}
-                          placeholder="Enter a dataset name"
-                          required
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-                </label>
-              </div>
-
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button type="button" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => setShowSaveModal(false)}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
-                  onClick={handleSaveResult}
-                  disabled={saving}
-                >
-                  {saving ? "Saving..." : "Save"}
-                </button>
-              </div>
+              </label>
+              <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${saveMode === "new" ? "border-indigo-200 bg-indigo-50" : "border-slate-200 bg-white"}`}>
+                <input className="mt-1 h-4 w-4 accent-indigo-600" type="radio" checked={saveMode === "new"} onChange={() => setSaveMode("new")} />
+                <div className="w-full">
+                  <p className="font-medium text-slate-950">Save as new dataset</p>
+                  <p className="mt-1 text-sm text-slate-500">Create a separate dataset from this result.</p>
+                  {saveMode === "new" && (
+                    <input className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-500" value={newDatasetName} onChange={(e) => setNewDatasetName(e.target.value)} placeholder="Enter a dataset name" />
+                  )}
+                </div>
+              </label>
+            </div>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={() => setShowSaveModal(false)}>Cancel</button>
+              <button type="button" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-70" onClick={handleSaveResult} disabled={saving}>
+                {saving ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      )}
     </main>
   );
 }
