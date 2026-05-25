@@ -22,7 +22,7 @@ export type Dataset = {
   stored_filename: string;
   file_path: string;
   mime_type: string | null;
-  file_format: string;
+  file_format: "csv" | "excel" | "json" | "image";
   description: string | null;
   size_bytes: number;
   row_count: number | null;

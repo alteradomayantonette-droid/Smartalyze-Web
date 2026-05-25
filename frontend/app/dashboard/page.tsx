@@ -98,6 +98,7 @@ export default function DashboardPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadingMessage, setUploadingMessage] = useState("Uploading…");
   const [token, setToken] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -127,12 +128,14 @@ export default function DashboardPage() {
     if (!file) return;
     const tok = token ?? getStoredToken();
     if (!tok) { toast.warning("You need to be logged in to upload."); return; }
+    const isImage = /\.(png|jpe?g)$/i.test(file.name);
+    setUploadingMessage(isImage ? "Extracting table from image…" : "Uploading…");
     setUploading(true);
     try {
-      await uploadDataset(file, "Dashboard upload", tok);
+      await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok);
       event.target.value = "";
       await refreshDatasets(tok);
-      toast.success("Dataset uploaded successfully.");
+      toast.success(isImage ? "Image table extracted and saved as dataset." : "Dataset uploaded successfully.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed.");
     } finally {
@@ -255,14 +258,14 @@ export default function DashboardPage() {
             <p className="text-sm text-slate-500">Data quality portfolio — {datasets.length} dataset{datasets.length !== 1 ? "s" : ""} total.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xlsx,.xls,.json" onChange={handleUpload} />
+            <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xlsx,.xls,.json,.png,.jpg,.jpeg" onChange={handleUpload} />
             <button
               type="button"
               className="rounded-xl border border-indigo-200 bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
             >
-              {uploading ? "Uploading…" : "Upload Dataset"}
+              {uploading ? uploadingMessage : "Upload Dataset"}
             </button>
             <button
               type="button"
@@ -414,7 +417,7 @@ export default function DashboardPage() {
           {datasets.length === 0 ? (
             <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-10 text-center">
               <p className="text-sm font-medium text-slate-600">No datasets yet</p>
-              <p className="mt-1 text-xs text-slate-400">Upload a CSV, XLSX, or JSON file to get started.</p>
+              <p className="mt-1 text-xs text-slate-400">Upload a CSV, XLSX, JSON, or an image (PNG/JPG) of a data table to get started.</p>
             </div>
           ) : sorted.length === 0 ? (
             <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
@@ -446,7 +449,12 @@ export default function DashboardPage() {
                     return (
                       <tr key={dataset.id} className="transition hover:bg-slate-50/60">
                         <td className="px-4 py-3">
-                          <p className="max-w-50 truncate font-medium text-slate-900">{dataset.original_filename}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="max-w-44 truncate font-medium text-slate-900">{dataset.original_filename}</p>
+                            {dataset.file_format === "image" && (
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-violet-100 text-violet-700">OCR</span>
+                            )}
+                          </div>
                           {dataset.description ? (
                             <p className="mt-0.5 max-w-50 truncate text-xs text-slate-400">{dataset.description}</p>
                           ) : null}

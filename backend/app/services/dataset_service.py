@@ -31,7 +31,7 @@ from app.models.dataset_version import DatasetVersion
 from app.schemas.dataset import CreateDatasetVersionRequest
 from app.services.dataset_snapshot import build_snapshot
 
-ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".json"}
+ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".json", ".png", ".jpg", ".jpeg"}
 PREVIEW_ROWS = 10
 
 
@@ -194,7 +194,7 @@ def _read_dataframe(file_bytes: bytes, filename: str) -> tuple[pd.DataFrame, str
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported file type. Use CSV, Excel, or JSON.",
+            detail="Unsupported file type. Use CSV, Excel, JSON, or an image (PNG/JPG).",
         )
 
     buffer = BytesIO(file_bytes)
@@ -204,6 +204,21 @@ def _read_dataframe(file_bytes: bytes, filename: str) -> tuple[pd.DataFrame, str
     elif extension in {".xlsx", ".xls"}:
         frame = pd.read_excel(buffer)
         file_format = "excel"
+    elif extension in {".png", ".jpg", ".jpeg"}:
+        try:
+            from app.services.ocr_service import extract_table_from_image
+            frame = extract_table_from_image(file_bytes)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"OCR extraction failed: {exc}",
+            ) from exc
+        file_format = "image"
     else:
         frame = pd.read_json(buffer)
         file_format = "json"
