@@ -662,7 +662,7 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
                           return (
                             <td
                               key={col}
-                              className="min-w-[120px] max-w-[260px] border-r border-slate-100 last:border-r-0 p-0"
+                              className="min-w-30 max-w-65 border-r border-slate-100 last:border-r-0 p-0"
                             >
                               {!isDeleted && (
                                 <EditableCell
