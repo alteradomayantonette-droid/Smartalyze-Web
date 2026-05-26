@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\geanr\\\\Documents\\\\Smartalyze-Web\\\\backend\" -Recurse -Force | Where-Object {-not $_.PSIsContainer} | Select-Object -Property @{Name='Path'; Expression={$_.FullName.Replace\\('c:\\\\Users\\\\geanr\\\\Documents\\\\Smartalyze-Web\\\\backend\\\\', ''\\)}} | Sort-Object Path | Format-Table -AutoSize)"
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\geanr\\\\Documents\\\\Smartalyze-Web\\\\backend\" -Recurse -Force | Where-Object {-not $_.PSIsContainer} | Select-Object -Property @{Name='Path'; Expression={$_.FullName.Replace\\('c:\\\\Users\\\\geanr\\\\Documents\\\\Smartalyze-Web\\\\backend\\\\', ''\\)}} | Sort-Object Path | Format-Table -AutoSize)",
+      "Bash(gh repo *)"
     ]
   }
 }
