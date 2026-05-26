@@ -246,10 +246,19 @@ export default function DatasetWorkspacePage() {
     getDatasetWorkspace(datasetId, storedToken)
       .then((ws) => {
         setWorkspace(ws);
-        const firstName = String(ws.dataset.columns_json?.[0]?.name ?? "");
+        const cols = ws.dataset.columns_json ?? [];
+        const firstName = String((cols[0] as { name?: string })?.name ?? "");
+        const textCol = cols.find((c) => {
+          const t = String((c as { data_type?: string }).data_type ?? "");
+          return t === "object" || t === "string" || t === "category" || t === "bool";
+        });
+        const numCol = cols.find((c) => {
+          const t = String((c as { data_type?: string }).data_type ?? "");
+          return t.startsWith("int") || t.startsWith("float") || t.startsWith("Int") || t.startsWith("Float");
+        });
         if (firstName) {
-          setAggregationGroupBy(firstName);
-          setAggregateColumn(firstName);
+          setAggregationGroupBy(String((textCol as { name?: string })?.name ?? firstName));
+          setAggregateColumn(String((numCol as { name?: string })?.name ?? firstName));
           setPredictionInputColumn(firstName);
           setPredictionTargetColumn(firstName);
           setSortColumn(firstName);
@@ -550,7 +559,11 @@ export default function DatasetWorkspacePage() {
     if (!workspace || !token) return;
     setGroupLoading(true);
     try {
-      setGroupResult(await groupDataset(workspace.dataset.id, { group_by: aggregationGroupBy, aggregate_column: aggregateColumn, aggregate_func: aggregationOperation }, token));
+      setGroupResult(await groupDataset(workspace.dataset.id, {
+        group_by: aggregationGroupBy,
+        aggregate_column: aggregationOperation === "count" ? aggregationGroupBy : aggregateColumn,
+        aggregate_func: aggregationOperation,
+      }, token));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not generate aggregation.");
     } finally {

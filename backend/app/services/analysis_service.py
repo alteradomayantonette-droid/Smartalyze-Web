@@ -412,19 +412,21 @@ def group_dataset(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Column '{aggregate_column}' not found.")
 
     try:
-        grouped = df.groupby(group_by, dropna=False)[aggregate_column]
-        if aggregate_func == "sum":
-            result_series = grouped.sum(numeric_only=True)
-        elif aggregate_func == "count":
-            result_series = grouped.count()
-        elif aggregate_func == "mean":
-            result_series = grouped.mean(numeric_only=True)
-        elif aggregate_func == "min":
-            result_series = grouped.min(numeric_only=True)
-        elif aggregate_func == "max":
-            result_series = grouped.max(numeric_only=True)
+        if aggregate_func == "count":
+            # size() counts all rows per group (including rows with nulls in other columns)
+            result_series = df.groupby(group_by, dropna=False).size()
         else:
-            result_series = grouped.count()
+            grouped = df.groupby(group_by, dropna=False)[aggregate_column]
+            if aggregate_func == "sum":
+                result_series = grouped.sum(numeric_only=True)
+            elif aggregate_func == "mean":
+                result_series = grouped.mean(numeric_only=True)
+            elif aggregate_func == "min":
+                result_series = grouped.min(numeric_only=True)
+            elif aggregate_func == "max":
+                result_series = grouped.max(numeric_only=True)
+            else:
+                result_series = grouped.count()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

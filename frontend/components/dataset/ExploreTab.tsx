@@ -415,8 +415,32 @@ export function ExploreTab(props: ExploreTabProps) {
   }
 
   function renderAggregation() {
+    // Derive type-filtered column lists from analysisStats (falls back to all columns if stats not loaded)
+    const groupableColumns =
+      analysisStats?.column_stats.filter((c) => c.dtype !== "numeric").map((c) => c.name) ?? [];
+    const numericColumns =
+      analysisStats?.column_stats.filter((c) => c.dtype === "numeric").map((c) => c.name) ?? [];
+    const groupByOptions = groupableColumns.length > 0 ? groupableColumns : availableColumns;
+    const aggregateOptions = numericColumns.length > 0 ? numericColumns : availableColumns;
+
+    const isCount = aggregationOperation === "count";
+    const opLabel = aggregationOperation === "mean"
+      ? "Average"
+      : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1);
+
     return (
       <div className="space-y-6">
+        {/* Guidance banner */}
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+          <p className="text-sm font-semibold text-indigo-800">Aggregate your data</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            Group rows by a category and compute a summary value per group.{" "}
+            <span className="text-slate-400">
+              Example: total sales per region, average rating per product category.
+            </span>
+          </p>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <span className="mb-2 block text-sm font-medium text-slate-900">Group by</span>
@@ -425,20 +449,31 @@ export function ExploreTab(props: ExploreTabProps) {
               value={aggregationGroupBy}
               onChange={(e) => setAggregationGroupBy(e.target.value)}
             >
-              {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
+              {groupByOptions.map((col) => <option key={col} value={col}>{col}</option>)}
             </select>
+            <p className="mt-1.5 text-xs text-slate-400">Categorical or text column</p>
           </label>
 
-          <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <span className="mb-2 block text-sm font-medium text-slate-900">Aggregate column</span>
-            <select
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-              value={aggregateColumn}
-              onChange={(e) => setAggregateColumn(e.target.value)}
-            >
-              {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
-            </select>
-          </label>
+          {isCount ? (
+            <div className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <span className="text-sm font-medium text-slate-400">Aggregate column</span>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                Not needed for Count — rows per group are tallied automatically.
+              </p>
+            </div>
+          ) : (
+            <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className="mb-2 block text-sm font-medium text-slate-900">Aggregate column</span>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+                value={aggregateColumn}
+                onChange={(e) => setAggregateColumn(e.target.value)}
+              >
+                {aggregateOptions.map((col) => <option key={col} value={col}>{col}</option>)}
+              </select>
+              <p className="mt-1.5 text-xs text-slate-400">Numeric column to compute</p>
+            </label>
+          )}
 
           <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <span className="mb-2 block text-sm font-medium text-slate-900">Function</span>
@@ -453,6 +488,9 @@ export function ExploreTab(props: ExploreTabProps) {
               <option value="min">Min</option>
               <option value="max">Max</option>
             </select>
+            <p className="mt-1.5 text-xs text-slate-400">
+              {isCount ? "Rows per group" : "Applied to aggregate column"}
+            </p>
           </label>
 
           <div className="flex items-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -462,7 +500,7 @@ export function ExploreTab(props: ExploreTabProps) {
               onClick={handleGenerateAggregation}
               disabled={groupLoading || availableColumns.length === 0}
             >
-              {groupLoading ? "Generating..." : "Generate result"}
+              {groupLoading ? "Generating…" : "Generate result"}
             </button>
           </div>
         </div>
@@ -471,11 +509,13 @@ export function ExploreTab(props: ExploreTabProps) {
           <h3 className="text-lg font-semibold text-slate-950">Result table</h3>
           {groupResult ? (
             <p className="mt-1 text-sm text-slate-600">
-              {aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1)} of{" "}
-              <strong>{groupResult.aggregate_column}</strong> grouped by <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by value.
+              {isCount
+                ? <>Row count per <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by count.</>
+                : <>{opLabel} of <strong>{groupResult.aggregate_column}</strong> grouped by <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by value.</>
+              }
             </p>
           ) : (
-            <p className="mt-1 text-sm text-slate-600">Choose columns and a function, then click Generate result.</p>
+            <p className="mt-1 text-sm text-slate-600">Configure the fields above and click Generate result to see your summary.</p>
           )}
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
@@ -485,7 +525,9 @@ export function ExploreTab(props: ExploreTabProps) {
                   <tr>
                     <th className="px-4 py-3 text-left font-medium text-slate-600">{groupResult.group_by}</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-600">
-                      {aggregationOperation === "mean" ? "Average" : aggregationOperation.charAt(0).toUpperCase() + aggregationOperation.slice(1)} of {groupResult.aggregate_column}
+                      {groupResult.aggregate_func === "count"
+                        ? "Rows"
+                        : `${groupResult.aggregate_func === "mean" ? "Average" : groupResult.aggregate_func.charAt(0).toUpperCase() + groupResult.aggregate_func.slice(1)} of ${groupResult.aggregate_column}`}
                     </th>
                   </tr>
                 </thead>
@@ -522,7 +564,7 @@ export function ExploreTab(props: ExploreTabProps) {
                     <YAxis type="category" dataKey="group" tick={{ fontSize: 11, fill: "#64748b" }} width={110} />
                     <Tooltip
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                      formatter={(v) => [typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 1 }) : String(v ?? ""), groupResult.aggregate_column]}
+                      formatter={(v) => [typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 1 }) : String(v ?? ""), groupResult.aggregate_func === "count" ? "Rows" : groupResult.aggregate_column]}
                     />
                     <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]}>
                       {groupResult.results.slice(0, 15).map((_, i) => (

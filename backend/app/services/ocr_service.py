@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from pandas.api.types import is_string_dtype
 from img2table.document import Image as Img2TableImage
 from img2table.ocr import EasyOCR
 
@@ -45,9 +46,23 @@ def extract_table_from_image(image_bytes: bytes) -> pd.DataFrame:
             df.columns = first_row.tolist()
             df = df.iloc[1:].reset_index(drop=True)
 
-    # Strip whitespace and convert empty strings to NaN
+    # Deduplicate column names — OCR often produces identical headers (e.g. blank cells)
+    # which causes df[col] to return a DataFrame instead of a Series, crashing .dtype access.
+    seen: dict[str, int] = {}
+    deduped: list[str] = []
+    for c in df.columns:
+        key = str(c)
+        if key in seen:
+            seen[key] += 1
+            deduped.append(f"{key}_{seen[key]}")
+        else:
+            seen[key] = 0
+            deduped.append(key)
+    df.columns = deduped
+
+    # Strip whitespace — use is_string_dtype for pandas 3.x compatibility (dtype==object silently fails)
     for col in df.columns:
-        if df[col].dtype == object:
+        if is_string_dtype(df[col]):
             df[col] = df[col].str.strip()
     df.replace("", pd.NA, inplace=True)
 
