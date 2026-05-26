@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { detectCleaningIssues, getDatasetRows, saveManualEdit } from "@/lib/api";
-import type { DatasetWorkspace } from "@/lib/api";
+import type { CleaningIssue, DatasetWorkspace } from "@/lib/api";
+import { DatasetHealthPanel } from "./EditTab/DatasetHealthPanel";
 import { EditableCell } from "./EditTab/EditableCell";
 import { EditToolbar } from "./EditTab/EditToolbar";
+import { IssuesPanel } from "./EditTab/IssuesPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,27 @@ export interface EditTabProps {
   token: string;
   onDirtyChange: (dirty: boolean) => void;
   onSaved: () => void;
+}
+
+// ─── Type badge helper ────────────────────────────────────────────────────────
+
+function TypeBadge({ type }: { type: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    numeric:  { label: "123",  cls: "bg-blue-50 text-blue-600 border-blue-200" },
+    float:    { label: "1.0",  cls: "bg-blue-50 text-blue-600 border-blue-200" },
+    integer:  { label: "123",  cls: "bg-blue-50 text-blue-600 border-blue-200" },
+    text:     { label: "Aa",   cls: "bg-slate-100 text-slate-500 border-slate-200" },
+    string:   { label: "Aa",   cls: "bg-slate-100 text-slate-500 border-slate-200" },
+    datetime: { label: "date", cls: "bg-violet-50 text-violet-600 border-violet-200" },
+    date:     { label: "date", cls: "bg-violet-50 text-violet-600 border-violet-200" },
+    boolean:  { label: "T/F",  cls: "bg-emerald-50 text-emerald-600 border-emerald-200" },
+  };
+  const t = map[type.toLowerCase()] ?? { label: type, cls: "bg-slate-100 text-slate-400 border-slate-200" };
+  return (
+    <span className={`inline-block rounded border px-1 text-[10px] font-medium leading-4 ${t.cls}`}>
+      {t.label}
+    </span>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -57,6 +80,9 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
   const [duplicateRowIndices, setDuplicateRowIndices] = useState<Set<number>>(new Set());
   const [outlierCells, setOutlierCells] = useState<Set<string>>(new Set());
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [missingValuesPerCol, setMissingValuesPerCol] = useState<Record<string, number>>({});
+  const [columnTypes, setColumnTypes] = useState<Record<string, string>>({});
+  const [allIssues, setAllIssues] = useState<CleaningIssue[]>([]);
 
   // ── UI state ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQueryRaw] = useState("");
@@ -169,6 +195,9 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
         setSuggestions(sugMap);
         setDuplicateRowIndices(dupSet);
         setOutlierCells(outlierSet);
+        setMissingValuesPerCol(result.missing_values ?? {});
+        setColumnTypes(result.column_types ?? {});
+        setAllIssues(result.issues ?? []);
       } catch {
         // Suggestions are non-blocking — silently ignore errors
       } finally {
@@ -357,6 +386,34 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
     pushUndo({ type: "bulk_suggest", changes });
   }
 
+  // ── Apply suggestions for a single column ───────────────────────────────
+  function handleApplyColumnSuggestions(colName: string) {
+    const changes: Array<{ rowIndex: number; colName: string; oldValue: unknown; newValue: unknown }> = [];
+    suggestions.forEach((suggested, key) => {
+      const [riStr, col] = key.split("::");
+      if (col !== colName) return;
+      const rowIndex = Number(riStr);
+      const oldValue = editedCells.get(key) ?? rows[rowIndex]?.[colName] ?? null;
+      changes.push({ rowIndex, colName, oldValue, newValue: suggested });
+    });
+    if (changes.length === 0) return;
+    setEditedCells((m) => {
+      const next = new Map(m);
+      changes.forEach(({ rowIndex, colName: c, newValue }) => next.set(`${rowIndex}::${c}`, newValue));
+      return next;
+    });
+    pushUndo({ type: "bulk_suggest", changes });
+  }
+
+  // ── Mark all duplicate rows for deletion ────────────────────────────────
+  function handleMarkDuplicatesForDeletion() {
+    if (duplicateRowIndices.size === 0) return;
+    setDeletedRows((s) => new Set([...s, ...duplicateRowIndices]));
+    duplicateRowIndices.forEach((idx) => {
+      pushUndo({ type: "row_delete", rowIndex: idx, row: rows[idx] ?? {} });
+    });
+  }
+
   // ── Cancel ───────────────────────────────────────────────────────────────
   function handleCancel() {
     setRows(originalRows.current.map((r) => ({ ...r })));
@@ -533,6 +590,26 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
         </div>
       )}
 
+      <DatasetHealthPanel
+        totalRows={rows.length + insertedRows.size}
+        totalCols={columns.length}
+        missingValuesPerCol={missingValuesPerCol}
+        duplicates={duplicateRowIndices.size}
+        outlierCount={outlierCells.size}
+        suggestionCount={suggestions.size}
+        loading={suggestionsLoading}
+      />
+
+      <IssuesPanel
+        issues={allIssues}
+        missingValuesPerCol={missingValuesPerCol}
+        duplicates={duplicateRowIndices.size}
+        duplicateRowCount={duplicateRowIndices.size}
+        onFixMissingColumn={handleApplyColumnSuggestions}
+        onMarkDuplicatesForDeletion={handleMarkDuplicatesForDeletion}
+        loading={suggestionsLoading}
+      />
+
       <EditToolbar
         columns={columns}
         searchQuery={searchQuery}
@@ -576,7 +653,7 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
                 {columns.map((col) => (
                   <th
                     key={col}
-                    className="border-b border-slate-200 px-3 py-3 text-left text-xs font-semibold text-slate-600 whitespace-nowrap"
+                    className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap"
                   >
                     {renamingCol === col ? (
                       <input
@@ -599,6 +676,14 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
                         {col}
                       </span>
                     )}
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      {columnTypes[col] && <TypeBadge type={columnTypes[col]} />}
+                      {(missingValuesPerCol[col] ?? 0) > 0 && (
+                        <span className="text-[10px] font-medium text-red-500">
+                          {missingValuesPerCol[col]} missing
+                        </span>
+                      )}
+                    </div>
                   </th>
                 ))}
               </tr>
