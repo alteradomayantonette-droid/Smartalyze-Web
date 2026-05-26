@@ -860,12 +860,14 @@ export default function DatasetWorkspacePage() {
               correlationLoading={correlationLoading}
               correlationMethod={correlationMethod}
               setCorrelationMethod={setCorrelationMethod}
+              onSwitchTab={(tab) => setActiveTab(tab)}
             />
           )}
 
           {activeTab === "predict" && (
             <PredictTab
               availableColumns={availableColumns}
+              analysisStats={analysisStats}
               predictionResult={predictionResult}
               predictionLoading={predictionLoading}
               predictionInputColumn={predictionInputColumn}

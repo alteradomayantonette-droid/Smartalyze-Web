@@ -22,6 +22,7 @@ export interface DetectTabProps {
   correlationLoading: boolean;
   correlationMethod: CorrelationMethod;
   setCorrelationMethod: (method: CorrelationMethod) => void;
+  onSwitchTab?: (tab: "prepare" | "explore" | "detect" | "predict") => void;
 }
 
 function TipCard({ text }: { text: string }) {
@@ -50,6 +51,7 @@ export function DetectTab(props: DetectTabProps) {
     correlationLoading,
     correlationMethod,
     setCorrelationMethod,
+    onSwitchTab,
   } = props;
 
   const [subTab, setSubTab] = useState<DetectSubTab>("anomaly");
@@ -168,6 +170,28 @@ export function DetectTab(props: DetectTabProps) {
                 </table>
               </div>
             </div>
+
+            {anomaly.total_flagged_rows > 0 && (
+              <div className="flex items-start gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-900">
+                    {anomaly.total_flagged_rows} outlier row{anomaly.total_flagged_rows !== 1 ? "s" : ""} detected
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+                    To remove or cap these values, go to the <strong>Prepare</strong> tab and use the cleaning tools. Cleaning will update the current dataset version.
+                  </p>
+                </div>
+                {onSwitchTab && (
+                  <button
+                    type="button"
+                    onClick={() => onSwitchTab("prepare")}
+                    className="shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-500"
+                  >
+                    Go to Prepare →
+                  </button>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

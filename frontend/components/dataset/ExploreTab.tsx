@@ -659,6 +659,16 @@ export function ExploreTab(props: ExploreTabProps) {
 
     return (
       <div className="space-y-6">
+        <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+          <p className="text-sm font-semibold text-violet-800">Spot trends in your data</p>
+          <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+            Select a numeric column to see how values change across rows.{" "}
+            <span className="text-slate-400">
+              A smoothed trend line helps filter out noise to reveal the underlying direction.
+            </span>
+          </p>
+        </div>
+
         {numericCols.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
             No numeric columns found. Upload a dataset with numeric data to see trends.

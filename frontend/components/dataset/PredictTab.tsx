@@ -9,10 +9,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { PredictResponse } from "@/lib/api";
+import type { AnalyzeStatsResponse, PredictResponse } from "@/lib/api";
 
 export interface PredictTabProps {
   availableColumns: string[];
+  analysisStats: AnalyzeStatsResponse | null;
   predictionResult: PredictResponse | null;
   predictionLoading: boolean;
   predictionInputColumn: string;
@@ -48,6 +49,7 @@ function getPredictionTrend(slope: number): { label: "Trending Up" | "Trending D
 export function PredictTab(props: PredictTabProps) {
   const {
     availableColumns,
+    analysisStats,
     predictionResult,
     predictionLoading,
     predictionInputColumn,
@@ -59,8 +61,23 @@ export function PredictTab(props: PredictTabProps) {
     handleRunPrediction,
   } = props;
 
+  const numericColumns =
+    analysisStats?.column_stats.filter((c) => c.dtype === "numeric").map((c) => c.name) ?? [];
+  const forecastOptions = numericColumns.length > 0 ? numericColumns : availableColumns;
+
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+        <p className="text-sm font-semibold text-sky-900">How prediction works</p>
+        <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+          Smartalyze fits a linear trend to your selected column and projects it forward.{" "}
+          <span className="text-slate-400">
+            Best with 20+ rows of consistent numeric data. The date column is optional —
+            if omitted, row order is used as the time axis.
+          </span>
+        </p>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <span className="mb-1 block text-sm font-medium text-slate-900">Date column (optional)</span>
@@ -75,13 +92,14 @@ export function PredictTab(props: PredictTabProps) {
         </label>
 
         <label className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="mb-2 block text-sm font-medium text-slate-900">Column to forecast</span>
+          <span className="mb-1 block text-sm font-medium text-slate-900">Column to forecast</span>
+          <span className="mb-2 block text-xs text-slate-400">Numeric columns give the best results</span>
           <select
             className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
             value={predictionTargetColumn}
             onChange={(e) => setPredictionTargetColumn(e.target.value)}
           >
-            {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
+            {forecastOptions.map((col) => <option key={col} value={col}>{col}</option>)}
           </select>
         </label>
 
@@ -144,7 +162,8 @@ export function PredictTab(props: PredictTabProps) {
             <h3 className="text-lg font-semibold text-slate-950">Forecast — {predictionResult.target_column}</h3>
 
             {predictionResult.predictions.length > 0 && (
-              <div className="mt-4 h-52">
+              <div className="mt-4">
+                <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={predictionResult.predictions.map((p) => ({
@@ -198,6 +217,10 @@ export function PredictTab(props: PredictTabProps) {
                     />
                   </AreaChart>
                 </ResponsiveContainer>
+                </div>
+                <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                  The shaded area shows the estimated range where the true value is likely to fall. A wider band means higher uncertainty.
+                </p>
               </div>
             )}
 

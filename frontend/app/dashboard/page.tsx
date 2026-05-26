@@ -193,15 +193,13 @@ export default function DashboardPage() {
   })();
 
   const totalRows = datasets.reduce((s, d) => s + Number(d.row_count ?? 0), 0);
+  const totalColumns = datasets.reduce((s, d) => s + Number(d.column_count ?? 0), 0);
   const healthCounts = datasets.reduce((acc, d) => {
     const h = getHealthScore(d).label;
     acc[h] = (acc[h] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-  const datasetsWithIssues = datasets.filter((d) => {
-    const issues = getIssueItems(d);
-    return issues.missing > 0 || issues.duplicate > 0 || issues.invalid > 0;
-  }).length;
+  const cleanDatasets = healthCounts["Good"] ?? 0;
   const avgScore = datasets.length > 0
     ? Math.round(datasets.reduce((s, d) => s + getHealthScore(d).score, 0) / datasets.length)
     : 0;
@@ -222,10 +220,18 @@ export default function DashboardPage() {
     },
     { missing: 0, duplicate: 0, invalid: 0 },
   );
+  const totalIssueCount = totalIssues.missing + totalIssues.duplicate + totalIssues.invalid;
   const issuesBarData = [
     { name: "Missing Values", count: totalIssues.missing, fill: CHART_COLORS.missing },
     { name: "Duplicates", count: totalIssues.duplicate, fill: CHART_COLORS.duplicate },
     { name: "Invalid Values", count: totalIssues.invalid, fill: CHART_COLORS.invalid },
+  ].filter((d) => d.count > 0);
+
+  const fileTypeData = [
+    { name: "CSV", count: datasets.filter((d) => d.file_format === "csv").length, fill: "#6366f1" },
+    { name: "Excel", count: datasets.filter((d) => d.file_format === "excel").length, fill: "#22c55e" },
+    { name: "JSON", count: datasets.filter((d) => d.file_format === "json").length, fill: "#f59e0b" },
+    { name: "Image", count: datasets.filter((d) => d.file_format === "image").length, fill: "#a78bfa" },
   ].filter((d) => d.count > 0);
 
   const recentDataset = byLatest[0] ?? null;
@@ -294,7 +300,7 @@ export default function DashboardPage() {
         </header>
 
         {/* Stat Cards */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             title="Total Datasets"
             value={String(datasets.length)}
@@ -310,11 +316,11 @@ export default function DashboardPage() {
             bg="border-sky-100"
           />
           <StatCard
-            title="Datasets with Issues"
-            value={String(datasetsWithIssues)}
-            sub="Need attention"
-            accent="bg-amber-500"
-            bg="border-amber-100"
+            title="Total Columns"
+            value={totalColumns > 0 ? totalColumns.toLocaleString() : "0"}
+            sub="Across all datasets"
+            accent="bg-purple-500"
+            bg="border-purple-100"
           />
           <StatCard
             title="Avg Health Score"
@@ -323,11 +329,25 @@ export default function DashboardPage() {
             accent="bg-emerald-500"
             bg="border-emerald-100"
           />
+          <StatCard
+            title="Clean Datasets"
+            value={String(cleanDatasets)}
+            sub={`of ${datasets.length} total`}
+            accent="bg-teal-500"
+            bg="border-teal-100"
+          />
+          <StatCard
+            title="Total Issues"
+            value={totalIssueCount > 0 ? totalIssueCount.toLocaleString() : "0"}
+            sub="Missing · dupes · invalid"
+            accent="bg-red-500"
+            bg="border-red-100"
+          />
         </div>
 
         {/* Charts Row */}
         {datasets.length > 0 ? (
-          <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+          <div className="grid gap-6 lg:grid-cols-[2fr_1fr_1fr]">
             <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-slate-900">Data Quality Breakdown</h2>
               <p className="text-xs text-slate-500">Distribution of health scores across all datasets</p>
@@ -362,12 +382,12 @@ export default function DashboardPage() {
 
             <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-slate-900">Top Issues</h2>
-              <p className="text-xs text-slate-500">Cumulative issue counts across all datasets</p>
+              <p className="text-xs text-slate-500">Cumulative counts across all datasets</p>
               {issuesBarData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={issuesBarData} layout="vertical" margin={{ top: 8, right: 32, left: 8, bottom: 0 }}>
                     <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
                     <Tooltip formatter={(value) => [value, "Count"]} cursor={{ fill: "#f1f5f9" }} />
                     <Bar dataKey="count" radius={[0, 6, 6, 0]}>
                       {issuesBarData.map((entry, index) => (
@@ -378,7 +398,30 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-55 items-center justify-center text-sm text-slate-400">
-                  No issues detected — your data looks clean.
+                  No issues detected — data looks clean.
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-900">File Types</h2>
+              <p className="text-xs text-slate-500">Breakdown by format</p>
+              {fileTypeData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={fileTypeData} layout="vertical" margin={{ top: 8, right: 32, left: 8, bottom: 0 }}>
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={44} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(value) => [value, "Datasets"]} cursor={{ fill: "#f1f5f9" }} />
+                    <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                      {fileTypeData.map((entry, index) => (
+                        <Cell key={`ft-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-55 items-center justify-center text-sm text-slate-400">
+                  No data yet.
                 </div>
               )}
             </div>
@@ -415,9 +458,39 @@ export default function DashboardPage() {
           </div>
 
           {datasets.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-10 text-center">
-              <p className="text-sm font-medium text-slate-600">No datasets yet</p>
-              <p className="mt-1 text-xs text-slate-400">Upload a CSV, XLSX, JSON, or an image (PNG/JPG) of a data table to get started.</p>
+            <div className="mt-5">
+              <p className="mb-4 text-sm font-medium text-slate-700">Get started in 4 steps</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {([
+                  { step: "1", title: "Upload", desc: "Add a CSV, Excel, JSON, or a photo of a data table (PNG/JPG)" },
+                  { step: "2", title: "Clean", desc: "Remove duplicates, fill missing values, standardise types" },
+                  { step: "3", title: "Explore", desc: "Group, trend, and visualise your data with one click" },
+                  { step: "4", title: "Export", desc: "Download your cleaned data or analysis results" },
+                ] as const).map(({ step, title, desc }) => (
+                  <div key={step} className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
+                    <p className="text-xs font-bold text-indigo-400">Step {step}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{title}</p>
+                    <p className="mt-1 text-xs text-slate-500 leading-relaxed">{desc}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex gap-3">
+                <button
+                  type="button"
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Upload your first dataset
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                  onClick={handleLoadSample}
+                  disabled={loadingSample}
+                >
+                  {loadingSample ? "Loading…" : "Try sample data"}
+                </button>
+              </div>
             </div>
           ) : sorted.length === 0 ? (
             <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
