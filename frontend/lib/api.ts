@@ -748,6 +748,34 @@ export function restoreDatasetVersion(
   );
 }
 
+export type ManualEditRequest = {
+  records: Record<string, unknown>[];
+  columns: string[];
+};
+
+export type ManualEditResponse = {
+  version_id: number;
+  version_number: number;
+  row_count: number;
+  column_count: number;
+};
+
+export function saveManualEdit(
+  datasetId: number,
+  body: ManualEditRequest,
+  token: string,
+): Promise<ManualEditResponse> {
+  return request<ManualEditResponse>(
+    `/dataset/${datasetId}/manual-edit`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    token,
+  );
+}
+
 export async function uploadDataset(file: File, description: string, token?: string): Promise<{ message: string; dataset: Dataset }> {
   const formData = new FormData();
   formData.append("file", file);

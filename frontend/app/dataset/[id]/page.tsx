@@ -51,8 +51,9 @@ import { PrepareTab } from "@/components/dataset/PrepareTab";
 import { ExploreTab } from "@/components/dataset/ExploreTab";
 import { DetectTab } from "@/components/dataset/DetectTab";
 import { PredictTab } from "@/components/dataset/PredictTab";
+import { EditTab } from "@/components/dataset/EditTab";
 
-type WorkspaceTab = "prepare" | "explore" | "detect" | "predict";
+type WorkspaceTab = "prepare" | "explore" | "detect" | "predict" | "edit";
 type PrepareSubTab = "overview" | "cleaning";
 type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
 
@@ -226,6 +227,9 @@ export default function DatasetWorkspacePage() {
   const [correlationData, setCorrelationData] = useState<CorrelationResponse | null>(null);
   const [correlationLoading, setCorrelationLoading] = useState(false);
   const [correlationMethod, setCorrelationMethod] = useState<CorrelationMethod>("pearson");
+
+  // Edit tab
+  const [editTabIsDirty, setEditTabIsDirty] = useState(false);
 
   // Predict
   const [predictionInputColumn, setPredictionInputColumn] = useState("");
@@ -625,7 +629,15 @@ export default function DatasetWorkspacePage() {
     { key: "explore", label: "Explore" },
     { key: "detect", label: "Detect" },
     { key: "predict", label: "Predict" },
+    { key: "edit", label: "Edit" },
   ];
+
+  function handleTabChange(key: WorkspaceTab) {
+    if (activeTab === "edit" && editTabIsDirty) {
+      if (!window.confirm("You have unsaved changes in the editor. Leave anyway?")) return;
+    }
+    setActiveTab(key);
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
@@ -716,17 +728,21 @@ export default function DatasetWorkspacePage() {
         <div className="sticky top-0 z-10 -mx-4 mb-6 flex gap-1 border-b border-slate-200 bg-slate-50 px-4 py-2 backdrop-blur-sm">
           {tabs.map(({ key, label }) => {
             const hasBadge = key === "prepare" && cleaningResult !== null;
+            const hasEditBadge = key === "edit" && editTabIsDirty;
             return (
               <button
                 key={key}
                 type="button"
-                onClick={() => setActiveTab(key)}
+                onClick={() => handleTabChange(key)}
                 className={`relative rounded-full px-5 py-2 text-sm font-medium transition ${
                   activeTab === key ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-indigo-700"
                 }`}
               >
                 {label}
                 {hasBadge && (
+                  <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-slate-50" />
+                )}
+                {hasEditBadge && (
                   <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-slate-50" />
                 )}
               </button>
@@ -877,6 +893,21 @@ export default function DatasetWorkspacePage() {
               predictionSteps={predictionSteps}
               setPredictionSteps={setPredictionSteps}
               handleRunPrediction={handleRunPrediction}
+            />
+          )}
+
+          {activeTab === "edit" && workspace && token && (
+            <EditTab
+              workspace={workspace}
+              token={token}
+              onDirtyChange={setEditTabIsDirty}
+              onSaved={() => {
+                getDatasetWorkspace(datasetId, token).then((ws) => {
+                  setWorkspace(ws);
+                  setEditTabIsDirty(false);
+                  toast.success("Manual edits saved as a new version.");
+                }).catch(() => toast.error("Saved, but could not reload workspace."));
+              }}
             />
           )}
         </div>

@@ -159,3 +159,21 @@ If `data_snapshot` is omitted, the backend exports the dataset's current stored 
 
     format: Literal["csv", "xlsx", "json", "parquet"] = "csv"
     data_snapshot: dict | None = None
+
+
+class ManualEditRequest(BaseModel):
+    """Request body for POST /dataset/{id}/manual-edit.
+
+    The client sends the full modified records array (after applying all in-browser edits)
+    plus the current column names (which may have been renamed).
+    """
+    records: list[dict]
+    columns: list[str]
+
+
+class ManualEditResponse(BaseModel):
+    """Response body for POST /dataset/{id}/manual-edit."""
+    version_id: int
+    version_number: int
+    row_count: int
+    column_count: int
