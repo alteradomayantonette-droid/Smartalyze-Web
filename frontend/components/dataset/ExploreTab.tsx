@@ -660,11 +660,11 @@ export function ExploreTab(props: ExploreTabProps) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
-          <p className="text-sm font-semibold text-violet-800">Spot trends in your data</p>
+          <p className="text-sm font-semibold text-violet-800">AI-Powered Trend Analysis</p>
           <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-            Select a numeric column to see how values change across rows.{" "}
+            Select a numeric column to detect how values change across rows using linear regression.{" "}
             <span className="text-slate-400">
-              A smoothed trend line helps filter out noise to reveal the underlying direction.
+              The ML model fits a trend line to reveal the underlying direction and filters out noise.
             </span>
           </p>
         </div>

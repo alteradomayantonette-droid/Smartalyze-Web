@@ -68,9 +68,9 @@ export function PredictTab(props: PredictTabProps) {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
-        <p className="text-sm font-semibold text-sky-900">How prediction works</p>
+        <p className="text-sm font-semibold text-sky-900">ML-Based Predictions</p>
         <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-          Smartalyze fits a linear trend to your selected column and projects it forward.{" "}
+          Smartalyze uses a machine learning regression model (linear regression) to fit a trend to your selected column and project it forward.{" "}
           <span className="text-slate-400">
             Best with 20+ rows of consistent numeric data. The date column is optional —
             if omitted, row order is used as the time axis.
