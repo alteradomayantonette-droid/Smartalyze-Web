@@ -1,0 +1,96 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e187]:
+    - generic [ref=e188]:
+      - link "Smartalyze" [ref=e189] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e190]:
+        - link "Dashboard" [ref=e191] [cursor=pointer]:
+          - /url: /dashboard
+        - link "AU audituser2026" [ref=e192] [cursor=pointer]:
+          - /url: /profile
+          - generic [ref=e193]: AU
+          - generic [ref=e194]: audituser2026
+        - button "Logout" [ref=e195]
+  - main [ref=e197]:
+    - generic [ref=e198]:
+      - generic [ref=e199]:
+        - generic [ref=e200]:
+          - paragraph [ref=e201]: Smartalyze
+          - heading "Welcome back, audituser2026" [level=1] [ref=e202]
+          - paragraph [ref=e203]: Data quality portfolio — 0 datasets total.
+        - generic [ref=e204]:
+          - button "Upload Dataset" [ref=e205]
+          - button "Load Sample" [ref=e206]
+          - button "Logout" [ref=e207]
+      - generic [ref=e208]:
+        - article [ref=e209]:
+          - paragraph [ref=e211]: Total Datasets
+          - paragraph [ref=e212]: "0"
+          - paragraph [ref=e213]: All uploads
+        - article [ref=e214]:
+          - paragraph [ref=e216]: Total Rows
+          - paragraph [ref=e217]: "0"
+          - paragraph [ref=e218]: Across all datasets
+        - article [ref=e219]:
+          - paragraph [ref=e221]: Total Columns
+          - paragraph [ref=e222]: "0"
+          - paragraph [ref=e223]: Across all datasets
+        - article [ref=e224]:
+          - paragraph [ref=e226]: Avg Health Score
+          - paragraph [ref=e227]: —
+          - paragraph [ref=e228]: Quality index
+        - article [ref=e229]:
+          - paragraph [ref=e231]: Clean Datasets
+          - paragraph [ref=e232]: "0"
+          - paragraph [ref=e233]: of 0 total
+        - article [ref=e234]:
+          - paragraph [ref=e236]: Total Issues
+          - paragraph [ref=e237]: "0"
+          - paragraph [ref=e238]: Missing · dupes · invalid
+      - generic [ref=e239]:
+        - generic [ref=e240]:
+          - heading "Datasets" [level=2] [ref=e242]
+          - generic [ref=e243]:
+            - searchbox "Search datasets…" [ref=e244]
+            - combobox [ref=e245]:
+              - option "Most recent" [selected]
+              - option "Name (A→Z)"
+              - option "Most rows"
+        - generic [ref=e246]:
+          - paragraph [ref=e247]: Get started in 4 steps
+          - generic [ref=e248]:
+            - generic [ref=e249]:
+              - paragraph [ref=e250]: Step 1
+              - paragraph [ref=e251]: Upload
+              - paragraph [ref=e252]: Add a CSV, Excel, JSON, or a photo of a data table (PNG/JPG)
+            - generic [ref=e253]:
+              - paragraph [ref=e254]: Step 2
+              - paragraph [ref=e255]: Clean
+              - paragraph [ref=e256]: Remove duplicates, fill missing values, standardise types
+            - generic [ref=e257]:
+              - paragraph [ref=e258]: Step 3
+              - paragraph [ref=e259]: Explore
+              - paragraph [ref=e260]: Group, trend, and visualise your data with one click
+            - generic [ref=e261]:
+              - paragraph [ref=e262]: Step 4
+              - paragraph [ref=e263]: Export
+              - paragraph [ref=e264]: Download your cleaned data or analysis results
+          - generic [ref=e265]:
+            - button "Upload your first dataset" [ref=e266]
+            - button "Try sample data" [ref=e267]
+  - contentinfo [ref=e268]:
+    - generic [ref=e269]:
+      - generic [ref=e270]:
+        - paragraph [ref=e271]: Smartalyze
+        - paragraph [ref=e272]: Smartalyze Capstone Project
+      - navigation [ref=e273]:
+        - link "Features" [ref=e274] [cursor=pointer]:
+          - /url: /#features
+        - link "About" [ref=e275] [cursor=pointer]:
+          - /url: /#about
+        - link "Contact" [ref=e276] [cursor=pointer]:
+          - /url: /#contact
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e182] [cursor=pointer]:
+    - img [ref=e183]
+  - alert [ref=e186]

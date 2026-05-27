@@ -1,0 +1,29 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "Smartalyze" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e5]:
+        - link "Dashboard" [ref=e6] [cursor=pointer]:
+          - /url: /dashboard
+        - link "Profile" [ref=e7] [cursor=pointer]:
+          - /url: /profile
+          - generic [ref=e8]: Profile
+        - button "Logout" [ref=e9]
+  - main [ref=e11]: Loading workspace...
+  - contentinfo [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - paragraph [ref=e15]: Smartalyze
+        - paragraph [ref=e16]: Smartalyze Capstone Project
+      - navigation [ref=e17]:
+        - link "Features" [ref=e18] [cursor=pointer]:
+          - /url: /#features
+        - link "About" [ref=e19] [cursor=pointer]:
+          - /url: /#about
+        - link "Contact" [ref=e20] [cursor=pointer]:
+          - /url: /#contact
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e26] [cursor=pointer]:
+    - img [ref=e27]
+  - alert [ref=e30]

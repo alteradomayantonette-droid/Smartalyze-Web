@@ -1,0 +1,80 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "Smartalyze" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e5]:
+        - link "Dashboard" [ref=e6] [cursor=pointer]:
+          - /url: /dashboard
+        - link "AU audituser2026" [ref=e31] [cursor=pointer]:
+          - /url: /profile
+          - generic [ref=e32]: AU
+          - generic [ref=e8]: audituser2026
+        - button "Logout" [ref=e9]
+  - main [ref=e11]:
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - paragraph [ref=e36]: Dataset workspace
+          - heading "sample-dataset.csv" [level=1] [ref=e37]
+          - paragraph [ref=e38]: 10 rows · 5 cols
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - combobox [ref=e41]:
+              - option "CSV" [selected]
+              - option "XLSX"
+              - option "JSON"
+              - option "Parquet"
+            - button "Export" [ref=e42]
+          - button "History" [ref=e43]
+          - button "Save Result" [disabled] [ref=e44]
+          - link "← Dashboard" [ref=e45] [cursor=pointer]:
+            - /url: /dashboard
+      - generic [ref=e46]:
+        - button "Prepare" [ref=e47]
+        - button "Explore" [ref=e48]
+        - button "Detect" [ref=e49]
+        - button "Predict" [active] [ref=e50]
+        - button "Edit" [ref=e51]
+      - generic [ref=e636]:
+        - generic [ref=e637]:
+          - paragraph [ref=e638]: ML-Based Predictions
+          - paragraph [ref=e639]: Smartalyze uses a machine learning regression model (linear regression) to fit a trend to your selected column and project it forward. Best with 20+ rows of consistent numeric data. The date column is optional — if omitted, row order is used as the time axis.
+        - generic [ref=e640]:
+          - generic [ref=e641]:
+            - generic [ref=e642]: Date column (optional)
+            - generic [ref=e643]: Select a date column to plot predictions over time
+            - combobox "Date column (optional) Select a date column to plot predictions over time" [ref=e644]:
+              - option "Name" [selected]
+              - option "Age"
+              - option "City"
+              - option "Salary"
+              - option "Department"
+          - generic [ref=e645]:
+            - generic [ref=e646]: Column to forecast
+            - generic [ref=e647]: Numeric columns give the best results
+            - combobox "Column to forecast Numeric columns give the best results" [ref=e648]:
+              - option "Age" [selected]
+              - option "Salary"
+          - generic [ref=e649]:
+            - generic [ref=e650]: Steps ahead
+            - spinbutton "Steps ahead" [ref=e651]: "5"
+          - button "Run prediction" [ref=e653]
+        - generic [ref=e654]: Choose a column to forecast and the number of steps ahead, then click Run prediction.
+  - contentinfo [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - paragraph [ref=e15]: Smartalyze
+        - paragraph [ref=e16]: Smartalyze Capstone Project
+      - navigation [ref=e17]:
+        - link "Features" [ref=e18] [cursor=pointer]:
+          - /url: /#features
+        - link "About" [ref=e19] [cursor=pointer]:
+          - /url: /#about
+        - link "Contact" [ref=e20] [cursor=pointer]:
+          - /url: /#contact
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e26] [cursor=pointer]:
+    - img [ref=e27]
+  - alert [ref=e30]
+  - generic [ref=e381]: Salary

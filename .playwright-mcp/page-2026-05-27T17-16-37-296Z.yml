@@ -1,0 +1,59 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - img [ref=e4]
+      - generic [ref=e127]: Smartalyze
+      - generic [ref=e128]:
+        - heading "Turn raw data into clear insights" [level=1] [ref=e129]:
+          - text: Turn raw data
+          - text: into clear insights
+        - paragraph [ref=e130]: Upload your CSV or Excel file, clean it automatically, explore statistics, and forecast trends — no code, no SQL, no friction.
+        - generic [ref=e131]:
+          - generic [ref=e132]:
+            - img [ref=e134]
+            - generic [ref=e136]:
+              - paragraph [ref=e137]: Upload & Clean
+              - paragraph [ref=e138]: Auto-detect issues — missing values, duplicates, invalid types — and fix them in one click.
+          - generic [ref=e139]:
+            - img [ref=e141]
+            - generic [ref=e143]:
+              - paragraph [ref=e144]: Explore & Analyze
+              - paragraph [ref=e145]: Distributions, statistics, correlations, and trend charts — no SQL or code required.
+          - generic [ref=e146]:
+            - img [ref=e148]
+            - generic [ref=e150]:
+              - paragraph [ref=e151]: Forecast
+              - paragraph [ref=e152]: Linear trend forecasting with confidence bands — see where your data is heading.
+      - paragraph [ref=e154]: Designed for analysts who move fast
+    - generic [ref=e156]:
+      - generic [ref=e157]:
+        - link "Back" [ref=e158] [cursor=pointer]:
+          - /url: /
+          - img [ref=e159]
+          - text: Back
+        - generic [ref=e163]: Smartalyze
+      - generic [ref=e164]:
+        - heading "Welcome back" [level=2] [ref=e165]
+        - paragraph [ref=e166]: Sign in to your workspace
+      - generic [ref=e167]:
+        - generic [ref=e168]:
+          - generic [ref=e169]: Username
+          - textbox "Username" [ref=e170]: admin
+        - generic [ref=e171]:
+          - generic [ref=e172]: Password
+          - textbox "Password" [ref=e173]: admin123
+        - button "Sign in" [ref=e174]
+      - paragraph [ref=e175]:
+        - text: No account yet?
+        - link "Create one" [ref=e176] [cursor=pointer]:
+          - /url: /register
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e187]:
+        - button "Close toast" [ref=e188] [cursor=pointer]:
+          - img [ref=e189]
+        - img [ref=e193]
+        - generic [ref=e196]: Could not reach the API at http://localhost:8000. Make sure the backend is running and CORS allows your frontend origin.
+  - button "Open Next.js Dev Tools" [ref=e182] [cursor=pointer]:
+    - img [ref=e183]
+  - alert [ref=e186]

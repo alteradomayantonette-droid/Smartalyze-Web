@@ -1,0 +1,17 @@
+- generic [active] [ref=e1]:
+  - main [ref=e3]: Loading profile...
+  - contentinfo [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - paragraph [ref=e7]: Smartalyze
+        - paragraph [ref=e8]: Smartalyze Capstone Project
+      - navigation [ref=e9]:
+        - link "Features" [ref=e10] [cursor=pointer]:
+          - /url: /#features
+        - link "About" [ref=e11] [cursor=pointer]:
+          - /url: /#about
+        - link "Contact" [ref=e12] [cursor=pointer]:
+          - /url: /#contact
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e18] [cursor=pointer]:
+    - img [ref=e19]
