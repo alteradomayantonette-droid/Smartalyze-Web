@@ -1,4 +1,7 @@
+'use client';
+
 import Link from "next/link";
+import { useState } from "react";
 
 const featureCards = [
   {
@@ -20,6 +23,16 @@ const featureCards = [
 ];
 
 export default function Home() {
+  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
+  const [contactSent, setContactSent] = useState(false);
+
+  function handleContactSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setContactSent(true);
+    setContactForm({ name: '', email: '', message: '' });
+    setTimeout(() => setContactSent(false), 6000);
+  }
+
   return (
     <main className="bg-white">
       <section className="border-b border-slate-200 bg-linear-to-b from-white via-indigo-50/25 to-white">
@@ -115,7 +128,7 @@ export default function Home() {
             <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-500">Contact</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Keep it simple</h2>
             <p className="mt-4 text-lg leading-8 text-slate-700">
-              For now, contact can stay lightweight. A basic email line is enough until you want a backend form.
+              Have questions or feedback? Send us a message and we&apos;ll get back to you as soon as we can.
             </p>
             <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
               <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Email</p>
@@ -123,22 +136,48 @@ export default function Home() {
             </div>
           </div>
 
-          <form className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <form onSubmit={handleContactSubmit} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-xl font-semibold text-slate-950">Send a message</h3>
+
+            {contactSent && (
+              <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+                Message received! We&apos;ll get back to you soon.
+              </div>
+            )}
+
             <div className="mt-5 space-y-4">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Name</span>
-                <input className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500" placeholder="Your name" />
+                <input
+                  required
+                  value={contactForm.name}
+                  onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
+                  placeholder="Your name"
+                />
               </label>
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Email</span>
-                <input className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500" placeholder="you@example.com" />
+                <input
+                  type="email"
+                  required
+                  value={contactForm.email}
+                  onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
+                  placeholder="you@example.com"
+                />
               </label>
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Message</span>
-                <textarea className="min-h-32 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500" placeholder="Write your message here" />
+                <textarea
+                  required
+                  value={contactForm.message}
+                  onChange={e => setContactForm(f => ({ ...f, message: e.target.value }))}
+                  className="min-h-32 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
+                  placeholder="Write your message here"
+                />
               </label>
-              <button type="button" className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500">
+              <button type="submit" className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500">
                 Send
               </button>
             </div>

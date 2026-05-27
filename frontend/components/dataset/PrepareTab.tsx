@@ -368,6 +368,16 @@ export function PrepareTab(props: PrepareTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Guided workflow hint */}
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 flex gap-3 items-start">
+        <span className="text-xl shrink-0">💡</span>
+        <div>
+          <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
+          <p className="text-sm text-indigo-700 mt-0.5">
+            Start by reviewing the <strong>Overview</strong> tab to see your data. Then switch to <strong>Cleaning</strong> to detect issues — Smartalyze will automatically find missing values, duplicates, and type problems. Queue operations, then click <strong>Apply</strong> to clean your data.
+          </p>
+        </div>
+      </div>
       {/* Sub-tab pills */}
       <div className="flex gap-2">
         {(["overview", "cleaning"] as PrepareSubTab[]).map((t) => (

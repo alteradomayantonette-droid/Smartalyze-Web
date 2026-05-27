@@ -12,9 +12,12 @@ Notes:
 - The UI does not expose dataset "version history"; snapshots are internal.
 """
 
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+
+_ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".json", ".png", ".jpg", ".jpeg"}
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,6 +82,14 @@ async def upload_dataset(
     """Upload a dataset file and create a new Dataset for the logged-in user."""
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type '{ext}'. Allowed: CSV, Excel (.xlsx/.xls), JSON, PNG, JPG.",
+        )
+
     dataset = await create_dataset_from_upload(db=db, upload_file=file, owner=owner, description=description)
     return {"message": "Dataset uploaded successfully", "dataset": dataset}
 

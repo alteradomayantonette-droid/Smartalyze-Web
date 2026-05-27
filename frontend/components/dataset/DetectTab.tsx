@@ -112,8 +112,8 @@ export function DetectTab(props: DetectTabProps) {
                         formatter={(v) => [`${typeof v === "number" ? v.toFixed(1) : v}%`, "Outlier rate"]}
                       />
                       <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
-                        {anomaly.columns.map((c, i) => (
-                          <Cell key={i} fill={c.outlier_pct >= 10 ? "#ef4444" : c.outlier_pct >= 5 ? "#f59e0b" : "#6366f1"} />
+                        {anomaly.columns.map((c) => (
+                          <Cell key={c.column} fill={c.outlier_pct >= 10 ? "#ef4444" : c.outlier_pct >= 5 ? "#f59e0b" : "#6366f1"} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -399,6 +399,16 @@ export function DetectTab(props: DetectTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Guided workflow hint */}
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 flex gap-3 items-start">
+        <span className="text-xl shrink-0">💡</span>
+        <div>
+          <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
+          <p className="text-sm text-indigo-700 mt-0.5">
+            <strong>Anomaly Detection</strong> uses the IQR statistical method to automatically flag unusual values in your numeric columns. Switch to <strong>Correlation</strong> to discover which columns are related — and how strongly.
+          </p>
+        </div>
+      </div>
       <div className="flex flex-wrap gap-2">
         {subTabs.map(({ key, label }) => (
           <button

@@ -222,14 +222,18 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
   }, [loadingRows, datasetId, token, rows]);
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
+  undoRef.current = handleUndo;
+  redoRef.current = handleRedo;
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); handleUndo(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === "y") { e.preventDefault(); handleRedo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undoRef.current(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") { e.preventDefault(); redoRef.current(); }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  });
+  }, []);
 
   // ── Undo / redo helpers ──────────────────────────────────────────────────
   function pushUndo(op: EditOperation) {

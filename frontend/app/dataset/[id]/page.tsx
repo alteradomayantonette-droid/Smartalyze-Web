@@ -52,6 +52,7 @@ import { ExploreTab } from "@/components/dataset/ExploreTab";
 import { DetectTab } from "@/components/dataset/DetectTab";
 import { PredictTab } from "@/components/dataset/PredictTab";
 import { EditTab } from "@/components/dataset/EditTab";
+import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 
 type WorkspaceTab = "prepare" | "explore" | "detect" | "predict" | "edit";
 type PrepareSubTab = "overview" | "cleaning";
@@ -765,6 +766,7 @@ export default function DatasetWorkspacePage() {
         {/* Tab content — full width */}
         <div className="w-full">
           {activeTab === "prepare" && workspace && (
+            <TabErrorBoundary tabName="Prepare">
             <PrepareTab
               workspace={workspace}
               subTab={prepareSubTab}
@@ -840,9 +842,11 @@ export default function DatasetWorkspacePage() {
               buildStandardizeDatesOperation={buildStandardizeDatesOperation}
               buildPatternImputationOperation={buildPatternImputationOperation}
             />
+            </TabErrorBoundary>
           )}
 
           {activeTab === "explore" && (
+            <TabErrorBoundary tabName="Explore">
             <ExploreTab
               workspace={workspace}
               availableColumns={availableColumns}
@@ -878,9 +882,11 @@ export default function DatasetWorkspacePage() {
               handleExportGroupCSV={handleExportGroupCSV}
               handleSaveGroupAsDataset={handleSaveGroupAsDataset}
             />
+            </TabErrorBoundary>
           )}
 
           {activeTab === "detect" && (
+            <TabErrorBoundary tabName="Detect">
             <DetectTab
               anomalyData={anomalyData}
               anomalyLoading={anomalyLoading}
@@ -890,9 +896,11 @@ export default function DatasetWorkspacePage() {
               setCorrelationMethod={setCorrelationMethod}
               onSwitchTab={(tab) => setActiveTab(tab)}
             />
+            </TabErrorBoundary>
           )}
 
           {activeTab === "predict" && (
+            <TabErrorBoundary tabName="Predict">
             <PredictTab
               availableColumns={availableColumns}
               analysisStats={analysisStats}
@@ -906,9 +914,11 @@ export default function DatasetWorkspacePage() {
               setPredictionSteps={setPredictionSteps}
               handleRunPrediction={handleRunPrediction}
             />
+            </TabErrorBoundary>
           )}
 
           {activeTab === "edit" && workspace && token && (
+            <TabErrorBoundary tabName="Edit">
             <EditTab
               workspace={workspace}
               token={token}
@@ -922,6 +932,7 @@ export default function DatasetWorkspacePage() {
                 }).catch(() => toast.error("Saved, but could not reload workspace."));
               }}
             />
+            </TabErrorBoundary>
           )}
         </div>
       </div>

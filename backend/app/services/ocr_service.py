@@ -18,6 +18,15 @@ def _get_ocr() -> EasyOCR:
     return _ocr_engine
 
 
+def prewarm_ocr() -> None:
+    """Load the OCR model at startup so the first image upload is not slow."""
+    try:
+        _get_ocr()
+        print("[OCR] Model pre-warmed successfully")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[OCR] Pre-warm skipped (non-fatal): {exc}")
+
+
 def _upscale(image_bytes: bytes, scale: int = 2) -> bytes:
     """Upscale image to improve EasyOCR accuracy on small text (e.g. single-digit narrow cells)."""
     img = PILImage.open(io.BytesIO(image_bytes))

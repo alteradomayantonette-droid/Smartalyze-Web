@@ -302,6 +302,11 @@ export default function DashboardPage() {
               Logout
             </button>
           </div>
+          <p className="mt-1.5 text-xs text-slate-400">
+            Accepts CSV, Excel, JSON — or a{" "}
+            <span className="font-medium text-indigo-500">PNG/JPG image</span>{" "}
+            for automatic OCR table extraction.
+          </p>
         </header>
 
         {/* Stat Cards */}

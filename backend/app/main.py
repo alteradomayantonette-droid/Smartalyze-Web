@@ -10,6 +10,8 @@ High-level structure ("layers"):
 This file wires middleware + routers and (for local/dev convenience) creates tables on startup.
 """
 
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,6 +23,7 @@ from app.routes.analysis import router as analysis_router
 from app.routes.cleaning import router as cleaning_router
 from app.routes.auth import router as auth_router
 from app.routes.datasets import router as datasets_router
+from app.services.ocr_service import prewarm_ocr
 
 app = FastAPI(title="Smartalyze API", version="0.1.0")
 
@@ -50,6 +53,9 @@ If you later add Alembic migrations, this should typically be removed in product
     """
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, prewarm_ocr)
 
 
 @app.get("/")
