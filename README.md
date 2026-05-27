@@ -1,196 +1,155 @@
 # Smartalyze
 
-Smartalyze is an AI-assisted web-based data cleaning, analysis, and insight generation system designed for non-technical users. It allows users to upload datasets and perform powerful data operations such as cleaning, aggregation, visualization-ready analysis, and basic predictive modeling—without requiring advanced data science knowledge.
+Smartalyze is a web-based data cleaning, analysis, and insight generation system built for non-technical users. Upload a dataset — or snap a photo of a printed table — and Smartalyze walks you through cleaning, exploring, detecting anomalies, forecasting trends, and exporting results, all without writing a single line of code.
+
+> **Capstone Project** · Davao Del Norte State College · Bachelor of Science in Information Technology
 
 ---
 
-## Current Version: v1.0 (Initial Architecture Phase)
+## Live Stack
 
-This version focuses on establishing the **core system architecture**, dataset workflow, and cloud-based database integration.
-
-### Completed Setup
-- Next.js frontend initialized (App Router)
-- FastAPI backend setup started
-- Neon PostgreSQL cloud database configured
-- Environment variables (.env) integrated
-- Git repository initialized
-- Basic project structure created
-- Dataset-centric workflow designed
-
----
-
-## 🏗️ System Architecture
-Frontend (Next.js + Tailwind)
-To
-Backend API (FastAPI)
-To
-PostgreSQL Database (Neon Cloud)
-
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 16 (App Router), React 19, TypeScript 5 |
+| Styling | Tailwind CSS 4 (PostCSS) |
+| Charts | Recharts 3 (Bar, Pie, Line, Area) |
+| Backend | FastAPI 0.135 (Python 3.12) |
+| ORM | SQLAlchemy 2 (async) |
+| Data | pandas 3, scikit-learn 1.8, scipy |
+| OCR | EasyOCR + img2table |
+| Database | PostgreSQL (Neon Cloud) with JSONB snapshots |
+| Auth | Bearer tokens, bcrypt-hashed passwords |
 
 ---
 
-## Core Concept
+## Features
 
-Smartalyze is **dataset-centered**.
+### Data Ingestion
+- Upload **CSV, Excel (.xlsx/.xls), and JSON** files
+- Upload a **PNG/JPG image** of a printed table — EasyOCR extracts it automatically
+- File type validation (extension whitelist) returns a clean error for unsupported formats
 
-Everything revolves around a dataset:
-- Upload dataset
-- Open dataset workspace
-- Perform actions (clean, analyze, aggregate, predict)
-- Save results as versions or new datasets
+### Automated Data Cleaning (Prepare Tab)
+- Auto-detect issues: missing values, duplicates, outliers, type mismatches, whitespace
+- 10+ cleaning operations: fill missing (mean/median/mode/custom), drop rows/columns, trim whitespace, normalize case, convert types, remove duplicates, replace values, rename columns, clip outliers
+- Queue-based workflow: stage multiple operations, preview, then apply all at once
+- Save result as a new dataset version
 
----
+### Data Exploration (Explore Tab)
+- **Column Analysis** — dtype, null count, unique count, mean/median/mode, min/max
+- **Aggregation** — group by categorical column, aggregate numeric columns (sum, mean, count, min, max), rendered as a bar chart
+- **Trends** — detect increasing/stable/decreasing trends per numeric column with directional labels
 
-## Core Features (Planned / In Development)
+### Anomaly & Correlation Detection (Detect Tab)
+- **Anomaly Detection** — IQR-based statistical outlier detection, per-column results with count and sample values
+- **Correlation Analysis** — Pearson correlation heatmap across all numeric columns
 
-### 📤 Dataset Upload
-- Supports CSV, Excel, JSON
-- Stores dataset metadata in PostgreSQL
+### ML Predictions (Predict Tab)
+- Linear regression forecast on any numeric column
+- Optional date column for time-axis labeling
+- Configurable steps ahead (1–20)
+- Returns: predicted values, confidence bands (lower/upper), R², slope, trend direction badge
 
-### Data Cleaning
-- Detect missing values
-- Identify duplicates and outliers
-- Suggest cleaning actions (mean, median, mode, removal)
+### Manual Editing (Edit Tab)
+- Click any cell to edit its value inline
+- Undo / Redo (Ctrl+Z / Ctrl+Y) with full edit history
+- Row virtualization via `@tanstack/react-virtual` for large datasets
+- Save edits directly to the dataset
 
-### Data Analysis
-- Summary statistics
-- Column profiling
-- Trend detection
+### Dataset Versioning
+- Every clean/edit operation saves a JSONB snapshot
+- History panel shows all versions with timestamps
+- One-click restore to any previous version
 
-### Aggregation (Pivot-like System)
-- Group by categorical fields
-- Aggregations: sum, average, count, min, max
+### Export
+- Download the current dataset as **CSV, XLSX, JSON, or Parquet**
 
-### 🤖 Predictive Analysis (Controlled ML)
-- Linear regression using scikit-learn
-- User-selected features and target variable
-- Returns predictions + evaluation metrics
+### Authentication
+- Register, login, change username/password, delete account
+- Sessions expire and revocation is enforced server-side
 
-### 🧬 Dataset Versioning
-- Tracks dataset history:
-  - original
-  - cleaned
-  - aggregated
-- Supports rollback and comparison
-
-### Export System
-- Export cleaned datasets (CSV)
-- Export insights and analysis results
-
----
-
-## Database (Neon PostgreSQL)
-
-Smartalyze uses a cloud PostgreSQL database hosted on **Neon**.
-
-### Core Tables:
-- users
-- datasets
-- dataset_versions
-- dataset_actions
-
-All dataset operations and history are stored in the database for traceability and version control.
+### UX Guidance
+- Guided workflow cards on every tab explain what to do next
+- Health score (% complete data) shown per dataset on the dashboard
+- React Error Boundary on all tabs — a crashed tab shows a recovery button instead of a blank screen
+- OCR model pre-warmed on server startup (no 30-second freeze on first image upload)
 
 ---
 
-## Authentication (Planned)
+## Project Structure
 
-- Custom authentication system
-- Username + hashed password (bcrypt)
-- Secure login/register via FastAPI
-- Protected dataset dashboard
-
----
-
-## Project Structure (Current)
-smartalyze/
+```
+smartalyze-web/
+├── frontend/
+│   ├── app/
+│   │   ├── page.tsx              # Landing page (hero, features, contact form)
+│   │   ├── dashboard/page.tsx    # Dataset list, upload, health scores
+│   │   ├── dataset/[id]/page.tsx # Workspace with all 5 tabs
+│   │   ├── login/page.tsx
+│   │   ├── register/page.tsx
+│   │   └── profile/page.tsx
+│   ├── components/
+│   │   ├── dataset/
+│   │   │   ├── PrepareTab.tsx    # Cleaning workflow
+│   │   │   ├── ExploreTab.tsx    # Column stats, aggregation, trends
+│   │   │   ├── DetectTab.tsx     # Anomaly + correlation
+│   │   │   ├── PredictTab.tsx    # ML forecast
+│   │   │   └── EditTab.tsx       # Inline cell editing
+│   │   └── TabErrorBoundary.tsx  # Crash recovery wrapper
+│   └── lib/api.ts                # Typed API client (31 endpoints)
 │
 ├── backend/
-│ ├── app/
-│ │ ├── main.py
-│ │ ├── db.py
-│ │ ├── routes/
-│ │ ├── models/
-│ │ └── services/
-│ ├── .env
-│ └── requirements.txt
-│
-├── frontend/
-│ ├── app/
-│ ├── components/
-│ ├── public/
-│ └── package.json
+│   ├── app/
+│   │   ├── main.py               # FastAPI app, middleware, startup hooks
+│   │   ├── routes/               # Thin HTTP layer (auth, datasets, cleaning, analysis)
+│   │   ├── services/             # Business logic + DB operations
+│   │   │   ├── auth_service.py
+│   │   │   ├── dataset_service.py
+│   │   │   ├── cleaning_service.py
+│   │   │   ├── analysis_service.py
+│   │   │   └── ocr_service.py    # EasyOCR + img2table, pre-warmed on startup
+│   │   ├── models/               # SQLAlchemy ORM models
+│   │   ├── schemas/              # Pydantic request/response models
+│   │   └── db/                   # Async engine + session
+│   └── requirements.txt
 │
 └── README.md
-
-
----
-
-## Dataset Workflow
-
-1. User uploads dataset
-2. Dataset is stored in PostgreSQL (metadata + reference)
-3. User opens dataset workspace
-4. User performs actions:
-   - Clean
-   - Analyze
-   - Aggregate
-   - Predict
-5. Result is:
-   - previewed
-   - saved as version OR new dataset OR exported
+```
 
 ---
 
-## Tech Stack
-
-### Frontend
-- Next.js (App Router)
-- Tailwind CSS
+## Getting Started
 
 ### Backend
-- FastAPI (Python)
-- SQLAlchemy (async)
-- pandas / numpy
-- scikit-learn
 
-### Database
-- PostgreSQL (Neon Cloud)
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+pip install -r requirements.txt
+# Create a .env file with DATABASE_URL and SECRET_KEY
+uvicorn app.main:app --reload
+```
 
----
+Backend runs on `http://localhost:8000`. Health check: `GET /` → `{"message": "Smartalyze API is running"}`
 
-## Key Design Principles
+### Frontend
 
-- Dataset-first architecture
-- Modular data operations
-- No forced workflow steps
-- Flexible analysis system
-- Version-controlled datasets
-- Cloud-based database (no local DB dependency)
+```bash
+cd frontend
+npm install
+# Create a .env.local file with NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev
+```
 
----
-
-## Future Improvements
-
-- Advanced ML models (beyond linear regression)
-- Data visualization dashboard (charts)
-- Background task processing (for heavy datasets)
-- User roles (admin / standard user)
-- Dataset sharing system
+Frontend runs on `http://localhost:3000`.
 
 ---
 
-## Status Summary
+## Design Principles
 
-Smartalyze is currently in **early development phase**, focusing on:
-
-- backend foundation
-- database schema design
-- dataset workflow architecture
-
----
-
-## Goal
-
-To build a simple but powerful system that allows users to:
-> Clean, analyze, and understand data without needing data science expertise.
+- **Dataset-first** — every feature operates on a named, versioned dataset
+- **Non-technical users first** — guided workflow cards on every tab, health score UX, plain-language labels
+- **No forced steps** — users can jump to any tab at any time
+- **Version everything** — JSONB snapshots make every operation reversible
+- **Secure by default** — tokens expire, revocation is enforced, file types are whitelisted

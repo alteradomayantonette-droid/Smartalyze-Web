@@ -1,151 +1,170 @@
-# Smartalyze Web — Features & Goals
+# Smartalyze — Feature List
 
-Smartalyze Web is the desktop-class member of the Smartalyze family. It is the
-**analytical workbench**: where wide screens, keyboards, and mice make deep,
-multi-tab analysis comfortable. Smartalyze Web shares its database (Neon
-PostgreSQL) and core data model with [Smartalyze Mobile](../Smartalyze-Mobile/FEATURES.md)
-so the same dataset, account, and result are reachable from either client.
+> Status key: ✅ Complete · ⚠️ Partial · ❌ Not started
 
 ---
 
-## North-Star Goal
+## Authentication & Account Management
 
-> Let a non-technical user **clean, analyze, and understand a dataset** at
-> desktop scale — without writing a single line of code.
-
-Web is where users go to do the **heaviest** thinking: stats, trends,
-anomaly hunts, and predictive modelling on the same dataset they uploaded
-from their phone.
-
----
-
-## Stack
-
-- **Frontend:** Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · TypeScript 5
-- **Backend:** FastAPI · SQLAlchemy (async) · pandas · NumPy · scikit-learn
-- **Database:** Neon PostgreSQL (cloud, shared with Mobile)
-- **Auth:** PBKDF2-SHA256 (210k iterations) + hashed Bearer-token sessions
+| Feature | Status | Notes |
+|---|---|---|
+| User registration | ✅ | Email + username + password (bcrypt) |
+| User login | ✅ | Bearer token issued on success |
+| Token expiration enforcement | ✅ | `expires_at` and `revoked_at` checked server-side |
+| Change username | ✅ | Profile page |
+| Change password | ✅ | Profile page |
+| Delete account | ✅ | Cascades to datasets |
+| Avatar display | ✅ | Initials-based avatar |
 
 ---
 
-## Feature Matrix
+## Data Ingestion
 
-### Account & Auth
-- [x] Register / login with username + password
-- [x] Bearer-token sessions stored hashed (SHA-256) in DB, 7-day expiry
-- [x] Update username (re-verifies password)
-- [x] Update password
-- [x] Update / remove avatar (base64 data URL)
-- [x] Delete account
-- [x] `/me` self-info endpoint
-
-### Dataset Lifecycle
-- [x] Upload CSV / XLSX / XLS / JSON (≤ 20 MB by default)
-- [x] List datasets with summary metadata
-- [x] Workspace view (warnings + suggestions auto-computed)
-- [x] Internal versioning via dataset snapshots
-- [x] Save result as **replace current** or **new dataset**
-- [x] Paginated row browser (`/dataset/{id}/rows`)
-- [x] Delete dataset (cascade to versions + actions)
-- [x] Export CSV / XLSX / JSON (with optional in-memory snapshot)
-
-### Cleaning (`/clean/*`)
-- [x] Auto-detect missing values, duplicates, inferred column types
-- [x] Fill missing — **mean / median / mode**
-- [x] Drop rows with missing values
-- [x] Remove duplicate rows
-- [x] Convert column type (numeric / string / datetime / categorical / boolean)
-- [x] Trim whitespace
-- [x] Lowercase column
-- [x] **Standardize dates** — multi-format parser, auto day-first inference,
-      pluggable output format (ISO / US / EU), unparseable handling
-
-### Analysis (`/analysis/*`)
-- [x] Per-column statistics — count, missing %, unique, **quartiles, std, top values**
-- [x] Group-by + aggregate (sum / count / mean / min / max)
-- [x] **Trend analysis** — linear regression on every numeric column with chart points
-- [x] **Anomaly detection** — IQR-based outlier scan
-- [x] **Prediction** — sklearn linear regression with confidence band
-
-### Workspace UI (7 tabs)
-- [x] Overview · Cleaning · Analysis · Aggregation · Trends · Anomaly · Prediction
-- [x] Unsaved-changes banner with discard / replace / save-as flows
-- [x] Type-conversion staging
-- [x] Date standardization with format / day-first / unparseable controls
-- [x] Sortable previews
-
-### Dashboard
-- [x] Summary cards (total datasets, with / without warnings, total rows)
-- [x] Recent activity (7-day upload chart)
-- [x] Per-dataset issue chips (missing / duplicate / invalid)
-- [x] Inline upload + delete
+| Feature | Status | Notes |
+|---|---|---|
+| CSV upload | ✅ | pandas read_csv |
+| Excel upload (.xlsx / .xls) | ✅ | pandas read_excel |
+| JSON upload | ✅ | pandas read_json |
+| PNG/JPG image upload (OCR) | ✅ | EasyOCR + img2table, auto table extraction |
+| File type whitelist validation | ✅ | 400 error for unsupported extensions |
+| OCR model pre-warmed on startup | ✅ | Eliminates 20-30 s first-request delay |
+| Sample dataset (one-click) | ✅ | Dashboard shortcut for demo/testing |
+| Dataset health score | ✅ | % non-null cells shown on dashboard card |
 
 ---
 
-## What Web Does Better Than Mobile
+## Data Cleaning (Prepare Tab)
 
-These are the capabilities Mobile **does not yet have** and which justify
-loading up Web for a deep session:
-
-1. **Predictive modelling** — Web's `/analysis/predict` endpoint runs sklearn
-   linear regression with prediction intervals; Mobile has no equivalent.
-2. **Per-column statistics** — quartiles, std, top values per column.
-3. **Standardize-dates cleaning op** — Web auto-infers day-first vs. month-first
-   and supports configurable output formats; Mobile's cleaning surface is
-   simpler.
-4. **Snapshot dtype preservation** — Web restores datetime / numeric / boolean
-   dtypes after a JSON round-trip using stored column metadata; Mobile
-   loses dtype after the round-trip.
-5. **Paginated `/dataset/{id}/rows` endpoint** — Web exposes server-side
-   pagination; Mobile loads previews only.
-
----
-
-## What Mobile Does Better Than Web (and Web should adopt)
-
-Web should pull these in to keep the family in sync:
-
-1. **`change_password` revokes all sessions** (Mobile does this; Web does not).
-2. **`delete_account` explicitly cascades through datasets** (Mobile does;
-   Web relies on a cascade that is not currently configured in the
-   `Dataset` model).
-3. **Friendly `/dataset/{id}/structure/summary` endpoint** — single payload
-   designed for non-technical readers (column kinds, missing cells,
-   duplicates, top values).
-4. **`sort_values` cleaning operation.**
-5. **Dashboard polish** — gradient welcome card, "Data Alerts" stack,
-   sample-dataset upload button.
+| Feature | Status | Notes |
+|---|---|---|
+| Auto issue detection | ✅ | Missing values, duplicates, outliers, type mismatches, whitespace |
+| Fill missing — mean | ✅ | |
+| Fill missing — median | ✅ | |
+| Fill missing — mode | ✅ | |
+| Fill missing — custom value | ✅ | |
+| Drop rows with nulls | ✅ | |
+| Drop column | ✅ | |
+| Remove duplicates | ✅ | |
+| Trim whitespace | ✅ | |
+| Normalize case (upper/lower/title) | ✅ | |
+| Convert column type | ✅ | e.g. string to numeric |
+| Replace values | ✅ | Find + replace |
+| Rename column | ✅ | |
+| Clip outliers (IQR) | ✅ | |
+| Queue-based operation staging | ✅ | Stage multiple ops, apply all at once |
+| Operation preview before apply | ✅ | |
+| Save cleaned result as new version | ✅ | |
 
 ---
 
-## Roadmap (relatable across Web & Mobile)
+## Data Exploration (Explore Tab)
 
-Both clients are walking the same road. Web's leg of the journey is:
-
-| Phase | Theme | Web milestone |
-| --- | --- | --- |
-| Now | **Parity & polish** | Adopt Mobile's session-revoke-on-password-change, explicit cascade on account delete, `structure/summary`, `sort_values` |
-| Next | **Visualizations** | Dedicated chart components (sparkline, distribution, residuals) instead of inline canvas drawings |
-| Next | **Background jobs** | Move heavy `predict` / `trend` to a task queue; stream results |
-| Later | **Collaboration** | Dataset sharing & per-link read access |
-| Later | **Advanced ML** | Beyond linear regression — classification, time-series |
+| Feature | Status | Notes |
+|---|---|---|
+| Column Analysis | ✅ | dtype, null %, unique count, mean, median, mode, min, max |
+| Aggregation (group by + agg function) | ✅ | Sum, mean, count, min, max; rendered as bar chart |
+| Trend detection per numeric column | ✅ | Linear slope — Increasing / Stable / Decreasing badge |
+| Trend chart | ✅ | Recharts line chart with direction label |
 
 ---
 
-## Design Principles
+## Anomaly & Correlation Detection (Detect Tab)
 
-- **Dataset-first** — every screen is anchored to a dataset.
-- **Snapshot-immutable** — operations always produce new snapshots; the user
-  decides when to commit (replace) or save as a new dataset.
-- **Server enforces ownership** — every route resolves the user from the
-  Bearer token and re-checks `dataset.user_id`.
-- **No forced workflow** — the user can clean, analyze, predict in any order.
-- **Talk to humans** — warnings and suggestions read like sentences, not
-  error codes.
+| Feature | Status | Notes |
+|---|---|---|
+| IQR-based anomaly detection | ✅ | Per-column outlier count + sample values |
+| Correlation heatmap | ✅ | Pearson, color-coded grid for all numeric columns |
+| Guided workflow card | ✅ | Explains IQR method and how to interpret results |
 
 ---
 
-## Status
+## ML Predictions (Predict Tab)
 
-`v1.x` — feature-complete for the analytical workbench. Parity work
-toward Mobile is the active workstream.
+| Feature | Status | Notes |
+|---|---|---|
+| Linear regression forecast | ✅ | scikit-learn LinearRegression |
+| Date column (optional) | ✅ | Time-axis labeling |
+| Steps-ahead configuration (1-20) | ✅ | |
+| Predicted value per step | ✅ | |
+| Confidence band (lower/upper bound) | ✅ | +/- 1.96 x residual std |
+| R-squared (model fit quality) | ✅ | Shown as High/Medium/Low confidence badge |
+| Slope / trend rate | ✅ | Per-period change, color-coded |
+| Forecast area chart | ✅ | Recharts AreaChart with shaded confidence band |
+| Results table | ✅ | Period, expected value, estimated range |
+
+---
+
+## Manual Editing (Edit Tab)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Inline cell editing | ✅ | Click any cell to edit |
+| Undo (Ctrl+Z) | ✅ | Full edit history |
+| Redo (Ctrl+Y) | ✅ | Full edit history |
+| Save edits | ✅ | Persisted to dataset |
+| Row virtualization | ✅ | @tanstack/react-virtual for large datasets |
+
+---
+
+## Dataset Versioning
+
+| Feature | Status | Notes |
+|---|---|---|
+| Automatic snapshot on every operation | ✅ | JSONB stored in PostgreSQL |
+| Version history panel | ✅ | Shows all versions with timestamps |
+| Restore to any version | ✅ | One-click rollback |
+
+---
+
+## Export
+
+| Feature | Status | Notes |
+|---|---|---|
+| Export as CSV | ✅ | |
+| Export as XLSX | ✅ | |
+| Export as JSON | ✅ | |
+| Export as Parquet | ✅ | |
+
+---
+
+## Visualization
+
+| Feature | Status | Notes |
+|---|---|---|
+| Dashboard dataset health chart | ✅ | Recharts bar chart |
+| Aggregation bar chart | ✅ | Group-by results |
+| Trend line chart | ✅ | Explore tab |
+| Correlation heatmap | ✅ | Detect tab |
+| Prediction area chart | ✅ | Forecast with confidence band |
+| Anomaly bar chart | ✅ | Outlier counts per column |
+
+---
+
+## UX & Reliability
+
+| Feature | Status | Notes |
+|---|---|---|
+| Guided workflow cards (all 5 tabs) | ✅ | Indigo info card at top of each workspace tab |
+| Landing page (hero, features, contact) | ✅ | |
+| Contact form with success feedback | ✅ | Client-side with green success banner |
+| React Error Boundary (all tabs) | ✅ | Crash recovery — shows error + "Try again" button |
+| OCR file-type callout on dashboard | ✅ | Highlights PNG/JPG image support |
+| Zero TypeScript errors | ✅ | tsc --noEmit passes clean |
+
+---
+
+## Capstone Compliance
+
+| Capstone Requirement | Status |
+|---|---|
+| Data Ingestion (CSV/Excel/JSON/OCR) | ✅ |
+| Automated Data Cleaning | ✅ |
+| ML Trend Detection | ✅ |
+| ML Anomaly Detection | ✅ |
+| Visualization Dashboard | ✅ |
+| Export Functionality | ✅ |
+| Version Control | ✅ |
+| Guided Workflow for Non-Technical Users | ✅ |
+| User Authentication | ✅ |
+| 100% UI Completeness | ✅ |
+| 30%+ Functionality | ✅ (exceeds — ~90%+ end-to-end) |
