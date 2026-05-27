@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { toast } from "sonner";
 import { detectCleaningIssues, getDatasetRows, saveManualEdit } from "@/lib/api";
 import type { CleaningIssue, DatasetWorkspace } from "@/lib/api";
 import { DatasetHealthPanel } from "./EditTab/DatasetHealthPanel";
@@ -18,7 +19,19 @@ type EditOperation =
   | { type: "row_delete"; rowIndex: number; row: Row }
   | { type: "row_insert"; rowIndex: number }
   | { type: "col_rename"; oldName: string; newName: string }
-  | { type: "bulk_suggest"; changes: Array<{ rowIndex: number; colName: string; oldValue: unknown; newValue: unknown }> };
+  | { type: "bulk_suggest"; changes: Array<{ rowIndex: number; colName: string; oldValue: unknown; newValue: unknown }> }
+  | { type: "col_delete"; colName: string; colIndex: number; deletedEdits: Array<[string, unknown]> };
+
+function describeOperation(op: EditOperation): string {
+  switch (op.type) {
+    case "cell_edit": return `cell edit in "${op.colName}"`;
+    case "row_delete": return "row deletion";
+    case "row_insert": return "row insertion";
+    case "col_rename": return `column rename`;
+    case "bulk_suggest": return `${op.changes.length} AI suggestion${op.changes.length !== 1 ? "s" : ""}`;
+    case "col_delete": return `deletion of column "${op.colName}"`;
+  }
+}
 
 interface SortConfig {
   col: string;
@@ -230,6 +243,7 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
       const op = stack[stack.length - 1];
       applyReverse(op);
       setRedoStack((r) => [...r, op]);
+      toast.info(`Undone: ${describeOperation(op)}`);
       return stack.slice(0, -1);
     });
   }
@@ -240,6 +254,7 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
       const op = stack[stack.length - 1];
       applyForward(op);
       setUndoStack((u) => [...u, op]);
+      toast.info(`Redone: ${describeOperation(op)}`);
       return stack.slice(0, -1);
     });
   }
@@ -272,6 +287,17 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
         }
         return next;
       });
+    } else if (op.type === "col_delete") {
+      setColumns((cs) => {
+        const next = [...cs];
+        next.splice(op.colIndex, 0, op.colName);
+        return next;
+      });
+      setEditedCells((m) => {
+        const next = new Map(m);
+        for (const [k, v] of op.deletedEdits) next.set(k, v);
+        return next;
+      });
     }
   }
 
@@ -296,6 +322,13 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
       setEditedCells((m) => {
         const next = new Map(m);
         for (const c of op.changes) { next.set(`${c.rowIndex}::${c.colName}`, c.newValue); }
+        return next;
+      });
+    } else if (op.type === "col_delete") {
+      setColumns((cs) => cs.filter((c) => c !== op.colName));
+      setEditedCells((m) => {
+        const next = new Map(m);
+        for (const [k] of op.deletedEdits) next.delete(k);
         return next;
       });
     }
@@ -331,6 +364,24 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
     renameColumnInState(renamingCol, newName);
     pushUndo(op);
     setRenamingCol(null);
+  }
+
+  function handleDeleteColumn(colName: string) {
+    const colIndex = columns.indexOf(colName);
+    if (colIndex === -1) return;
+    const deletedEdits: Array<[string, unknown]> = [];
+    for (const [key, val] of editedCells.entries()) {
+      if (key.endsWith(`::${colName}`)) deletedEdits.push([key, val]);
+    }
+    pushUndo({ type: "col_delete", colName, colIndex, deletedEdits });
+    setColumns((cs) => cs.filter((c) => c !== colName));
+    setEditedCells((m) => {
+      const next = new Map(m);
+      for (const [k] of deletedEdits) next.delete(k);
+      return next;
+    });
+    setMissingValuesPerCol((prev) => { const n = { ...prev }; delete n[colName]; return n; });
+    setColumnTypes((prev) => { const n = { ...prev }; delete n[colName]; return n; });
   }
 
   // ── Cell commit ──────────────────────────────────────────────────────────
@@ -653,29 +704,40 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
                 {columns.map((col) => (
                   <th
                     key={col}
-                    className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap"
+                    className="group border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap"
                   >
-                    {renamingCol === col ? (
-                      <input
-                        autoFocus
-                        className="w-32 rounded border border-indigo-400 bg-white px-2 py-0.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-300"
-                        value={renameDraft}
-                        onChange={(e) => setRenameDraft(e.target.value)}
-                        onBlur={commitRename}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitRename();
-                          if (e.key === "Escape") setRenamingCol(null);
-                        }}
-                      />
-                    ) : (
-                      <span
-                        onDoubleClick={() => { setRenamingCol(col); setRenameDraft(col); }}
-                        title="Double-click to rename"
-                        className="cursor-pointer hover:text-indigo-600 transition-colors"
-                      >
-                        {col}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {renamingCol === col ? (
+                        <input
+                          autoFocus
+                          className="w-32 rounded border border-indigo-400 bg-white px-2 py-0.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-300"
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRename();
+                            if (e.key === "Escape") setRenamingCol(null);
+                          }}
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={() => { setRenamingCol(col); setRenameDraft(col); }}
+                          title="Double-click to rename"
+                          className="cursor-pointer hover:text-indigo-600 transition-colors"
+                        >
+                          {col}
+                        </span>
+                      )}
+                      {renamingCol !== col && (
+                        <button
+                          onClick={() => handleDeleteColumn(col)}
+                          title="Delete column"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 ml-0.5 leading-none"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1 mt-1 flex-wrap">
                       {columnTypes[col] && <TypeBadge type={columnTypes[col]} />}
                       {(missingValuesPerCol[col] ?? 0) > 0 && (

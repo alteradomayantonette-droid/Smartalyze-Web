@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   CleanApplyResponse,
   CleanDetectResponse,
@@ -178,6 +179,8 @@ export function PrepareTab(props: PrepareTabProps) {
     buildDuplicateOperation, buildTrimWhitespaceOperation, buildMissingValueOperation,
     buildConvertTypeOperation, buildSortValuesOperation, buildStandardizeDatesOperation, buildPatternImputationOperation,
   } = props;
+
+  const [expandedSmartFill, setExpandedSmartFill] = useState<Set<string>>(new Set());
 
   const availableColumns = workspace.dataset.columns_json?.map((c) => String(c.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
@@ -674,6 +677,9 @@ export function PrepareTab(props: PrepareTabProps) {
                             const op = buildPatternImputationOperation(s.target_column, s.key_column);
                             const queued = hasQueuedOperation(op);
                             const confidencePct = Math.round(s.weighted_confidence * 100);
+                            const isExpanded = expandedSmartFill.has(s.target_column);
+                            const topGroups = [...s.groups].sort((a, b) => b.fillable_count - a.fillable_count).slice(0, 5);
+                            const extraCount = s.groups.length - topGroups.length;
                             return (
                               <div key={`${s.key_column}-${s.target_column}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -686,6 +692,46 @@ export function PrepareTab(props: PrepareTabProps) {
                                   </div>
                                   <button type="button" className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-teal-600 text-white hover:bg-teal-500"}`} onClick={() => togglePatternImputation(s.target_column, s.key_column)}>{queued ? "Added" : "Add"}</button>
                                 </div>
+                                {topGroups.length > 0 && (
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      className="text-xs text-teal-600 underline underline-offset-2 hover:text-teal-800 transition-colors"
+                                      onClick={() => setExpandedSmartFill((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(s.target_column)) next.delete(s.target_column); else next.add(s.target_column);
+                                        return next;
+                                      })}
+                                    >
+                                      {isExpanded ? "Hide preview ▴" : `Show preview (${s.groups.length} group${s.groups.length !== 1 ? "s" : ""}) ▾`}
+                                    </button>
+                                    {isExpanded && (
+                                      <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                                        <table className="min-w-full text-xs">
+                                          <thead className="bg-slate-100 text-slate-500">
+                                            <tr>
+                                              <th className="px-3 py-2 text-left font-medium">When &quot;{s.key_column}&quot; is…</th>
+                                              <th className="px-3 py-2 text-left font-medium">Fill &quot;{s.target_column}&quot; with</th>
+                                              <th className="px-3 py-2 text-right font-medium">Cells affected</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100 bg-white">
+                                            {topGroups.map((g) => (
+                                              <tr key={g.key_value}>
+                                                <td className="px-3 py-1.5 font-mono text-slate-700">{g.key_value}</td>
+                                                <td className="px-3 py-1.5 text-teal-700 font-medium">{g.fill_value !== null && g.fill_value !== undefined ? String(g.fill_value) : "—"}</td>
+                                                <td className="px-3 py-1.5 text-right text-slate-500">{g.fillable_count}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                        {extraCount > 0 && (
+                                          <p className="px-3 py-1.5 text-xs text-slate-400 bg-slate-50 text-right">+{extraCount} more group{extraCount !== 1 ? "s" : ""}</p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

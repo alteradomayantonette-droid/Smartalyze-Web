@@ -216,13 +216,18 @@ export function DetectTab(props: DetectTabProps) {
 
     let maxPos = { r: 0, a: "", b: "" };
     let maxNeg = { r: 0, a: "", b: "" };
+    const allPairs: Array<{ colA: string; colB: string; r: number }> = [];
     for (let i = 0; i < cols.length; i++) {
       for (let j = i + 1; j < cols.length; j++) {
         const val = corr.matrix[cols[i]]?.[cols[j]] ?? 0;
         if (val > maxPos.r) maxPos = { r: val, a: cols[i], b: cols[j] };
         if (val < maxNeg.r) maxNeg = { r: val, a: cols[i], b: cols[j] };
+        if (!isNaN(val) && cols[i] !== cols[j]) {
+          allPairs.push({ colA: cols[i], colB: cols[j], r: val });
+        }
       }
     }
+    const topPairs = allPairs.sort((a, b) => Math.abs(b.r) - Math.abs(a.r)).slice(0, 5);
 
     function cellColor(r: number): string {
       const abs = Math.abs(r);
@@ -267,6 +272,25 @@ export function DetectTab(props: DetectTabProps) {
             ) : <p className="mt-1 text-sm text-slate-400">—</p>}
           </div>
         </div>
+
+        {topPairs.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-slate-700 mb-2">Top Relationships</p>
+            <div className="space-y-1.5">
+              {topPairs.map((p) => {
+                const abs = Math.abs(p.r);
+                const strength = abs >= 0.7 ? "strongly" : abs >= 0.4 ? "moderately" : "weakly";
+                const direction = p.r > 0 ? "positively" : "negatively";
+                return (
+                  <div key={`${p.colA}-${p.colB}`} className="flex items-center gap-2.5 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${p.r > 0 ? "bg-emerald-400" : "bg-red-400"}`} />
+                    <span>&quot;{p.colA}&quot; and &quot;{p.colB}&quot; are <span className="font-medium">{strength} {direction} related</span> ({p.r.toFixed(2)})</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <InsightCard text="The diagonal always shows 1.0 — each column is perfectly correlated with itself. Values near +1 indicate columns that increase together; near −1 they move in opposite directions. Values near 0 mean no meaningful relationship." />
 

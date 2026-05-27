@@ -441,6 +441,16 @@ export default function DatasetWorkspacePage() {
     setCleaningDetection(null); setCleaningResult(null); setCumulativeAppliedOperations([]);
   }
 
+  function clearAnalysisState() {
+    setAnalysisStats(null);
+    setTrendData(null);
+    setAnomalyData(null);
+    setCorrelationData(null);
+    setDistributionData(null);
+    setStructureSummary(null);
+    setGroupResult(null);
+  }
+
   function handleDiscardResult() {
     setCleaningResult(null); setCleaningDetection(null); setCleaningOperations([]); setCumulativeAppliedOperations([]);
     toast.info("Changes discarded. Detection will re-run when you return to Cleaning.");
@@ -481,6 +491,7 @@ export default function DatasetWorkspacePage() {
         setWorkspace({ ...workspace, dataset: response.dataset });
         setCleaningResult(null); setCleaningDetection(null); setCumulativeAppliedOperations([]);
         setOverviewExtraRows([]); setOverviewTotalRows(null);
+        clearAnalysisState();
         toast.success("Result replaced the current dataset.");
       } else {
         setCleaningResult(null); setCumulativeAppliedOperations([]);
@@ -515,6 +526,7 @@ export default function DatasetWorkspacePage() {
       setWorkspace({ ...workspace, dataset: response.dataset });
       setCleaningResult(null); setCleaningDetection(null); setCumulativeAppliedOperations([]);
       setOverviewExtraRows([]); setOverviewTotalRows(null);
+      clearAnalysisState();
       toast.success(response.message);
       setVersionList(await listDatasetVersions(workspace.dataset.id, token));
       setPendingRestore(null); setShowHistoryModal(false);
@@ -905,6 +917,7 @@ export default function DatasetWorkspacePage() {
                 getDatasetWorkspace(datasetId, token).then((ws) => {
                   setWorkspace(ws);
                   setEditTabIsDirty(false);
+                  clearAnalysisState();
                   toast.success("Manual edits saved as a new version.");
                 }).catch(() => toast.error("Saved, but could not reload workspace."));
               }}

@@ -236,6 +236,11 @@ export default function DashboardPage() {
 
   const recentDataset = byLatest[0] ?? null;
 
+  const needsAttentionDatasets = [...datasets]
+    .filter((d) => getHealthScore(d).label !== "Good")
+    .sort((a, b) => getHealthScore(a).score - getHealthScore(b).score)
+    .slice(0, 3);
+
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-50 px-6 py-10">
@@ -344,6 +349,41 @@ export default function DashboardPage() {
             bg="border-red-100"
           />
         </div>
+
+        {/* Needs Attention */}
+        {needsAttentionDatasets.length > 0 && (
+          <section className="mb-2">
+            <h2 className="text-sm font-semibold text-slate-700 mb-3">Needs Attention</h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {needsAttentionDatasets.map((d) => {
+                const health = getHealthScore(d);
+                const issues = getIssueItems(d);
+                return (
+                  <div key={d.id} className="flex flex-col gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-slate-800">{d.original_filename}</span>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${health.label === "Needs Work" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                        {health.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {issues.missing > 0 && <>{issues.missing.toLocaleString()} missing cells</>}
+                      {issues.missing > 0 && issues.duplicate > 0 && <> · </>}
+                      {issues.duplicate > 0 && <>{issues.duplicate.toLocaleString()} duplicates</>}
+                      {issues.missing === 0 && issues.duplicate === 0 && "Review data quality"}
+                    </p>
+                    <Link
+                      href={`/dataset/${d.id}?tab=prepare`}
+                      className="mt-auto self-end text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      Fix now →
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Charts Row */}
         {datasets.length > 0 ? (
