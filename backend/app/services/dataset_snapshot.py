@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
-PREVIEW_ROWS = 10
+PREVIEW_ROWS = 50
 
 
 def normalize_value(value: Any) -> Any:

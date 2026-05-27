@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CleanApplyResponse,
   CleanDetectResponse,
@@ -67,6 +67,15 @@ function getSummaryTone(label: string, value: number | string | null | undefined
   if (label === "Missing cells") return n > 0 ? "border-yellow-200 bg-yellow-50 text-yellow-800" : "border-green-200 bg-green-50 text-green-800";
   if (label === "Duplicates") return n > 0 ? "border-red-200 bg-red-50 text-red-800" : "border-green-200 bg-green-50 text-green-800";
   return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+type CellIssue = "missing" | "type_mismatch" | null;
+
+function getCellIssue(value: unknown, colName: string, columnTypes: Record<string, string>): CellIssue {
+  if (value === null || value === undefined || value === "") return "missing";
+  const t = columnTypes[colName];
+  if ((t === "int64" || t === "float64") && isNaN(Number(value))) return "type_mismatch";
+  return null;
 }
 
 function InsightCard({ text }: { text: string }) {
@@ -181,28 +190,67 @@ export function PrepareTab(props: PrepareTabProps) {
   } = props;
 
   const [expandedSmartFill, setExpandedSmartFill] = useState<Set<string>>(new Set());
+  const [cleanedPreviewLimit, setCleanedPreviewLimit] = useState(10);
+
+  useEffect(() => {
+    setCleanedPreviewLimit(10);
+  }, [cleaningResult]);
 
   const availableColumns = workspace.dataset.columns_json?.map((c) => String(c.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
 
-  function renderPreviewTable(rows: Array<Record<string, unknown>> = workspace.dataset.preview_json ?? []) {
+  function renderPreviewTable(
+    rows: Array<Record<string, unknown>> = workspace.dataset.preview_json ?? [],
+    detectCtx?: { columnTypes: Record<string, string> } | null
+  ) {
     if (rows.length === 0) return <p className="text-sm text-slate-600">No preview available.</p>;
     const cols = Object.keys(rows[0] ?? {});
     return (
-      <div className="overflow-x-auto rounded-2xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50">
-            <tr>{cols.map((c) => <th key={c} className="px-4 py-3 text-left font-medium text-slate-600">{c}</th>)}</tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {rows.map((row, i) => (
-              <tr key={i}>
-                {cols.map((c) => <td key={c} className="px-4 py-3 text-slate-800">{String(row[c] ?? "-")}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <>
+        <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>{cols.map((c) => <th key={c} className="px-4 py-3 text-left font-medium text-slate-600">{c}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.map((row, i) => (
+                <tr key={i}>
+                  {cols.map((c) => {
+                    const issue = detectCtx ? getCellIssue(row[c], c, detectCtx.columnTypes) : null;
+                    const cellClass = issue === "missing"
+                      ? "px-4 py-3 bg-red-50 text-red-700 border-l-2 border-red-300"
+                      : issue === "type_mismatch"
+                      ? "px-4 py-3 bg-amber-50 text-amber-700 border-l-2 border-amber-300"
+                      : "px-4 py-3 text-slate-800";
+                    const cellTitle = issue === "missing"
+                      ? "This cell is empty — no data here"
+                      : issue === "type_mismatch"
+                      ? "This value doesn't look like a number — check your data"
+                      : undefined;
+                    return (
+                      <td key={c} className={cellClass} title={cellTitle}>
+                        {issue === "missing"
+                          ? <span className="italic text-xs">empty</span>
+                          : String(row[c] ?? "-")}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {detectCtx && (
+          <div className="mt-2 flex items-center gap-4 px-1 text-xs text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-sm bg-red-300 shrink-0" /> Empty cell
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-sm bg-amber-300 shrink-0" /> Wrong format
+            </span>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -374,11 +422,16 @@ export function PrepareTab(props: PrepareTabProps) {
             if (missing > 0) parts.push(`${missing} missing value${missing !== 1 ? "s" : ""}`);
             if (dupes > 0) parts.push(`${dupes} duplicate row${dupes !== 1 ? "s" : ""}`);
             return (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-                <span>Your data has {parts.join(" and ")}.</span>
-                <button type="button" className="shrink-0 font-medium underline underline-offset-4 decoration-teal-400 hover:text-teal-900" onClick={() => setSubTab("cleaning")}>
-                  Go to Cleaning →
-                </button>
+              <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium">Your data has {parts.join(" and ")}.</span>
+                  <button type="button" className="shrink-0 font-medium underline underline-offset-4 decoration-teal-400 hover:text-teal-900" onClick={() => setSubTab("cleaning")}>
+                    Go to Cleaning →
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-teal-700">
+                  Red cells below are empty. Yellow cells have the wrong data format. Go to Cleaning to fix them.
+                </p>
               </div>
             );
           })()}
@@ -452,7 +505,10 @@ export function PrepareTab(props: PrepareTabProps) {
           {/* Data table */}
           {filterPredicates.length > 0 && filterResult ? renderPreviewTable(filterResult.rows) : (
             <>
-              {renderPreviewTable(displayPreview)}
+              {renderPreviewTable(
+                displayPreview,
+                !cleaningResult && cleaningDetection ? { columnTypes: cleaningDetection.column_types } : null
+              )}
               {!cleaningResult && canLoadMore ? (
                 <button onClick={handleLoadMoreOverviewRows} disabled={overviewLoadingMore} className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
                   {overviewLoadingMore ? "Loading…" : `Load 10 more (${overviewLoaded} of ${overviewTotal} shown)`}
@@ -827,10 +883,21 @@ export function PrepareTab(props: PrepareTabProps) {
               {cleaningResult && (
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <h3 className="font-semibold text-slate-950">Cleaned Preview</h3>
-                  <p className="mt-1 text-sm text-slate-600">Preview the result before saving.</p>
-                  <div className="mt-4 max-h-96 overflow-y-auto rounded-xl border border-slate-200">
-                    {renderPreviewTable(cleaningResult.preview)}
+                  <p className="mt-1 text-sm text-slate-600">
+                    Preview the result before saving. Showing {Math.min(cleanedPreviewLimit, cleaningResult.preview.length)} of {cleaningResult.preview.length} rows.
+                  </p>
+                  <div className="mt-4">
+                    {renderPreviewTable(cleaningResult.preview.slice(0, cleanedPreviewLimit))}
                   </div>
+                  {cleaningResult.preview.length > cleanedPreviewLimit && (
+                    <button
+                      type="button"
+                      onClick={() => setCleanedPreviewLimit((n) => Math.min(n + 20, cleaningResult.preview.length))}
+                      className="mt-2 text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      Show {Math.min(20, cleaningResult.preview.length - cleanedPreviewLimit)} more rows ({cleaningResult.preview.length - cleanedPreviewLimit} remaining)
+                    </button>
+                  )}
                   <dl className="mt-4 grid grid-cols-4 gap-3 text-sm">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><dt className="text-slate-500">Rows</dt><dd className="font-medium text-slate-950">{String(cleaningResult.summary.row_count ?? "-")}</dd></div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><dt className="text-slate-500">Columns</dt><dd className="font-medium text-slate-950">{String(cleaningResult.summary.column_count ?? "-")}</dd></div>
