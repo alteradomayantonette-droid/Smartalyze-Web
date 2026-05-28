@@ -161,6 +161,17 @@ function operationToPandas(op: CleaningOperation, idx: number): string[] {
       lines.push(`df = df[~(_vals.notna() & ((_vals < _low) | (_vals > _high)))].reset_index(drop=True)`);
       break;
     }
+    case "nullify_outliers": {
+      const col = op.column ?? (op.columns && op.columns[0]) ?? "";
+      lines.push("import numpy as np");
+      lines.push(`# Blank out IQR outliers in ${col} (rows kept) so they can be filled afterward.`);
+      lines.push(`_vals = pd.to_numeric(df[${quoteSingle(col)}], errors='coerce')`);
+      lines.push(`_q1, _q3 = _vals.quantile(0.25), _vals.quantile(0.75)`);
+      lines.push(`_iqr = _q3 - _q1`);
+      lines.push(`_low, _high = _q1 - 1.5 * _iqr, _q3 + 1.5 * _iqr`);
+      lines.push(`df.loc[_vals.notna() & ((_vals < _low) | (_vals > _high)), ${quoteSingle(col)}] = np.nan`);
+      break;
+    }
     default: {
       lines.push(`# Operation '${op.operation_type}' has no pandas translation yet.`);
     }

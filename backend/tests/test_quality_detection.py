@@ -13,7 +13,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.schemas.cleaning import CleaningOperation
-from app.services.cleaning_service import _apply_operation
+from app.services.cleaning_service import _apply_operation, _order_operations, apply_cleaning_operations
 from app.services.quality_detection_service import (
     analyze_quality,
     detect_categorical_variants,
@@ -100,6 +100,52 @@ def test_op_remove_outliers():
     out = _apply_operation(frame.copy(), op)
     assert 1000 not in out["amount"].tolist()
     assert len(out) == len(frame) - 1
+
+
+def test_op_nullify_outliers_blanks_only_outlier_keeps_rows():
+    frame = pd.DataFrame({"amount": [10, 11, 12, 13, 12, 11, 10, 9, 1000]})
+    op = CleaningOperation(operation_type="nullify_outliers", column="amount")
+    out = _apply_operation(frame.copy(), op)
+    assert len(out) == len(frame), "rows must be preserved"
+    assert out["amount"].isna().sum() == 1
+    assert out["amount"].dropna().tolist() == [10, 11, 12, 13, 12, 11, 10, 9]
+
+
+def test_order_operations_sorts_bad_queue():
+    ops = [
+        CleaningOperation(operation_type="fill_median", column="x"),
+        CleaningOperation(operation_type="sort_values", column="x"),
+        CleaningOperation(operation_type="convert_column_type", column="x", target_type="numeric"),
+        CleaningOperation(operation_type="replace_with_missing", column="x"),
+        CleaningOperation(operation_type="remove_all_duplicates"),
+    ]
+    ordered = [o.operation_type for o in _order_operations(ops)]
+    assert ordered.index("remove_all_duplicates") < ordered.index("convert_column_type")
+    assert ordered.index("convert_column_type") < ordered.index("fill_median")
+    assert ordered.index("replace_with_missing") < ordered.index("fill_median")
+    assert ordered[-1] == "sort_values"
+
+
+def test_fill_median_auto_coerces_numeric_string():
+    # numbers stored as text — previously raised and failed the whole batch.
+    frame = pd.DataFrame({"price": ["10", "20", "30", None, "40"]})
+    op = CleaningOperation(operation_type="fill_median", columns=["price"])
+    out = _apply_operation(frame.copy(), op)
+    assert out["price"].isna().sum() == 0
+    assert out["price"].tolist() == [10, 20, 30, 25, 40]
+
+
+def test_nullify_then_fill_replaces_outlier_with_clean_median():
+    frame = pd.DataFrame({"amount": [10, 11, 12, 13, 12, 11, 10, 9, 1000]})
+    ops = [
+        CleaningOperation(operation_type="fill_median", column="amount"),
+        CleaningOperation(operation_type="nullify_outliers", column="amount"),
+    ]
+    out, _applied, _unparseable = apply_cleaning_operations(frame, ops)
+    # Ordering must run nullify before fill, so the 1000 becomes the clean median (11).
+    assert len(out) == len(frame)
+    assert 1000 not in out["amount"].tolist()
+    assert out["amount"].iloc[-1] == 11
 
 
 def test_analyze_quality_combined():

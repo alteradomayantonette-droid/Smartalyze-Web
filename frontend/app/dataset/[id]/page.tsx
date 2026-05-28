@@ -127,6 +127,42 @@ function buildRemoveOutliersOperation(columnName: string): CleaningOperation {
   return { operation_type: "remove_outliers", column: columnName, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
+function buildNullifyOutliersOperation(columnName: string): CleaningOperation {
+  return { operation_type: "nullify_outliers", column: columnName, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
+}
+
+// A per-column "concern": two queued operations with the same concern key are
+// contradictory (only one should win), so adding one auto-replaces the other.
+// Complementary chains (e.g. nullify_outliers + fill, replace_with_missing + fill)
+// have different concerns and can coexist.
+function getOperationConcern(op: CleaningOperation): string | null {
+  const col = op.column ?? (op.columns && op.columns.length === 1 ? op.columns[0] : null);
+  switch (op.operation_type) {
+    case "fill_mean":
+    case "fill_median":
+    case "fill_mode":
+    case "drop_rows":
+      return col ? `missing:${col}` : null;
+    case "fill_pattern":
+      return op.column ? `missing:${op.column}` : null;
+    case "nullify_outliers":
+    case "remove_outliers":
+      return col ? `outlier:${col}` : null;
+    case "convert_column_type":
+      return op.column ? `type:${op.column}` : null;
+    case "standardize_categories":
+      return op.column ? `category:${op.column}` : null;
+    case "standardize_dates":
+      return op.column ? `date:${op.column}` : null;
+    case "replace_with_missing":
+      return col ? `disguised:${col}` : null;
+    case "lowercase_column":
+      return col ? `case:${col}` : null;
+    default:
+      return null;
+  }
+}
+
 function areCleaningOperationsEqual(a: CleaningOperation, b: CleaningOperation): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -370,8 +406,19 @@ export default function DatasetWorkspacePage() {
     setCleaningOperations((ops) => {
       const exists = ops.some((op) => areCleaningOperationsEqual(op, operation));
       if (exists) { toast.warning(removeMessage); return ops.filter((op) => !areCleaningOperationsEqual(op, operation)); }
-      toast.success(addMessage);
-      return [...ops, operation];
+      // Auto-replace any queued op that targets the same per-column "concern"
+      // (e.g. a different fill method, or remove-rows vs convert-to-empty) so the
+      // queue can never hold contradictory fixes for one column.
+      const concern = getOperationConcern(operation);
+      const conflicting = concern ? ops.filter((op) => getOperationConcern(op) === concern) : [];
+      const kept = conflicting.length ? ops.filter((op) => getOperationConcern(op) !== concern) : ops;
+      if (conflicting.length) {
+        const col = concern!.split(":")[1];
+        toast.success(`Replaced the previous fix for "${col}".`);
+      } else {
+        toast.success(addMessage);
+      }
+      return [...kept, operation];
     });
   }
 
@@ -436,6 +483,10 @@ export default function DatasetWorkspacePage() {
 
   function toggleRemoveOutliers(col: string) {
     toggleOperation(buildRemoveOutliersOperation(col), `Added remove outlier rows for "${col}".`, `Removed outlier-removal for "${col}".`);
+  }
+
+  function toggleNullifyOutliers(col: string) {
+    toggleOperation(buildNullifyOutliersOperation(col), `Added convert outliers to empty for "${col}".`, `Removed outlier conversion for "${col}".`);
   }
 
   function setCategoryCanonical(col: string, suggested: string, edited: string) {
@@ -865,9 +916,11 @@ export default function DatasetWorkspacePage() {
               toggleStandardizeCategories={toggleStandardizeCategories}
               toggleReplaceWithMissing={toggleReplaceWithMissing}
               toggleRemoveOutliers={toggleRemoveOutliers}
+              toggleNullifyOutliers={toggleNullifyOutliers}
               buildStandardizeCategoriesOperation={buildStandardizeCategoriesOperation}
               buildReplaceWithMissingOperation={buildReplaceWithMissingOperation}
               buildRemoveOutliersOperation={buildRemoveOutliersOperation}
+              buildNullifyOutliersOperation={buildNullifyOutliersOperation}
               hasQueuedOperation={hasQueuedOperation}
               getColumnType={(col) => getColumnType(col, cleaningDetection)}
               isLowercaseCandidate={isLowercaseCandidate}

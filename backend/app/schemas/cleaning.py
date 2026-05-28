@@ -30,6 +30,7 @@ CleaningOperationType = Literal[
     "standardize_categories",
     "replace_with_missing",
     "remove_outliers",
+    "nullify_outliers",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]

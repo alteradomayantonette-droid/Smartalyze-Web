@@ -88,6 +88,23 @@ def _column_decimal_places(series: pd.Series) -> int:
     return min(max_dp, 6)
 
 
+def _coerce_numeric_for_fill(series: pd.Series, column: str, op_name: str) -> pd.Series:
+    """Return a numeric version of `series` for mean/median fills.
+
+    Numbers stored as text (numeric_string columns) are coerced so the fill works
+    instead of failing the whole batch. Only genuinely non-numeric columns raise.
+    """
+    if pd.api.types.is_numeric_dtype(series):
+        return series
+    coerced = pd.to_numeric(series, errors="coerce")
+    if coerced.notna().any():
+        return coerced
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"{op_name} can only be applied to numeric columns. Column '{column}' is not numeric.",
+    )
+
+
 def _build_detection(
     frame: pd.DataFrame,
 ) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue], QualityFindings]:
@@ -410,12 +427,7 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
 
     if operation.operation_type == "fill_mean":
         for column in columns:
-            series = frame[column]
-            if not pd.api.types.is_numeric_dtype(series):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"fill_mean can only be applied to numeric columns. Column '{column}' is not numeric.",
-                )
+            series = _coerce_numeric_for_fill(frame[column], column, "fill_mean")
             dp = _column_decimal_places(series)
             mean_value = round(series.mean(), dp)
             frame[column] = series.fillna(mean_value)
@@ -423,12 +435,7 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
 
     if operation.operation_type == "fill_median":
         for column in columns:
-            series = frame[column]
-            if not pd.api.types.is_numeric_dtype(series):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"fill_median can only be applied to numeric columns. Column '{column}' is not numeric.",
-                )
+            series = _coerce_numeric_for_fill(frame[column], column, "fill_median")
             dp = _column_decimal_places(series)
             median_value = round(series.median(), dp)
             frame[column] = series.fillna(median_value)
@@ -596,16 +603,72 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
         outlier_mask = numeric.notna() & ((numeric < lower) | (numeric > upper))
         return frame.loc[~outlier_mask]
 
+    if operation.operation_type == "nullify_outliers":
+        if not operation.column:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="nullify_outliers requires a column name.",
+            )
+        _ensure_columns(frame, [operation.column])
+        numeric = pd.to_numeric(frame[operation.column], errors="coerce")
+        valid = numeric.dropna()
+        if len(valid) < 4:
+            return frame
+        q1 = float(valid.quantile(0.25))
+        q3 = float(valid.quantile(0.75))
+        iqr = q3 - q1
+        if iqr <= 0:
+            return frame
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        outlier_mask = numeric.notna() & ((numeric < lower) | (numeric > upper))
+        frame.loc[outlier_mask, operation.column] = None
+        return frame
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Unsupported cleaning operation: {operation.operation_type}",
     )
 
 
+# Canonical apply order. Lower number = applied earlier. This makes the order the
+# user queued operations in irrelevant, removing whole classes of order-dependent bugs:
+# convert types before fills; standardize categories before trim/lowercase; create
+# missing (replace_with_missing / nullify_outliers) before fills; drops and sort last.
+_OPERATION_PRIORITY: dict[str, int] = {
+    "remove_all_duplicates": 0,
+    "convert_column_type": 1,
+    "standardize_dates": 2,
+    "standardize_categories": 3,
+    "trim_whitespace": 4,
+    "lowercase_column": 5,
+    "replace_with_missing": 6,
+    "nullify_outliers": 7,
+    "fill_pattern": 8,
+    "fill_mean": 9,
+    "fill_median": 9,
+    "fill_mode": 9,
+    "derive_column": 10,
+    "drop_rows": 11,
+    "remove_outliers": 12,
+    "sort_values": 13,
+}
+
+
+def _order_operations(operations: list[CleaningOperation]) -> list[CleaningOperation]:
+    """Stable-sort operations into a safe execution order (preserves user order within a type)."""
+    return sorted(operations, key=lambda op: _OPERATION_PRIORITY.get(op.operation_type, 50))
+
+
+def _operation_label(operation: CleaningOperation) -> str:
+    target = operation.column or (operation.columns[0] if operation.columns else None)
+    return f"{operation.operation_type}" + (f" on '{target}'" if target else "")
+
+
 def apply_cleaning_operations(
     frame: pd.DataFrame, operations: list[CleaningOperation]
 ) -> tuple[pd.DataFrame, list[CleaningOperation], dict[str, list[dict[str, Any]]]]:
-    """Apply operations sequentially.
+    """Apply operations in a safe canonical order.
 
     Returns the cleaned DataFrame, the list of applied operations, and a dict
     mapping column name -> list of unparseable rows from any standardize_dates ops.
@@ -614,8 +677,16 @@ def apply_cleaning_operations(
     applied_operations: list[CleaningOperation] = []
     unparseable_dates: dict[str, list[dict[str, Any]]] = {}
 
-    for operation in operations:
-        working_frame = _apply_operation(working_frame, operation)
+    for operation in _order_operations(operations):
+        try:
+            working_frame = _apply_operation(working_frame, operation)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001 — surface a friendly message instead of a 500
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Couldn't apply {_operation_label(operation)}: {exc}",
+            ) from exc
         applied_operations.append(operation)
         # Drain any unparseable info the operation stashed on the frame.
         stashed = working_frame.attrs.pop("_standardize_dates_unparseable", None)

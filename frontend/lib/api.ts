@@ -158,7 +158,8 @@ export type CleaningOperation = {
     | "derive_column"
     | "standardize_categories"
     | "replace_with_missing"
-    | "remove_outliers";
+    | "remove_outliers"
+    | "nullify_outliers";
   columns?: string[];
   column?: string | null;
   target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;

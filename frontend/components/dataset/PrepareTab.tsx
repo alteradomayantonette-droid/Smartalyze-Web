@@ -45,6 +45,10 @@ function getOperationLabel(op: CleaningOperation): string {
     case "sort_values": return op.column ? `Sort by "${op.column}" (${op.ascending === false ? "desc" : "asc"})` : "Sort data";
     case "fill_pattern": return op.column && op.key_column ? `Smart fill "${op.column}" using "${op.key_column}"` : "Smart fill";
     case "derive_column": return op.new_column_name ? `Derived column "${op.new_column_name}"` : "Derived column";
+    case "standardize_categories": return op.column ? `Standardize values in "${op.column}"` : "Standardize values";
+    case "replace_with_missing": return op.column ? `Convert disguised-missing in "${op.column}"` : "Convert disguised-missing to empty";
+    case "nullify_outliers": return op.column ? `Convert outliers to empty in "${op.column}"` : "Convert outliers to empty";
+    case "remove_outliers": return op.column ? `Remove outlier rows in "${op.column}"` : "Remove outlier rows";
     default: return "Cleaning action";
   }
 }
@@ -178,9 +182,11 @@ export type PrepareTabProps = {
   toggleStandardizeCategories: (col: string, mapping: Record<string, string>) => void;
   toggleReplaceWithMissing: (col: string) => void;
   toggleRemoveOutliers: (col: string) => void;
+  toggleNullifyOutliers: (col: string) => void;
   buildStandardizeCategoriesOperation: (col: string, mapping: Record<string, string>) => CleaningOperation;
   buildReplaceWithMissingOperation: (col: string) => CleaningOperation;
   buildRemoveOutliersOperation: (col: string) => CleaningOperation;
+  buildNullifyOutliersOperation: (col: string) => CleaningOperation;
   hasQueuedOperation: (op: CleaningOperation) => boolean;
   getColumnType: (col: string) => string;
   isLowercaseCandidate: (type: string) => boolean;
@@ -214,8 +220,8 @@ export function PrepareTab(props: PrepareTabProps) {
     handleRescanData, toggleDuplicateRows, toggleTrimWhitespace,
     toggleLowercaseColumn, toggleConvertType, toggleSortValues,
     toggleStandardizeDates, togglePatternImputation, addMissingValueOperation, addDerivedColumn,
-    categoryMappingEdits, setCategoryCanonical, toggleStandardizeCategories, toggleReplaceWithMissing, toggleRemoveOutliers,
-    buildStandardizeCategoriesOperation, buildReplaceWithMissingOperation, buildRemoveOutliersOperation,
+    categoryMappingEdits, setCategoryCanonical, toggleStandardizeCategories, toggleReplaceWithMissing, toggleRemoveOutliers, toggleNullifyOutliers,
+    buildStandardizeCategoriesOperation, buildReplaceWithMissingOperation, buildRemoveOutliersOperation, buildNullifyOutliersOperation,
     hasQueuedOperation, getColumnType, isLowercaseCandidate, getDefaultMissingStrategy,
     buildDuplicateOperation, buildTrimWhitespaceOperation, buildMissingValueOperation,
     buildConvertTypeOperation, buildSortValuesOperation, buildStandardizeDatesOperation, buildPatternImputationOperation,
@@ -447,15 +453,22 @@ export function PrepareTab(props: PrepareTabProps) {
               );
             })}
             {outlierSummaries.map((o) => {
-              const queued = hasQueuedOperation(buildRemoveOutliersOperation(o.column));
+              const nullifyQueued = hasQueuedOperation(buildNullifyOutliersOperation(o.column));
+              const removeQueued = hasQueuedOperation(buildRemoveOutliersOperation(o.column));
               return (
-                <div key={`out-${o.column}`} className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                <div key={`out-${o.column}`} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <div className="text-sm text-rose-900">
                     Column <span className="font-semibold">'{o.column}'</span> has <span className="font-semibold">{o.outlier_count}</span> potential outlier{o.outlier_count !== 1 ? "s" : ""} <span className="text-rose-700">(outside {o.lower_fence}–{o.upper_fence})</span>.
+                    <span className="mt-0.5 block text-xs text-rose-700/80">Convert them to empty, then fill below — or remove the rows entirely.</span>
                   </div>
-                  <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700" : "bg-rose-600 text-white hover:bg-rose-500"}`} onClick={() => toggleRemoveOutliers(o.column)} title="Drops the rows containing these outlier values">
-                    {queued ? "Added" : "Remove rows"}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button type="button" className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${nullifyQueued ? "bg-green-100 text-green-700" : "bg-rose-600 text-white hover:bg-rose-500"}`} onClick={() => toggleNullifyOutliers(o.column)} title="Blanks out the outlier values (keeps the rows) so you can fill them">
+                      {nullifyQueued ? "Added" : "Convert to empty"}
+                    </button>
+                    <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${removeQueued ? "border-green-200 bg-green-100 text-green-700" : "border-rose-300 bg-white text-rose-700 hover:bg-rose-100"}`} onClick={() => toggleRemoveOutliers(o.column)} title="Drops the rows containing these outlier values">
+                      {removeQueued ? "Added" : "Remove rows"}
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -1027,6 +1040,9 @@ export function PrepareTab(props: PrepareTabProps) {
                     )}
                   </div>
 
+                  {cleaningOperations.length > 1 && (
+                    <p className="text-center text-xs text-slate-400">Fixes are applied in a safe order automatically.</p>
+                  )}
                   <button type="button" className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-70" onClick={handleApplyCleaning} disabled={applying || cleaningOperations.length === 0}>
                     {applying ? "Applying…" : `Apply ${cleaningOperations.length} Operation${cleaningOperations.length !== 1 ? "s" : ""}`}
                   </button>
