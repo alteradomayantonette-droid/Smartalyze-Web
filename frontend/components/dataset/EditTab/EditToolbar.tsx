@@ -68,7 +68,7 @@ export function EditToolbar({
         }}
       >
         <option value="">Sort by…</option>
-        {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+        {columns.map((c, i) => <option key={`${i}-${c}`} value={c}>{c}</option>)}
       </select>
 
       {sortConfig && (

@@ -573,6 +573,9 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
     count: visibleRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 40,
+    measureElement: typeof window !== "undefined"
+      ? (el) => el.getBoundingClientRect().height
+      : undefined,
     overscan: 8,
   });
 
@@ -767,7 +770,7 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
               const isSelected = selectedRows.has(realIndex);
               const isDuplicate = duplicateRowIndices.has(realIndex);
 
-              let rowClass = "flex border-b border-slate-100 transition-colors";
+              let rowClass = "flex items-start border-b border-slate-100 transition-colors";
               if (isDeleted) rowClass += " opacity-40 line-through bg-red-50";
               else if (isSelected) rowClass += " bg-indigo-50/60";
               else if (isDuplicate) rowClass += " bg-amber-50/60";
@@ -776,13 +779,15 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
               return (
                 <div
                   key={vItem.key}
-                  style={{ position: "absolute", top: `${vItem.start}px`, left: 0, right: 0, height: `${vItem.size}px` }}
+                  data-index={vItem.index}
+                  ref={virtualizer.measureElement}
+                  style={{ position: "absolute", top: `${vItem.start}px`, left: 0, right: 0 }}
                 >
                   <table className="min-w-full border-collapse">
                     <tbody>
                       <tr className={rowClass}>
                         {/* Checkbox */}
-                        <td className="w-10 px-3">
+                        <td className="w-10 px-3 py-2 flex items-center">
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -791,7 +796,7 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
                           />
                         </td>
                         {/* Row number */}
-                        <td className="w-12 px-3 text-xs text-slate-400 select-none">
+                        <td className="w-12 px-3 py-2 flex items-start text-xs text-slate-400 select-none">
                           {isInserted ? (
                             <span className="rounded bg-green-100 px-1 text-green-700 text-xs">new</span>
                           ) : (

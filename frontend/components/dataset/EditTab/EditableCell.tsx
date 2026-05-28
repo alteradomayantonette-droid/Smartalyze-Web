@@ -65,7 +65,7 @@ export function EditableCell({
 
   const hasSuggestion = suggestion !== undefined && suggestion !== null;
 
-  let cellClass = "relative h-full w-full px-3 py-2 text-sm select-none cursor-pointer transition-colors";
+  let cellClass = "relative w-full px-3 py-2 text-sm select-none cursor-pointer transition-colors";
   if (isMissing && !isDirty) cellClass += " bg-red-50";
   if (isDirty) cellClass += " border-l-2 border-l-amber-400 bg-amber-50/40";
 
