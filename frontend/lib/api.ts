@@ -155,7 +155,10 @@ export type CleaningOperation = {
     | "standardize_dates"
     | "sort_values"
     | "fill_pattern"
-    | "derive_column";
+    | "derive_column"
+    | "standardize_categories"
+    | "replace_with_missing"
+    | "remove_outliers";
   columns?: string[];
   column?: string | null;
   target_type?: "numeric" | "string" | "datetime" | "categorical" | "boolean" | null;
@@ -169,6 +172,8 @@ export type CleaningOperation = {
   target_column_fill?: string | null;
   new_column_name?: string | null;
   expression?: string | null;
+  value_mapping?: Record<string, string> | null;
+  missing_tokens?: string[] | null;
 };
 
 export type UnparseableDateRow = { row: number; original: string };
@@ -189,6 +194,31 @@ export type PatternImputationResult = {
   weighted_confidence: number;
   groups: PatternImputationGroup[];
   low_sample_groups: string[];
+};
+
+export type CategoryVariantGroup = {
+  canonical: string;
+  variants: string[];
+  counts: Record<string, number>;
+};
+
+export type CategoryStandardizationSuggestion = {
+  column: string;
+  groups: CategoryVariantGroup[];
+};
+
+export type PseudoNullSummary = {
+  column: string;
+  tokens: Record<string, number>;
+  total: number;
+};
+
+export type OutlierColumnSummary = {
+  column: string;
+  outlier_count: number;
+  lower_fence: number;
+  upper_fence: number;
+  sample_values: Array<number | string>;
 };
 
 export type CorrelationMethod = "pearson" | "spearman";
@@ -226,6 +256,9 @@ export type CleanDetectResponse = {
   column_types: Record<string, string>;
   issues: CleaningIssue[];
   pattern_suggestions: PatternImputationResult[];
+  category_suggestions?: CategoryStandardizationSuggestion[];
+  pseudo_nulls?: PseudoNullSummary[];
+  outliers?: OutlierColumnSummary[];
 };
 
 export type CleanApplyResponse = CleanDetectResponse & {

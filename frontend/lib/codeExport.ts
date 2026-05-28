@@ -129,6 +129,38 @@ function operationToPandas(op: CleaningOperation, idx: number): string[] {
       lines.push(`df[${quoteSingle(name)}] = df.eval(${quoteSingle(expr)})`);
       break;
     }
+    case "standardize_categories": {
+      const col = op.column ?? (op.columns && op.columns[0]) ?? "";
+      const mapping = op.value_mapping ?? {};
+      const entries = Object.entries(mapping)
+        .map(([from, to]) => `${quoteSingle(from)}: ${quoteSingle(to)}`)
+        .join(", ");
+      lines.push(`# Collapse inconsistent category labels to canonical values.`);
+      lines.push(`df[${quoteSingle(col)}] = df[${quoteSingle(col)}].replace({${entries}})`);
+      break;
+    }
+    case "replace_with_missing": {
+      const cols = colsOrAll(op);
+      const tokens = op.missing_tokens && op.missing_tokens.length > 0
+        ? op.missing_tokens
+        : ["NA", "N/A", "n/a", "none", "null", "nan", "-", "?", "unknown", "missing", "Not applicable"];
+      lines.push("import numpy as np");
+      lines.push(`_missing_tokens = [t.strip().casefold() for t in ${quoteList(tokens)}]`);
+      lines.push(`for _col in ${quoteList(cols)}:`);
+      lines.push(`    _norm = df[_col].astype('string').str.strip().str.casefold()`);
+      lines.push(`    df.loc[_norm.isin(_missing_tokens), _col] = np.nan`);
+      break;
+    }
+    case "remove_outliers": {
+      const col = op.column ?? (op.columns && op.columns[0]) ?? "";
+      lines.push(`# Drop rows where ${col} is an IQR outlier (Q1-1.5*IQR / Q3+1.5*IQR).`);
+      lines.push(`_vals = pd.to_numeric(df[${quoteSingle(col)}], errors='coerce')`);
+      lines.push(`_q1, _q3 = _vals.quantile(0.25), _vals.quantile(0.75)`);
+      lines.push(`_iqr = _q3 - _q1`);
+      lines.push(`_low, _high = _q1 - 1.5 * _iqr, _q3 + 1.5 * _iqr`);
+      lines.push(`df = df[~(_vals.notna() & ((_vals < _low) | (_vals > _high)))].reset_index(drop=True)`);
+      break;
+    }
     default: {
       lines.push(`# Operation '${op.operation_type}' has no pandas translation yet.`);
     }

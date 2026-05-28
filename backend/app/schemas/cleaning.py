@@ -27,6 +27,9 @@ CleaningOperationType = Literal[
     "sort_values",
     "fill_pattern",
     "derive_column",
+    "standardize_categories",
+    "replace_with_missing",
+    "remove_outliers",
 ]
 
 CleaningTargetType = Literal["numeric", "string", "datetime", "categorical", "boolean"]
@@ -66,6 +69,12 @@ class CleaningOperation(BaseModel):
     # Fields below only apply to operation_type == "derive_column".
     new_column_name: str | None = None
     expression: str | None = None
+    # Field below only applies to operation_type == "standardize_categories"
+    # (maps an original value -> canonical value; unlisted values are left untouched).
+    value_mapping: dict[str, str] | None = None
+    # Field below only applies to operation_type == "replace_with_missing"
+    # (tokens to convert to null; defaults to the curated pseudo-null dictionary when omitted).
+    missing_tokens: list[str] | None = None
 
 
 class PatternImputationGroup(BaseModel):
@@ -86,6 +95,38 @@ class PatternImputationResult(BaseModel):
     low_sample_groups: list[str]
 
 
+class CategoryVariantGroup(BaseModel):
+    """A cluster of values that look like variants of one canonical value.
+
+    e.g. canonical="Male", variants=["M", "male"], counts={"Male": 40, "M": 8, "male": 3}.
+    """
+    canonical: str
+    variants: list[str]
+    counts: dict[str, int]
+
+
+class CategoryStandardizationSuggestion(BaseModel):
+    """Suggested canonical mappings for one inconsistent categorical column."""
+    column: str
+    groups: list[CategoryVariantGroup]
+
+
+class PseudoNullSummary(BaseModel):
+    """Disguised-missing tokens found in one text column (e.g. 'NA', 'Not applicable')."""
+    column: str
+    tokens: dict[str, int]
+    total: int
+
+
+class OutlierColumnSummary(BaseModel):
+    """IQR outliers found in one numeric column (mirrors the Detect-tab anomaly method)."""
+    column: str
+    outlier_count: int
+    lower_fence: float
+    upper_fence: float
+    sample_values: list[float | int | str]
+
+
 class CleanDetectRequest(BaseModel):
     """Request body for POST /clean/detect."""
     dataset_id: int
@@ -101,6 +142,9 @@ class CleanDetectResponse(BaseModel):
     column_types: dict[str, str]
     issues: list[CleaningIssue]
     pattern_suggestions: list[PatternImputationResult] = []
+    category_suggestions: list[CategoryStandardizationSuggestion] = []
+    pseudo_nulls: list[PseudoNullSummary] = []
+    outliers: list[OutlierColumnSummary] = []
 
 
 class CleanApplyRequest(BaseModel):
@@ -124,6 +168,9 @@ save-result endpoint.
     column_types: dict[str, str]
     issues: list[CleaningIssue]
     pattern_suggestions: list[PatternImputationResult] = []
+    category_suggestions: list[CategoryStandardizationSuggestion] = []
+    pseudo_nulls: list[PseudoNullSummary] = []
+    outliers: list[OutlierColumnSummary] = []
     preview: list[dict]
     summary: dict[str, Any]
     data_snapshot: dict[str, Any]

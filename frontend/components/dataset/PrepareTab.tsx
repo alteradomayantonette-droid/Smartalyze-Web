@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  CategoryStandardizationSuggestion,
   CleanApplyResponse,
   CleanDetectResponse,
   CleaningOperation,
@@ -69,11 +70,32 @@ function getSummaryTone(label: string, value: number | string | null | undefined
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-type CellIssue = "missing" | "type_mismatch" | null;
+type CellIssue = "missing" | "type_mismatch" | "pseudo_null" | "variant" | "outlier" | null;
 
-function getCellIssue(value: unknown, colName: string, columnTypes: Record<string, string>): CellIssue {
+const PSEUDO_NULL_TOKENS = new Set([
+  "na", "n/a", "n.a", "n.a.", "not applicable", "not available",
+  "none", "null", "nil", "nan", "-", "--", "---", "?", "??",
+  "unknown", "unk", "missing", "tbd", "blank", "empty",
+]);
+
+type DetectContext = {
+  columnTypes: Record<string, string>;
+  pseudoNullCols?: Set<string>;
+  outlierFences?: Record<string, { low: number; high: number }>;
+  variantValues?: Record<string, Set<string>>;
+  formatInconsistentCols?: Set<string>;
+};
+
+function getCellIssue(value: unknown, colName: string, ctx: DetectContext): CellIssue {
   if (value === null || value === undefined || value === "") return "missing";
-  const t = columnTypes[colName];
+  if (ctx.pseudoNullCols?.has(colName) && PSEUDO_NULL_TOKENS.has(String(value).trim().toLowerCase())) return "pseudo_null";
+  if (ctx.variantValues?.[colName]?.has(String(value))) return "variant";
+  const fences = ctx.outlierFences?.[colName];
+  if (fences) {
+    const n = Number(value);
+    if (!isNaN(n) && (n < fences.low || n > fences.high)) return "outlier";
+  }
+  const t = ctx.columnTypes[colName];
   if ((t === "int64" || t === "float64") && isNaN(Number(value))) return "type_mismatch";
   return null;
 }
@@ -151,6 +173,14 @@ export type PrepareTabProps = {
   togglePatternImputation: (target: string, key: string) => void;
   addMissingValueOperation: (col: string) => void;
   addDerivedColumn: () => void;
+  categoryMappingEdits: Record<string, Record<string, string>>;
+  setCategoryCanonical: (col: string, suggested: string, edited: string) => void;
+  toggleStandardizeCategories: (col: string, mapping: Record<string, string>) => void;
+  toggleReplaceWithMissing: (col: string) => void;
+  toggleRemoveOutliers: (col: string) => void;
+  buildStandardizeCategoriesOperation: (col: string, mapping: Record<string, string>) => CleaningOperation;
+  buildReplaceWithMissingOperation: (col: string) => CleaningOperation;
+  buildRemoveOutliersOperation: (col: string) => CleaningOperation;
   hasQueuedOperation: (op: CleaningOperation) => boolean;
   getColumnType: (col: string) => string;
   isLowercaseCandidate: (type: string) => boolean;
@@ -184,6 +214,8 @@ export function PrepareTab(props: PrepareTabProps) {
     handleRescanData, toggleDuplicateRows, toggleTrimWhitespace,
     toggleLowercaseColumn, toggleConvertType, toggleSortValues,
     toggleStandardizeDates, togglePatternImputation, addMissingValueOperation, addDerivedColumn,
+    categoryMappingEdits, setCategoryCanonical, toggleStandardizeCategories, toggleReplaceWithMissing, toggleRemoveOutliers,
+    buildStandardizeCategoriesOperation, buildReplaceWithMissingOperation, buildRemoveOutliersOperation,
     hasQueuedOperation, getColumnType, isLowercaseCandidate, getDefaultMissingStrategy,
     buildDuplicateOperation, buildTrimWhitespaceOperation, buildMissingValueOperation,
     buildConvertTypeOperation, buildSortValuesOperation, buildStandardizeDatesOperation, buildPatternImputationOperation,
@@ -201,34 +233,40 @@ export function PrepareTab(props: PrepareTabProps) {
 
   function renderPreviewTable(
     rows: Array<Record<string, unknown>> = workspace.dataset.preview_json ?? [],
-    detectCtx?: { columnTypes: Record<string, string> } | null
+    detectCtx?: DetectContext | null
   ) {
     if (rows.length === 0) return <p className="text-sm text-slate-600">No preview available.</p>;
     const cols = Object.keys(rows[0] ?? {});
+    const formatBadgeCols = detectCtx?.formatInconsistentCols ?? new Set<string>();
+    const cellStyles: Record<string, { cls: string; title: string }> = {
+      missing: { cls: "px-4 py-3 bg-red-50 text-red-700 border-l-2 border-red-300", title: "This cell is empty — no data here" },
+      type_mismatch: { cls: "px-4 py-3 bg-amber-50 text-amber-700 border-l-2 border-amber-300", title: "This value doesn't look like a number — check your data" },
+      pseudo_null: { cls: "px-4 py-3 bg-orange-50 text-orange-700 border-l-2 border-orange-300", title: "This looks like a disguised missing value (e.g. NA) — convert it to empty in Cleaning" },
+      variant: { cls: "px-4 py-3 bg-purple-50 text-purple-700 border-l-2 border-purple-300", title: "Inconsistent value — looks like a variant of another value in this column" },
+      outlier: { cls: "px-4 py-3 bg-rose-50 text-rose-700 border-l-2 border-rose-300", title: "Potential outlier — far outside the typical range for this column" },
+    };
     return (
       <>
         <div className="overflow-x-auto rounded-2xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
-              <tr>{cols.map((c) => <th key={c} className="px-4 py-3 text-left font-medium text-slate-600">{c}</th>)}</tr>
+              <tr>{cols.map((c) => (
+                <th key={c} className="px-4 py-3 text-left font-medium text-slate-600">
+                  {c}
+                  {formatBadgeCols.has(c) && (
+                    <span className="ml-1.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700" title="This column mixes multiple date formats">mixed formats</span>
+                  )}
+                </th>
+              ))}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {rows.map((row, i) => (
                 <tr key={i}>
                   {cols.map((c) => {
-                    const issue = detectCtx ? getCellIssue(row[c], c, detectCtx.columnTypes) : null;
-                    const cellClass = issue === "missing"
-                      ? "px-4 py-3 bg-red-50 text-red-700 border-l-2 border-red-300"
-                      : issue === "type_mismatch"
-                      ? "px-4 py-3 bg-amber-50 text-amber-700 border-l-2 border-amber-300"
-                      : "px-4 py-3 text-slate-800";
-                    const cellTitle = issue === "missing"
-                      ? "This cell is empty — no data here"
-                      : issue === "type_mismatch"
-                      ? "This value doesn't look like a number — check your data"
-                      : undefined;
+                    const issue = detectCtx ? getCellIssue(row[c], c, detectCtx) : null;
+                    const style = issue ? cellStyles[issue] : null;
                     return (
-                      <td key={c} className={cellClass} title={cellTitle}>
+                      <td key={c} className={style?.cls ?? "px-4 py-3 text-slate-800"} title={style?.title}>
                         {issue === "missing"
                           ? <span className="italic text-xs">empty</span>
                           : String(row[c] ?? "-")}
@@ -241,17 +279,44 @@ export function PrepareTab(props: PrepareTabProps) {
           </table>
         </div>
         {detectCtx && (
-          <div className="mt-2 flex items-center gap-4 px-1 text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-sm bg-red-300 shrink-0" /> Empty cell
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-sm bg-amber-300 shrink-0" /> Wrong format
-            </span>
+          <div className="mt-2 flex flex-wrap items-center gap-4 px-1 text-xs text-slate-500">
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-red-300 shrink-0" /> Empty cell</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-orange-300 shrink-0" /> Disguised missing</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-purple-300 shrink-0" /> Inconsistent value</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-rose-300 shrink-0" /> Outlier</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-sky-300 shrink-0" /> Mixed date formats</span>
           </div>
         )}
       </>
     );
+  }
+
+  function buildCategoryMapping(sug: CategoryStandardizationSuggestion): Record<string, string> {
+    const edits = categoryMappingEdits[sug.column] ?? {};
+    const mapping: Record<string, string> = {};
+    for (const g of sug.groups) {
+      const finalCanonical = (edits[g.canonical] ?? g.canonical).trim() || g.canonical;
+      for (const member of [g.canonical, ...g.variants]) {
+        if (member !== finalCanonical) mapping[member] = finalCanonical;
+      }
+    }
+    return mapping;
+  }
+
+  function buildOverviewDetectCtx(det: CleanDetectResponse): DetectContext {
+    const pseudoNullCols = new Set((det.pseudo_nulls ?? []).map((p) => p.column));
+    const outlierFences: Record<string, { low: number; high: number }> = {};
+    for (const o of det.outliers ?? []) outlierFences[o.column] = { low: o.lower_fence, high: o.upper_fence };
+    const variantValues: Record<string, Set<string>> = {};
+    for (const s of det.category_suggestions ?? []) {
+      const set = new Set<string>();
+      for (const g of s.groups) for (const v of g.variants) set.add(v);
+      variantValues[s.column] = set;
+    }
+    const formatInconsistentCols = new Set(
+      (det.issues ?? []).filter((i) => i.kind === "format_inconsistency" && i.column).map((i) => i.column as string)
+    );
+    return { columnTypes: det.column_types, pseudoNullCols, outlierFences, variantValues, formatInconsistentCols };
   }
 
   function renderIssuesPanel() {
@@ -259,7 +324,12 @@ export function PrepareTab(props: PrepareTabProps) {
     const missingEntries = Object.entries(cleaningDetection.missing_values ?? {}).filter(([, count]) => count > 0);
     const typeIssues = cleaningIssues.filter((i) => i.kind === "type_inconsistency" && i.column);
     const hasDuplicates = (cleaningDetection.duplicates ?? 0) > 0;
-    const totalCount = missingEntries.length + typeIssues.length + (hasDuplicates ? 1 : 0);
+    const categorySuggestions = cleaningDetection.category_suggestions ?? [];
+    const pseudoNullSummaries = cleaningDetection.pseudo_nulls ?? [];
+    const formatIssues = cleaningIssues.filter((i) => i.kind === "format_inconsistency" && i.column);
+    const outlierSummaries = cleaningDetection.outliers ?? [];
+    const totalCount = missingEntries.length + typeIssues.length + (hasDuplicates ? 1 : 0)
+      + categorySuggestions.length + pseudoNullSummaries.length + formatIssues.length + outlierSummaries.length;
     if (totalCount === 0) return null;
     const rowCount = workspace.dataset.row_count ?? 0;
 
@@ -311,6 +381,80 @@ export function PrepareTab(props: PrepareTabProps) {
                   <div className="text-sm text-purple-900">Column <span className="font-semibold">'{col}'</span> looks like <span className="font-semibold text-purple-700">{target}</span> but is stored as text.</div>
                   <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700" : "bg-purple-600 text-white hover:bg-purple-500"}`} onClick={() => toggleConvertType(col, target)}>
                     {queued ? "Added" : "Add fix"}
+                  </button>
+                </div>
+              );
+            })}
+            {categorySuggestions.map((sug) => {
+              const mapping = buildCategoryMapping(sug);
+              const queued = hasQueuedOperation(buildStandardizeCategoriesOperation(sug.column, mapping));
+              const edits = categoryMappingEdits[sug.column] ?? {};
+              return (
+                <div key={`cat-${sug.column}`} className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm text-indigo-900">Column <span className="font-semibold">'{sug.column}'</span> has inconsistent values that look like the same category.</div>
+                    <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700" : "bg-indigo-600 text-white hover:bg-indigo-500"}`} onClick={() => toggleStandardizeCategories(sug.column, mapping)}>
+                      {queued ? "Added" : "Add fix"}
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    {sug.groups.map((g) => (
+                      <div key={`${sug.column}-${g.canonical}`} className="flex flex-wrap items-center gap-2 text-xs text-indigo-800">
+                        <span className="flex flex-wrap gap-1">
+                          {g.variants.map((v) => (
+                            <span key={v} className="rounded-full bg-white px-2 py-0.5 text-slate-600 line-through decoration-slate-300">{v}</span>
+                          ))}
+                        </span>
+                        <span className="text-indigo-400">→</span>
+                        <input
+                          type="text"
+                          className="w-32 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-xs text-indigo-900 outline-none focus:border-indigo-500"
+                          value={edits[g.canonical] ?? g.canonical}
+                          onChange={(e) => setCategoryCanonical(sug.column, g.canonical, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {pseudoNullSummaries.map((pn) => {
+              const queued = hasQueuedOperation(buildReplaceWithMissingOperation(pn.column));
+              return (
+                <div key={`pn-${pn.column}`} className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+                  <div className="text-sm text-orange-900">
+                    Column <span className="font-semibold">'{pn.column}'</span> has <span className="font-semibold">{pn.total}</span> disguised missing value{pn.total !== 1 ? "s" : ""} <span className="text-orange-700">({Object.keys(pn.tokens).join(", ")})</span>.
+                  </div>
+                  <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700" : "bg-orange-600 text-white hover:bg-orange-500"}`} onClick={() => toggleReplaceWithMissing(pn.column)}>
+                    {queued ? "Added" : "Convert to empty"}
+                  </button>
+                </div>
+              );
+            })}
+            {formatIssues.map((issue) => {
+              const col = issue.column ?? "";
+              const formats = (issue.details?.formats as string[] | undefined) ?? [];
+              const fmt = dateFormatChoices[col] ?? "iso";
+              const hint = dayfirstChoices[col] ?? "auto";
+              const queued = hasQueuedOperation(buildStandardizeDatesOperation(col, fmt, hint));
+              return (
+                <div key={`fmt-${col}`} className="flex items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+                  <div className="text-sm text-sky-900">Column <span className="font-semibold">'{col}'</span> mixes multiple date formats{formats.length ? <span className="text-sky-700"> ({formats.join(", ")})</span> : null}.</div>
+                  <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700" : "bg-sky-600 text-white hover:bg-sky-500"}`} onClick={() => toggleStandardizeDates(col)}>
+                    {queued ? "Added" : "Standardize dates"}
+                  </button>
+                </div>
+              );
+            })}
+            {outlierSummaries.map((o) => {
+              const queued = hasQueuedOperation(buildRemoveOutliersOperation(o.column));
+              return (
+                <div key={`out-${o.column}`} className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <div className="text-sm text-rose-900">
+                    Column <span className="font-semibold">'{o.column}'</span> has <span className="font-semibold">{o.outlier_count}</span> potential outlier{o.outlier_count !== 1 ? "s" : ""} <span className="text-rose-700">(outside {o.lower_fence}–{o.upper_fence})</span>.
+                  </div>
+                  <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${queued ? "bg-green-100 text-green-700" : "bg-rose-600 text-white hover:bg-rose-500"}`} onClick={() => toggleRemoveOutliers(o.column)} title="Drops the rows containing these outlier values">
+                    {queued ? "Added" : "Remove rows"}
                   </button>
                 </div>
               );
@@ -517,7 +661,7 @@ export function PrepareTab(props: PrepareTabProps) {
             <>
               {renderPreviewTable(
                 displayPreview,
-                !cleaningResult && cleaningDetection ? { columnTypes: cleaningDetection.column_types } : null
+                !cleaningResult && cleaningDetection ? buildOverviewDetectCtx(cleaningDetection) : null
               )}
               {!cleaningResult && canLoadMore ? (
                 <button onClick={handleLoadMoreOverviewRows} disabled={overviewLoadingMore} className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">

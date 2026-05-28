@@ -115,6 +115,18 @@ function buildStandardizeDatesOperation(columnName: string, outputFormat: DateOu
   return { operation_type: "standardize_dates", columns: [], column: columnName, target_type: null, drop_all_missing: true, errors: "coerce", output_format: outputFormat, dayfirst_hint: dayfirstHint, unparseable_action: "keep_original" };
 }
 
+function buildStandardizeCategoriesOperation(columnName: string, valueMapping: Record<string, string>): CleaningOperation {
+  return { operation_type: "standardize_categories", column: columnName, columns: [], target_type: null, drop_all_missing: true, errors: "coerce", value_mapping: valueMapping };
+}
+
+function buildReplaceWithMissingOperation(columnName: string): CleaningOperation {
+  return { operation_type: "replace_with_missing", column: columnName, columns: [columnName], target_type: null, drop_all_missing: true, errors: "coerce", missing_tokens: null };
+}
+
+function buildRemoveOutliersOperation(columnName: string): CleaningOperation {
+  return { operation_type: "remove_outliers", column: columnName, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
+}
+
 function areCleaningOperationsEqual(a: CleaningOperation, b: CleaningOperation): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -180,6 +192,7 @@ export default function DatasetWorkspacePage() {
   const [dateFormatChoices, setDateFormatChoices] = useState<Record<string, DateOutputFormat>>({});
   const [dayfirstChoices, setDayfirstChoices] = useState<Record<string, DayFirstHint>>({});
   const [cumulativeAppliedOperations, setCumulativeAppliedOperations] = useState<CleaningOperation[]>([]);
+  const [categoryMappingEdits, setCategoryMappingEdits] = useState<Record<string, Record<string, string>>>({});
   const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
   const [sortColumn, setSortColumn] = useState("");
   const [sortAscending, setSortAscending] = useState(true);
@@ -410,6 +423,23 @@ export default function DatasetWorkspacePage() {
     const fmt = dateFormatChoices[col] ?? "iso";
     const hint = dayfirstChoices[col] ?? "auto";
     toggleOperation(buildStandardizeDatesOperation(col, fmt, hint), `Added standardize dates in "${col}" (${DATE_FORMAT_LABELS[fmt]}).`, `Removed standardize dates for "${col}".`);
+  }
+
+  function toggleStandardizeCategories(col: string, mapping: Record<string, string>) {
+    if (Object.keys(mapping).length === 0) { toast.warning(`No value changes to apply for "${col}".`); return; }
+    toggleOperation(buildStandardizeCategoriesOperation(col, mapping), `Added standardize values in "${col}".`, `Removed standardize values for "${col}".`);
+  }
+
+  function toggleReplaceWithMissing(col: string) {
+    toggleOperation(buildReplaceWithMissingOperation(col), `Added convert disguised-missing to empty in "${col}".`, `Removed disguised-missing fix for "${col}".`);
+  }
+
+  function toggleRemoveOutliers(col: string) {
+    toggleOperation(buildRemoveOutliersOperation(col), `Added remove outlier rows for "${col}".`, `Removed outlier-removal for "${col}".`);
+  }
+
+  function setCategoryCanonical(col: string, suggested: string, edited: string) {
+    setCategoryMappingEdits((prev) => ({ ...prev, [col]: { ...(prev[col] ?? {}), [suggested]: edited } }));
   }
 
   function addFilterPredicate() {
@@ -830,6 +860,14 @@ export default function DatasetWorkspacePage() {
               togglePatternImputation={togglePatternImputation}
               addMissingValueOperation={addMissingValueOperation}
               addDerivedColumn={addDerivedColumn}
+              categoryMappingEdits={categoryMappingEdits}
+              setCategoryCanonical={setCategoryCanonical}
+              toggleStandardizeCategories={toggleStandardizeCategories}
+              toggleReplaceWithMissing={toggleReplaceWithMissing}
+              toggleRemoveOutliers={toggleRemoveOutliers}
+              buildStandardizeCategoriesOperation={buildStandardizeCategoriesOperation}
+              buildReplaceWithMissingOperation={buildReplaceWithMissingOperation}
+              buildRemoveOutliersOperation={buildRemoveOutliersOperation}
               hasQueuedOperation={hasQueuedOperation}
               getColumnType={(col) => getColumnType(col, cleaningDetection)}
               isLowercaseCandidate={isLowercaseCandidate}

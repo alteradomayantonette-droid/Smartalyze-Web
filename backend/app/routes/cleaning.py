@@ -48,7 +48,7 @@ async def detect_cleaning(
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    version, missing_values, duplicates, column_types, issues, pattern_suggestions = await detect_cleaning_issues(
+    version, missing_values, duplicates, column_types, issues, pattern_suggestions, findings = await detect_cleaning_issues(
         db,
         dataset,
         payload.dataset_version_id,
@@ -61,6 +61,9 @@ async def detect_cleaning(
         "column_types": column_types,
         "issues": issues,
         "pattern_suggestions": pattern_suggestions,
+        "category_suggestions": findings.category_suggestions,
+        "pseudo_nulls": findings.pseudo_nulls,
+        "outliers": findings.outliers,
     }
 
 
@@ -78,7 +81,7 @@ endpoint to replace the dataset or save as a new dataset.
     token = _get_current_token(authorization)
     owner = await get_user_by_token(db, token)
     dataset = await get_owned_dataset(db, payload.dataset_id, owner)
-    version, missing_values, duplicates, column_types, issues, _pattern_suggestions = await detect_cleaning_issues(
+    version, missing_values, duplicates, column_types, issues, _pattern_suggestions, _findings = await detect_cleaning_issues(
         db,
         dataset,
         payload.dataset_version_id,
@@ -95,7 +98,7 @@ endpoint to replace the dataset or save as a new dataset.
         size_bytes=int(cleaned_frame.memory_usage(index=True, deep=True).sum()),
     )
 
-    cleaned_missing_values, cleaned_duplicates, cleaned_column_types, cleaned_issues = analyze_cleaning_frame(cleaned_frame)
+    cleaned_missing_values, cleaned_duplicates, cleaned_column_types, cleaned_issues, cleaned_findings = analyze_cleaning_frame(cleaned_frame)
     cleaned_cols_with_missing = [col for col, count in cleaned_missing_values.items() if count > 0]
     cleaned_pattern_suggestions = find_pattern_suggestions(cleaned_frame, cleaned_cols_with_missing)
     summary = dict(cleaned_snapshot["summary"])
@@ -111,6 +114,9 @@ endpoint to replace the dataset or save as a new dataset.
         "column_types": cleaned_column_types,
         "issues": cleaned_issues,
         "pattern_suggestions": cleaned_pattern_suggestions,
+        "category_suggestions": cleaned_findings.category_suggestions,
+        "pseudo_nulls": cleaned_findings.pseudo_nulls,
+        "outliers": cleaned_findings.outliers,
         "preview": cleaned_snapshot["preview"],
         "summary": summary,
         "data_snapshot": cleaned_snapshot,

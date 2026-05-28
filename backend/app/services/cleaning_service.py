@@ -28,6 +28,7 @@ from app.schemas.cleaning import CleaningIssue, CleaningOperation, PatternImputa
 from app.services.dataset_snapshot import build_snapshot, snapshot_to_dataframe
 from app.services.derived_column_service import evaluate_derived_column
 from app.services.pattern_imputation_service import apply_pattern_fill, find_pattern_suggestions
+from app.services.quality_detection_service import PSEUDO_NULL_TOKENS, QualityFindings, analyze_quality
 
 
 def _infer_column_type(series: pd.Series) -> str:
@@ -87,7 +88,9 @@ def _column_decimal_places(series: pd.Series) -> int:
     return min(max_dp, 6)
 
 
-def _build_detection(frame: pd.DataFrame) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue]]:
+def _build_detection(
+    frame: pd.DataFrame,
+) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue], QualityFindings]:
     missing_values = {str(column): int(frame[column].isna().sum()) for column in frame.columns}
     duplicates = int(frame.duplicated().sum())
     column_types: dict[str, str] = {}
@@ -146,7 +149,10 @@ def _build_detection(frame: pd.DataFrame) -> tuple[dict[str, int], int, dict[str
             )
         )
 
-    return missing_values, duplicates, column_types, issues
+    findings = analyze_quality(frame)
+    issues.extend(findings.issues)
+
+    return missing_values, duplicates, column_types, issues, findings
 
 
 def _ensure_columns(frame: pd.DataFrame, columns: list[str]) -> None:
@@ -379,14 +385,22 @@ async def detect_cleaning_issues(
     db: AsyncSession,
     dataset: Dataset,
     dataset_version_id: int | None = None,
-) -> tuple[DatasetVersion, dict[str, int], int, dict[str, str], list[CleaningIssue], list[PatternImputationResult]]:
-    """Return (version, missing_values, duplicates, column_types, issues, pattern_suggestions)."""
+) -> tuple[
+    DatasetVersion,
+    dict[str, int],
+    int,
+    dict[str, str],
+    list[CleaningIssue],
+    list[PatternImputationResult],
+    QualityFindings,
+]:
+    """Return (version, missing_values, duplicates, column_types, issues, pattern_suggestions, findings)."""
     version = await get_dataset_source_version(db, dataset, dataset_version_id)
     frame = snapshot_to_dataframe(version.data_snapshot)
-    missing_values, duplicates, column_types, issues = _build_detection(frame)
+    missing_values, duplicates, column_types, issues, findings = _build_detection(frame)
     cols_with_missing = [col for col, count in missing_values.items() if count > 0]
     pattern_suggestions = find_pattern_suggestions(frame, cols_with_missing)
-    return version, missing_values, duplicates, column_types, issues, pattern_suggestions
+    return version, missing_values, duplicates, column_types, issues, pattern_suggestions, findings
 
 
 def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.DataFrame:
@@ -536,6 +550,52 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
             )
         return evaluate_derived_column(frame, operation.new_column_name, operation.expression)
 
+    if operation.operation_type == "standardize_categories":
+        if not operation.column or not operation.value_mapping:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="standardize_categories requires a column and a value_mapping.",
+            )
+        _ensure_columns(frame, [operation.column])
+        # Match on the string representation so mappings keyed by display values work
+        # regardless of the column's stored dtype; unlisted values are left untouched.
+        mapping = operation.value_mapping
+        frame[operation.column] = frame[operation.column].map(
+            lambda v: mapping.get(str(v), v) if not pd.isna(v) else v
+        )
+        return frame
+
+    if operation.operation_type == "replace_with_missing":
+        columns = _text_columns(frame, operation.columns or ([operation.column] if operation.column else None))
+        tokens = operation.missing_tokens if operation.missing_tokens else list(PSEUDO_NULL_TOKENS)
+        token_set = {str(t).strip().casefold() for t in tokens}
+        for column in columns:
+            series = frame[column]
+            mask = series.map(lambda v: not pd.isna(v) and str(v).strip().casefold() in token_set)
+            frame.loc[mask, column] = None
+        return frame
+
+    if operation.operation_type == "remove_outliers":
+        if not operation.column:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="remove_outliers requires a column name.",
+            )
+        _ensure_columns(frame, [operation.column])
+        numeric = pd.to_numeric(frame[operation.column], errors="coerce")
+        valid = numeric.dropna()
+        if len(valid) < 4:
+            return frame
+        q1 = float(valid.quantile(0.25))
+        q3 = float(valid.quantile(0.75))
+        iqr = q3 - q1
+        if iqr <= 0:
+            return frame
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        outlier_mask = numeric.notna() & ((numeric < lower) | (numeric > upper))
+        return frame.loc[~outlier_mask]
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Unsupported cleaning operation: {operation.operation_type}",
@@ -581,7 +641,9 @@ def build_cleaning_result_snapshot(
     )
 
 
-def analyze_cleaning_frame(frame: pd.DataFrame) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue]]:
+def analyze_cleaning_frame(
+    frame: pd.DataFrame,
+) -> tuple[dict[str, int], int, dict[str, str], list[CleaningIssue], QualityFindings]:
     """Re-run detection on an updated DataFrame (used after cleaning)."""
     return _build_detection(frame)
 
