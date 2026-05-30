@@ -669,7 +669,7 @@ export function PrepareTab(props: PrepareTabProps) {
                             const topGroups = [...s.groups].sort((a, b) => b.fillable_count - a.fillable_count).slice(0, 5);
                             const extraCount = s.groups.length - topGroups.length;
                             return (
-                              <div key={`sf-${s.target_column}`} className="px-5 py-3.5">
+                              <div key={`sf-${s.key_column}-${s.target_column}`} className="px-5 py-3.5">
                                 <div className="flex items-start gap-3">
                                   <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-white hover:border-emerald-400"}`} onClick={() => togglePatternImputation(s.target_column, s.key_column)} aria-label={`Toggle smart fill for ${s.target_column}`}>
                                     {queued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
