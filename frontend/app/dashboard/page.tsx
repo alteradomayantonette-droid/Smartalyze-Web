@@ -583,26 +583,30 @@ export default function DashboardPage() {
 
           {datasets.length === 0 ? (
             <div
-              className={`mt-5 flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed py-14 transition-colors ${
-                isDragging ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50/60"
+              role="button"
+              tabIndex={0}
+              className={`mt-5 flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed py-14 transition-colors cursor-pointer ${
+                isDragging ? "border-indigo-500 bg-indigo-100" : "border-indigo-300 bg-indigo-50 hover:border-indigo-400 hover:bg-indigo-100/70"
               }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={(e) => { void handleDrop(e); }}
+              onClick={() => { if (!uploading) fileInputRef.current?.click(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!uploading) fileInputRef.current?.click(); } }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none"
-                stroke={isDragging ? "#6366f1" : "#94a3b8"} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+                stroke={isDragging ? "#4f46e5" : "#6366f1"} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
                 aria-hidden="true">
                 <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
                 <path d="M12 12v9" />
                 <path d="m16 16-4-4-4 4" />
               </svg>
               <div className="text-center">
-                <p className={`text-lg font-semibold ${isDragging ? "text-indigo-600" : "text-slate-500"}`}>
+                <p className={`text-lg font-semibold ${isDragging ? "text-indigo-700" : "text-indigo-600"}`}>
                   {uploading ? uploadingMessage : "Drag & Drop files here"}
                 </p>
                 {!uploading && (
-                  <p className="mt-1 text-sm text-slate-400">CSV, Excel, JSON — or a PNG/JPG for OCR table extraction</p>
+                  <p className="mt-1 text-sm text-indigo-400">CSV, Excel, JSON — or a PNG/JPG for OCR table extraction</p>
                 )}
               </div>
               {uploading ? (
@@ -615,18 +619,18 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <>
-                  <p className="text-sm text-slate-400">or</p>
-                  <div className="flex flex-wrap items-center justify-center gap-3">
+                  <p className="text-sm text-indigo-300">or</p>
+                  <div className="flex flex-wrap items-center justify-center gap-3" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      className="rounded-xl border-2 border-indigo-400 bg-white px-6 py-2.5 text-sm font-bold text-indigo-500 transition hover:bg-indigo-50"
+                      className="rounded-xl border-2 border-indigo-500 bg-white px-6 py-2.5 text-sm font-bold text-indigo-600 transition hover:bg-indigo-50"
                       onClick={() => fileInputRef.current?.click()}
                     >
                       Browse Files
                     </button>
                     <button
                       type="button"
-                      className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                      className="rounded-xl border border-indigo-200 bg-white px-5 py-2.5 text-sm font-medium text-indigo-500 transition hover:bg-indigo-50 disabled:opacity-60"
                       onClick={handleLoadSample}
                       disabled={loadingSample}
                     >
