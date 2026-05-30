@@ -867,6 +867,111 @@ export function PrepareTab(props: PrepareTabProps) {
                     </div>
                   )}
 
+                  {/* Text Cleanup Group */}
+                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                    <button type="button" className="flex w-full items-center gap-2 px-5 py-3.5 bg-slate-50 text-left hover:bg-slate-100 transition" onClick={() => setTextCleanupOpen((o) => !o)}>
+                      <span className="h-2.5 w-2.5 rounded-full bg-slate-400 shrink-0" />
+                      <span className="font-semibold text-slate-950 text-sm">Text Cleanup</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500 ml-1">optional</span>
+                      <span className="ml-auto text-slate-400 text-xs">{textCleanupOpen ? "▾" : "▸"}</span>
+                    </button>
+                    {textCleanupOpen && (
+                      <div className="divide-y divide-slate-100">
+                        <div className="flex items-start gap-3 px-5 py-3.5">
+                          <button type="button" disabled={textColumns.length === 0} className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition disabled:opacity-40 ${trimQueued ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"}`} onClick={toggleTrimWhitespace}>
+                            {trimQueued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-950">Trim whitespace</p>
+                            <p className="text-xs text-slate-500 mt-0.5">Remove leading and trailing spaces from all text columns.</p>
+                          </div>
+                        </div>
+                        {textColumns.filter((col) => isLowercaseCandidate(getColumnType(col))).map((col) => {
+                          const queued = hasQueuedOperation({ operation_type: "lowercase_column", columns: [col], column: col, target_type: null, drop_all_missing: true, errors: "coerce" });
+                          return (
+                            <div key={col} className="flex items-start gap-3 px-5 py-3.5">
+                              <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"}`} onClick={() => toggleLowercaseColumn(col)}>
+                                {queued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-slate-950">Lowercase <span className="text-indigo-600">&quot;{col}&quot;</span></p>
+                                <p className="text-xs text-slate-500 mt-0.5">Make text values consistent for comparisons.</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Advanced Group */}
+                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                    <button type="button" className="flex w-full items-center gap-2 px-5 py-3.5 bg-slate-50 text-left hover:bg-slate-100 transition" onClick={() => setAdvancedOpen((o) => !o)}>
+                      <span className="h-2.5 w-2.5 rounded-full bg-indigo-400 shrink-0" />
+                      <span className="font-semibold text-slate-950 text-sm">Advanced</span>
+                      <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-500 ml-1">Derived Column · Sort</span>
+                      <span className="ml-auto text-slate-400 text-xs">{advancedOpen ? "▾" : "▸"}</span>
+                    </button>
+                    {advancedOpen && (
+                      <div className="divide-y divide-slate-100">
+                        <div className="p-5">
+                          <p className="text-sm font-semibold text-slate-950 mb-1">Add Derived Column</p>
+                          <p className="text-xs text-slate-500 mb-3">Compute a new column from a formula. Reference existing columns by name.</p>
+                          <div className="grid gap-2 sm:grid-cols-[minmax(0,200px)_minmax(0,1fr)_auto]">
+                            <input type="text" value={derivedColumnName} onChange={(e) => setDerivedColumnName(e.target.value)} placeholder="new column name" className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none" />
+                            <input type="text" value={derivedExpression} onChange={(e) => setDerivedExpression(e.target.value)} placeholder="e.g. price * qty" className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-indigo-500 focus:outline-none" />
+                            <button type="button" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50" onClick={addDerivedColumn} disabled={!derivedColumnName.trim() || !derivedExpression.trim()}>Add</button>
+                          </div>
+                          {availableColumns.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              <span className="text-xs text-slate-500 self-center">Columns:</span>
+                              {availableColumns.slice(0, 12).map((col) => (
+                                <button key={col} type="button" className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700" onClick={() => setDerivedExpression((prev) => prev ? `${prev} ${col}` : col)}>{col}</button>
+                              ))}
+                              {availableColumns.length > 12 && <span className="text-xs text-slate-400">+{availableColumns.length - 12} more</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-5">
+                          <p className="text-sm font-semibold text-slate-950 mb-3">Sort Data</p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <select className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none" value={sortColumn} onChange={(e) => setSortColumn(e.target.value)}>
+                              <option value="">Column…</option>
+                              {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
+                            </select>
+                            <select className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none" value={sortAscending ? "asc" : "desc"} onChange={(e) => setSortAscending(e.target.value === "asc")}>
+                              <option value="asc">Ascending (A→Z, 0→9)</option>
+                              <option value="desc">Descending (Z→A, 9→0)</option>
+                            </select>
+                            {(() => {
+                              const op = sortColumn ? buildSortValuesOperation(sortColumn, sortAscending) : null;
+                              const queued = op ? hasQueuedOperation(op) : false;
+                              return (
+                                <button type="button" className={`rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`} onClick={toggleSortValues} disabled={!sortColumn}>
+                                  {queued ? "Added" : "Add"}
+                                </button>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sticky Apply bar */}
+                  <div className="sticky bottom-0 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white/95 backdrop-blur-sm px-5 py-4 shadow-lg">
+                    <p className="text-sm text-slate-600">
+                      {cleaningOperations.length > 0 ? (
+                        <><strong className="text-slate-950">{cleaningOperations.length} fix{cleaningOperations.length !== 1 ? "es" : ""}</strong> selected · Applied in safe order automatically.</>
+                      ) : (
+                        <span className="text-slate-400">No fixes selected yet.</span>
+                      )}
+                    </p>
+                    <button type="button" className="shrink-0 rounded-xl bg-indigo-600 px-5 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50" onClick={handleApplyCleaning} disabled={applying || cleaningOperations.length === 0}>
+                      {applying ? "Applying…" : `Apply ${cleaningOperations.length} Fix${cleaningOperations.length !== 1 ? "es" : ""}`}
+                    </button>
+                  </div>
+
                 </div>{/* /LEFT */}
 
                 {/* RIGHT: AI sidebar */}
