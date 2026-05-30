@@ -485,10 +485,6 @@ export function PrepareTab(props: PrepareTabProps) {
   const overviewTotal = overviewTotalRows ?? workspace.dataset.row_count ?? 0;
   const overviewLoaded = allOverviewRows.length;
   const canLoadMore = overviewLoaded < overviewTotal;
-  const displayRowCount = cleaningResult?.summary.row_count ?? workspace.dataset.row_count;
-  const displayColCount = cleaningResult?.summary.column_count ?? workspace.dataset.column_count;
-  const displayMissing = cleaningResult?.summary.missing_cells ?? workspace.dataset.summary_json?.missing_cells;
-  const displayDuplicates = cleaningResult?.summary.duplicate_rows ?? workspace.dataset.summary_json?.duplicate_rows;
   const displayPreview = cleaningResult ? cleaningResult.preview : allOverviewRows;
 
   const filterOps: { value: FilterOp; label: string }[] = [
@@ -533,7 +529,7 @@ export function PrepareTab(props: PrepareTabProps) {
         <div>
           <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
           <p className="text-sm text-indigo-700 mt-0.5">
-            Start by reviewing the <strong>Overview</strong> tab to see your data. Then switch to <strong>Cleaning</strong> to detect issues — Smartalyze will automatically find missing values, duplicates, and type problems. Queue operations, then click <strong>Apply</strong> to clean your data.
+            Browse your live data in the <strong>Data</strong> view — cells highlighted red are missing, yellow have a type problem. Switch to <strong>Clean</strong> to queue operations and apply them.
           </p>
         </div>
       </div>
@@ -546,7 +542,7 @@ export function PrepareTab(props: PrepareTabProps) {
             onClick={() => setSubTab(t)}
             className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${subTab === t ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"}`}
           >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "overview" ? "Data" : "Clean"}
             {t === "cleaning" && cleaningResult && (
               <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
             )}
@@ -556,54 +552,14 @@ export function PrepareTab(props: PrepareTabProps) {
 
       {subTab === "overview" && (
         <div className="space-y-6">
-          {/* Stats */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Rows</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{String(displayRowCount ?? "-")}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Columns</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{String(displayColCount ?? "-")}</p>
-            </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Missing cells", displayMissing as number | null | undefined)}`}>
-              <p className="text-sm text-slate-500">Missing cells</p>
-              <p className="mt-1 text-2xl font-semibold">{String(displayMissing ?? "-")}</p>
-            </div>
-            <div className={`rounded-2xl border p-4 shadow-sm ${getSummaryTone("Duplicates", displayDuplicates as number | null | undefined)}`}>
-              <p className="text-sm text-slate-500">Duplicates</p>
-              <p className="mt-1 text-2xl font-semibold">{String(displayDuplicates ?? "-")}</p>
-            </div>
-          </div>
-
-          {cleaningResult ? (
+          {cleaningResult && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <span>Showing cleaned preview — save to make this permanent.</span>
               <button type="button" className="shrink-0 font-medium underline underline-offset-4 decoration-amber-400 hover:text-amber-900" onClick={() => setSubTab("cleaning")}>
-                Go to Cleaning →
+                Go to Clean →
               </button>
             </div>
-          ) : (() => {
-            const missing = Number(workspace.dataset.summary_json?.missing_cells ?? 0);
-            const dupes = Number(workspace.dataset.summary_json?.duplicate_rows ?? 0);
-            if (missing === 0 && dupes === 0) return null;
-            const parts: string[] = [];
-            if (missing > 0) parts.push(`${missing} missing value${missing !== 1 ? "s" : ""}`);
-            if (dupes > 0) parts.push(`${dupes} duplicate row${dupes !== 1 ? "s" : ""}`);
-            return (
-              <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium">Your data has {parts.join(" and ")}.</span>
-                  <button type="button" className="shrink-0 font-medium underline underline-offset-4 decoration-teal-400 hover:text-teal-900" onClick={() => setSubTab("cleaning")}>
-                    Go to Cleaning →
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-teal-700">
-                  Red cells below are empty. Yellow cells have the wrong data format. Go to Cleaning to fix them.
-                </p>
-              </div>
-            );
-          })()}
+          )}
 
           {/* Filters */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
