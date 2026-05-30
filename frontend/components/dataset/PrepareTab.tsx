@@ -161,8 +161,6 @@ export type PrepareTabProps = {
   setDraftFilterLower: React.Dispatch<React.SetStateAction<string>>;
   draftFilterUpper: string;
   setDraftFilterUpper: React.Dispatch<React.SetStateAction<string>>;
-  issuesPanelOpen: boolean;
-  setIssuesPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   cumulativeAppliedOperations: CleaningOperation[];
   applying: boolean;
   sortColumn: string;
@@ -224,7 +222,7 @@ export function PrepareTab(props: PrepareTabProps) {
     filterPanelOpen, setFilterPanelOpen, filterResult, filterLoading,
     draftFilterColumn, setDraftFilterColumn, draftFilterOp, setDraftFilterOp,
     draftFilterValue, setDraftFilterValue, draftFilterLower, setDraftFilterLower, draftFilterUpper, setDraftFilterUpper,
-    issuesPanelOpen, setIssuesPanelOpen, cumulativeAppliedOperations, applying,
+    cumulativeAppliedOperations, applying,
     sortColumn, setSortColumn, sortAscending, setSortAscending,
     derivedColumnName, setDerivedColumnName, derivedExpression, setDerivedExpression,
     handleApplyCleaning, handleLoadMoreOverviewRows,

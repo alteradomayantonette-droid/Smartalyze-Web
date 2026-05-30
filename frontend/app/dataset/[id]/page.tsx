@@ -230,7 +230,6 @@ export default function DatasetWorkspacePage() {
   const [dayfirstChoices, setDayfirstChoices] = useState<Record<string, DayFirstHint>>({});
   const [cumulativeAppliedOperations, setCumulativeAppliedOperations] = useState<CleaningOperation[]>([]);
   const [categoryMappingEdits, setCategoryMappingEdits] = useState<Record<string, Record<string, string>>>({});
-  const [issuesPanelOpen, setIssuesPanelOpen] = useState(true);
   const [sortColumn, setSortColumn] = useState("");
   const [sortAscending, setSortAscending] = useState(true);
   const [derivedColumnName, setDerivedColumnName] = useState("");
@@ -897,8 +896,6 @@ export default function DatasetWorkspacePage() {
               setDraftFilterLower={setDraftFilterLower}
               draftFilterUpper={draftFilterUpper}
               setDraftFilterUpper={setDraftFilterUpper}
-              issuesPanelOpen={issuesPanelOpen}
-              setIssuesPanelOpen={setIssuesPanelOpen}
               cumulativeAppliedOperations={cumulativeAppliedOperations}
               applying={applying}
               sortColumn={sortColumn}
