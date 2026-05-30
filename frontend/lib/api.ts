@@ -394,9 +394,9 @@ const REQUEST_TIMEOUT_MS = 15000;
 // Note: `fetch()` throws a TypeError for network-level failures (backend down, CORS blocked, DNS, etc.).
 // We map that to a friendlier message so UI toasts are actionable.
 
-async function request<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
+async function request<T>(path: string, options?: RequestInit, token?: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -829,4 +829,62 @@ export async function uploadDataset(file: File, description: string, token?: str
   }
 
   return response.json() as Promise<{ message: string; dataset: Dataset }>;
+}
+
+// --- AI Advisor ---
+
+export type AIContext = {
+  dataset_name: string;
+  column_types: Record<string, string>;
+  missing_values: Record<string, number>;
+  duplicates: number;
+  issues: Array<Record<string, unknown>>;
+  pattern_suggestions: Array<Record<string, unknown>>;
+  outliers: Array<Record<string, unknown>>;
+};
+
+export type AIChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type AISuggestResponse = {
+  suggestion: string;
+};
+
+export type AIChatResponse = {
+  reply: string;
+};
+
+const AI_TIMEOUT_MS = 90_000;
+
+export function getAISuggestion(context: AIContext, token: string): Promise<AISuggestResponse> {
+  return request<AISuggestResponse>(
+    "/ai/suggest",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context }),
+    },
+    token,
+    AI_TIMEOUT_MS,
+  );
+}
+
+export function sendAIChat(
+  context: AIContext,
+  message: string,
+  history: AIChatMessage[],
+  token: string,
+): Promise<AIChatResponse> {
+  return request<AIChatResponse>(
+    "/ai/chat",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context, message, history }),
+    },
+    token,
+    AI_TIMEOUT_MS,
+  );
 }

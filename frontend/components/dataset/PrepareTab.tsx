@@ -15,6 +15,7 @@ import {
   PatternImputationResult,
   UnparseableDateRow,
 } from "@/lib/api";
+import { AIAdvisorPanel } from "@/components/dataset/AIAdvisorPanel";
 
 type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
 type PrepareSubTab = "overview" | "cleaning";
@@ -115,6 +116,7 @@ function InsightCard({ text }: { text: string }) {
 
 export type PrepareTabProps = {
   workspace: DatasetWorkspace;
+  token: string | null;
   subTab: PrepareSubTab;
   setSubTab: (t: PrepareSubTab) => void;
   cleaningDetection: CleanDetectResponse | null;
@@ -202,7 +204,7 @@ export type PrepareTabProps = {
 
 export function PrepareTab(props: PrepareTabProps) {
   const {
-    workspace, subTab, setSubTab,
+    workspace, token, subTab, setSubTab,
     cleaningDetection, cleaningDetecting, cleaningResult, cleaningOperations, setCleaningOperations,
     missingValueStrategies, setMissingValueStrategies,
     dateFormatChoices, setDateFormatChoices,
@@ -737,6 +739,14 @@ export function PrepareTab(props: PrepareTabProps) {
               })()}
 
               {renderIssuesPanel()}
+
+              {cleaningDetection && token && (
+                <AIAdvisorPanel
+                  detectResult={cleaningDetection}
+                  dataset={workspace.dataset}
+                  token={token}
+                />
+              )}
 
               {/* Operations + queue */}
               <div className="grid gap-6 xl:grid-cols-[1fr_320px]">

@@ -850,6 +850,7 @@ export default function DatasetWorkspacePage() {
             <TabErrorBoundary tabName="Prepare">
             <PrepareTab
               workspace={workspace}
+              token={token}
               subTab={prepareSubTab}
               setSubTab={setPrepareSubTab}
               cleaningDetection={cleaningDetection}
