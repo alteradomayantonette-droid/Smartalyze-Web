@@ -68,6 +68,16 @@ function getOperationDetail(op: CleaningOperation): string {
   }
 }
 
+function strategyLabel(s: MissingStrategy): string {
+  switch (s) {
+    case "fill_mean": return "Average";
+    case "fill_median": return "Median";
+    case "fill_mode": return "Most common value";
+    case "drop_rows": return "Drop rows";
+    default: return s;
+  }
+}
+
 function getSummaryTone(label: string, value: number | string | null | undefined): string {
   const n = typeof value === "number" ? value : Number(value ?? 0);
   if (label === "Missing cells") return n > 0 ? "border-yellow-200 bg-yellow-50 text-yellow-800" : "border-green-200 bg-green-50 text-green-800";
@@ -231,10 +241,38 @@ export function PrepareTab(props: PrepareTabProps) {
 
   const [expandedSmartFill, setExpandedSmartFill] = useState<Set<string>>(new Set());
   const [cleanedPreviewLimit, setCleanedPreviewLimit] = useState(10);
+  const [dataIssuesOpen, setDataIssuesOpen] = useState(true);
+  const [formattingOpen, setFormattingOpen] = useState(false);
+  const [textCleanupOpen, setTextCleanupOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     setCleanedPreviewLimit(10);
   }, [cleaningResult]);
+
+  // Auto-expand Formatting group when scan finds formatting issues
+  useEffect(() => {
+    if (!cleaningDetection) return;
+    const hasFormattingIssues =
+      cleaningIssues.some((i) => i.kind === "type_inconsistency" && i.column) ||
+      cleaningIssues.some((i) => i.kind === "format_inconsistency" && i.column) ||
+      (cleaningDetection.category_suggestions?.length ?? 0) > 0;
+    setFormattingOpen(hasFormattingIssues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleaningDetection?.dataset_version_id]);
+
+  // Auto-populate queue with AI-recommended fixes when a new scan arrives
+  useEffect(() => {
+    if (!cleaningDetection || cleaningOperations.length > 0) return;
+    const autoOps: CleaningOperation[] = [];
+    if ((cleaningDetection.duplicates ?? 0) > 0) autoOps.push(buildDuplicateOperation());
+    for (const issue of cleaningIssues.filter((i) => i.kind === "missing_values" && i.column)) {
+      const col = issue.column ?? "";
+      autoOps.push(buildMissingValueOperation(col, getDefaultMissingStrategy(col)));
+    }
+    if (autoOps.length > 0) setCleaningOperations(autoOps);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleaningDetection?.dataset_version_id]);
 
   const availableColumns = workspace.dataset.columns_json?.map((c) => String(c.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
@@ -509,6 +547,25 @@ export function PrepareTab(props: PrepareTabProps) {
   // -- Cleaning sub-tab --
   const duplicateCount = cleaningDetection?.duplicates ?? 0;
   const missingIssues = cleaningIssues.filter((i) => i.kind === "missing_values" && i.column);
+  const typeIssues = cleaningIssues.filter((i) => i.kind === "type_inconsistency" && i.column);
+  const formatIssues = cleaningIssues.filter((i) => i.kind === "format_inconsistency" && i.column);
+  const categorySuggestions = cleaningDetection?.category_suggestions ?? [];
+  const pseudoNullSummaries = cleaningDetection?.pseudo_nulls ?? [];
+  const outlierSummaries = cleaningDetection?.outliers ?? [];
+  const patternSuggestions = cleaningDetection?.pattern_suggestions ?? [];
+  const dateCols = availableColumns.filter((col) => {
+    const t = getColumnType(col);
+    return t === "datetime" || t === "datetime_string";
+  });
+  const unparseableMap = (cleaningResult?.summary.unparseable_dates ?? {}) as Record<string, import("@/lib/api").UnparseableDateRow[]>;
+  const dataIssueCount =
+    (duplicateCount > 0 ? 1 : 0) +
+    missingIssues.length +
+    pseudoNullSummaries.length +
+    patternSuggestions.length +
+    outlierSummaries.length;
+  const formattingIssueCount = typeIssues.length + formatIssues.length + categorySuggestions.length;
+  const totalIssueCount = dataIssueCount + formattingIssueCount;
   const textColumns = availableColumns.filter((col) => {
     const type = getColumnType(col);
     return ["text", "categorical", "numeric_string", "datetime_string"].includes(type);
