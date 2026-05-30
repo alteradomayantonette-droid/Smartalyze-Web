@@ -47,6 +47,7 @@ import {
 } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 import { operationsToPandasScript } from "@/lib/codeExport";
+import { OverviewTab } from "@/components/dataset/OverviewTab";
 import { PrepareTab } from "@/components/dataset/PrepareTab";
 import { ExploreTab } from "@/components/dataset/ExploreTab";
 import { DetectTab } from "@/components/dataset/DetectTab";
@@ -54,7 +55,7 @@ import { PredictTab } from "@/components/dataset/PredictTab";
 import { EditTab } from "@/components/dataset/EditTab";
 import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 
-type WorkspaceTab = "prepare" | "explore" | "detect" | "predict" | "edit";
+type WorkspaceTab = "overview" | "prepare" | "explore" | "detect" | "predict" | "edit";
 type PrepareSubTab = "overview" | "cleaning";
 type MissingStrategy = "fill_mean" | "fill_median" | "fill_mode" | "drop_rows";
 
@@ -198,7 +199,7 @@ export default function DatasetWorkspacePage() {
   const datasetId = Number(params.id);
 
   const [workspace, setWorkspace] = useState<DatasetWorkspace | null>(null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("prepare");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [prepareSubTab, setPrepareSubTab] = useState<PrepareSubTab>("overview");
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -719,6 +720,7 @@ export default function DatasetWorkspacePage() {
   if (!workspace) return null;
 
   const tabs: { key: WorkspaceTab; label: string }[] = [
+    { key: "overview", label: "Overview" },
     { key: "prepare", label: "Prepare" },
     { key: "explore", label: "Explore" },
     { key: "detect", label: "Detect" },
@@ -846,6 +848,16 @@ export default function DatasetWorkspacePage() {
 
         {/* Tab content — full width */}
         <div className="w-full">
+          {activeTab === "overview" && workspace && (
+            <TabErrorBoundary tabName="Overview">
+              <OverviewTab
+                workspace={workspace}
+                cleaningDetection={cleaningDetection}
+                onNavigate={(tab) => setActiveTab(tab as WorkspaceTab)}
+              />
+            </TabErrorBoundary>
+          )}
+
           {activeTab === "prepare" && workspace && (
             <TabErrorBoundary tabName="Prepare">
             <PrepareTab

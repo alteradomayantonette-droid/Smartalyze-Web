@@ -220,18 +220,10 @@ export default function DashboardPage() {
     },
     { missing: 0, duplicate: 0, invalid: 0 },
   );
-  const totalIssueCount = totalIssues.missing + totalIssues.duplicate + totalIssues.invalid;
   const issuesBarData = [
     { name: "Missing Values", count: totalIssues.missing, fill: CHART_COLORS.missing },
     { name: "Duplicates", count: totalIssues.duplicate, fill: CHART_COLORS.duplicate },
     { name: "Invalid Values", count: totalIssues.invalid, fill: CHART_COLORS.invalid },
-  ].filter((d) => d.count > 0);
-
-  const fileTypeData = [
-    { name: "CSV", count: datasets.filter((d) => d.file_format === "csv").length, fill: "#6366f1" },
-    { name: "Excel", count: datasets.filter((d) => d.file_format === "excel").length, fill: "#22c55e" },
-    { name: "JSON", count: datasets.filter((d) => d.file_format === "json").length, fill: "#f59e0b" },
-    { name: "Image", count: datasets.filter((d) => d.file_format === "image").length, fill: "#a78bfa" },
   ].filter((d) => d.count > 0);
 
   const recentDataset = byLatest[0] ?? null;
@@ -240,6 +232,12 @@ export default function DashboardPage() {
     .filter((d) => getHealthScore(d).label !== "Good")
     .sort((a, b) => getHealthScore(a).score - getHealthScore(b).score)
     .slice(0, 3);
+
+  const ringRadius = 36;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringDashOffset = datasets.length > 0 ? ringCircumference - (avgScore / 100) * ringCircumference : ringCircumference;
+  const ringColor = avgScore >= 80 ? "#22c55e" : avgScore >= 50 ? "#f59e0b" : "#ef4444";
+  const currentPhase = datasets.length === 0 ? 1 : needsAttentionDatasets.length > 0 ? 3 : 4;
 
   if (loading) {
     return (
@@ -260,13 +258,21 @@ export default function DashboardPage() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
 
         {/* Page Header */}
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">Smartalyze</p>
             <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
               {username ? `Welcome back, ${username}` : "Your Datasets"}
             </h1>
-            <p className="text-sm text-slate-500">Data quality portfolio — {datasets.length} dataset{datasets.length !== 1 ? "s" : ""} total.</p>
+            <p className="text-sm text-slate-500">
+              {datasets.length > 0
+                ? `Data quality portfolio — ${datasets.length} dataset${datasets.length !== 1 ? "s" : ""}`
+                : "Get started by uploading your first dataset"}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Accepts CSV, Excel, JSON — or a{" "}
+              <span className="font-medium text-indigo-500">PNG/JPG</span> for OCR table extraction.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xlsx,.xls,.json,.png,.jpg,.jpeg" onChange={handleUpload} />
@@ -302,86 +308,151 @@ export default function DashboardPage() {
               Logout
             </button>
           </div>
-          <p className="mt-1.5 text-xs text-slate-400">
-            Accepts CSV, Excel, JSON — or a{" "}
-            <span className="font-medium text-indigo-500">PNG/JPG image</span>{" "}
-            for automatic OCR table extraction.
-          </p>
         </header>
 
-        {/* Stat Cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard
-            title="Total Datasets"
-            value={String(datasets.length)}
-            sub="All uploads"
-            accent="bg-indigo-500"
-            bg="border-indigo-100"
-          />
-          <StatCard
-            title="Total Rows"
-            value={totalRows > 0 ? totalRows.toLocaleString() : "0"}
-            sub="Across all datasets"
-            accent="bg-sky-500"
-            bg="border-sky-100"
-          />
-          <StatCard
-            title="Total Columns"
-            value={totalColumns > 0 ? totalColumns.toLocaleString() : "0"}
-            sub="Across all datasets"
-            accent="bg-purple-500"
-            bg="border-purple-100"
-          />
-          <StatCard
-            title="Avg Health Score"
-            value={datasets.length > 0 ? `${avgScore}%` : "—"}
-            sub="Quality index"
-            accent="bg-emerald-500"
-            bg="border-emerald-100"
-          />
-          <StatCard
-            title="Clean Datasets"
-            value={String(cleanDatasets)}
-            sub={`of ${datasets.length} total`}
-            accent="bg-teal-500"
-            bg="border-teal-100"
-          />
-          <StatCard
-            title="Total Issues"
-            value={totalIssueCount > 0 ? totalIssueCount.toLocaleString() : "0"}
-            sub="Missing · dupes · invalid"
-            accent="bg-red-500"
-            bg="border-red-100"
-          />
-        </div>
+        {/* Workflow Guide Strip — always shown */}
+        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">How it works</p>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {(
+              [
+                { num: 1, title: "Upload", desc: "Add a CSV, Excel, JSON, or a photo of a data table (PNG/JPG)", phase: 1 },
+                { num: 2, title: "Detect Issues", desc: "Scan for missing values, duplicates, and data quality problems", phase: 2 },
+                { num: 3, title: "Clean Data", desc: "Fix issues, standardize formats, and fill in missing values", phase: 3 },
+                { num: 4, title: "Explore & Export", desc: "Visualize insights and download your clean, analysis-ready data", phase: 4 },
+              ] as const
+            ).map(({ num, title, desc, phase }) => {
+              const isActive = phase === currentPhase;
+              return (
+                <div
+                  key={num}
+                  className={`rounded-xl border p-4 transition-colors ${isActive ? "border-indigo-200 bg-indigo-50" : "border-slate-100 bg-slate-50"}`}
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${isActive ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-500"}`}
+                    >
+                      {num}
+                    </span>
+                    <span className={`text-sm font-semibold ${isActive ? "text-indigo-700" : "text-slate-600"}`}>{title}</span>
+                    {isActive && <span className="ml-auto h-2 w-2 rounded-full bg-indigo-400" />}
+                  </div>
+                  <p className="text-xs leading-relaxed text-slate-500">{desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-        {/* Needs Attention */}
+        {/* Stats Section */}
+        {datasets.length > 0 ? (
+          <div className="grid gap-4 lg:grid-cols-[200px_1fr]">
+            {/* Portfolio Health Ring */}
+            <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+              <svg width="100" height="100" viewBox="0 0 100 100" aria-label={`Portfolio health score: ${avgScore}%`}>
+                <circle cx="50" cy="50" r={ringRadius} fill="none" stroke="#f1f5f9" strokeWidth="9" />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r={ringRadius}
+                  fill="none"
+                  stroke={ringColor}
+                  strokeWidth="9"
+                  strokeLinecap="round"
+                  strokeDasharray={ringCircumference}
+                  strokeDashoffset={ringDashOffset}
+                  transform="rotate(-90 50 50)"
+                />
+                <text x="50" y="50" textAnchor="middle" dy="0.35em" fontSize="20" fontWeight="700" fill="#0f172a">
+                  {avgScore}
+                </text>
+              </svg>
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Portfolio Health</p>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  avgScore >= 80 ? "bg-green-100 text-green-700" : avgScore >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                }`}
+              >
+                {avgScore >= 80 ? "Good" : avgScore >= 50 ? "Fair" : "Needs Work"}
+              </span>
+            </div>
+
+            {/* Sub-stats grid */}
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+              <StatCard
+                title="Total Datasets"
+                value={String(datasets.length)}
+                sub="All uploads"
+                accent="bg-indigo-500"
+                bg="border-indigo-100"
+              />
+              <StatCard
+                title="Total Rows"
+                value={totalRows > 0 ? totalRows.toLocaleString() : "0"}
+                sub="Across all datasets"
+                accent="bg-sky-500"
+                bg="border-sky-100"
+              />
+              <StatCard
+                title="Total Columns"
+                value={totalColumns > 0 ? totalColumns.toLocaleString() : "0"}
+                sub="Across all datasets"
+                accent="bg-purple-500"
+                bg="border-purple-100"
+              />
+              <StatCard
+                title="Clean Datasets"
+                value={String(cleanDatasets)}
+                sub={`of ${datasets.length} total`}
+                accent="bg-teal-500"
+                bg="border-teal-100"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {/* Action Required */}
         {needsAttentionDatasets.length > 0 && (
-          <section className="mb-2">
-            <h2 className="text-sm font-semibold text-slate-700 mb-3">Needs Attention</h2>
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+              <h2 className="text-sm font-semibold text-slate-700">Action Required</h2>
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
+                {needsAttentionDatasets.length} dataset{needsAttentionDatasets.length > 1 ? "s" : ""}
+              </span>
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {needsAttentionDatasets.map((d) => {
                 const health = getHealthScore(d);
                 const issues = getIssueItems(d);
+                const borderColor = health.label === "Needs Work" ? "#ef4444" : "#f59e0b";
                 return (
-                  <div key={d.id} className="flex flex-col gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-2">
+                  <div
+                    key={d.id}
+                    className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                    style={{ borderLeftWidth: 4, borderLeftColor: borderColor }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
                       <span className="truncate text-sm font-medium text-slate-800">{d.original_filename}</span>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${health.label === "Needs Work" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
-                        {health.label}
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          health.label === "Needs Work" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {health.score}%
                       </span>
                     </div>
                     <p className="text-xs text-slate-500">
-                      {issues.missing > 0 && <>{issues.missing.toLocaleString()} missing cells</>}
-                      {issues.missing > 0 && issues.duplicate > 0 && <> · </>}
-                      {issues.duplicate > 0 && <>{issues.duplicate.toLocaleString()} duplicates</>}
-                      {issues.missing === 0 && issues.duplicate === 0 && "Review data quality"}
+                      {issues.missing > 0 && <span>{issues.missing.toLocaleString()} missing cells</span>}
+                      {issues.missing > 0 && issues.duplicate > 0 && <span> · </span>}
+                      {issues.duplicate > 0 && <span>{issues.duplicate.toLocaleString()} duplicates</span>}
+                      {issues.missing === 0 && issues.duplicate === 0 && <span>Review data quality</span>}
                     </p>
                     <Link
                       href={`/dataset/${d.id}?tab=prepare`}
-                      className="mt-auto self-end text-xs font-medium text-indigo-600 hover:underline"
+                      className="mt-1 self-start rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-indigo-500"
                     >
-                      Fix now →
+                      Fix Now →
                     </Link>
                   </div>
                 );
@@ -392,19 +463,19 @@ export default function DashboardPage() {
 
         {/* Charts Row */}
         {datasets.length > 0 ? (
-          <div className="grid gap-6 lg:grid-cols-[2fr_1fr_1fr]">
+          <div className="grid gap-6 lg:grid-cols-2">
             <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <h2 className="text-sm font-semibold text-slate-900">Data Quality Breakdown</h2>
               <p className="text-xs text-slate-500">Distribution of health scores across all datasets</p>
               {qualityPieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie
                       data={qualityPieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
+                      innerRadius={65}
+                      outerRadius={95}
                       paddingAngle={3}
                       dataKey="value"
                       label={({ name, value }) => `${name}: ${value}`}
@@ -419,7 +490,7 @@ export default function DashboardPage() {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex h-55 items-center justify-center text-sm text-slate-400">
+                <div className="flex h-64 items-center justify-center text-sm text-slate-400">
                   Upload datasets to see quality breakdown
                 </div>
               )}
@@ -429,12 +500,12 @@ export default function DashboardPage() {
               <h2 className="text-sm font-semibold text-slate-900">Top Issues</h2>
               <p className="text-xs text-slate-500">Cumulative counts across all datasets</p>
               {issuesBarData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={issuesBarData} layout="vertical" margin={{ top: 8, right: 32, left: 8, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value) => [value, "Count"]} cursor={{ fill: "#f1f5f9" }} />
-                    <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={issuesBarData} layout="vertical" margin={{ top: 16, right: 48, left: 8, bottom: 16 }}>
+                    <XAxis type="number" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(value) => [Number(value ?? 0).toLocaleString(), "Count"]} cursor={{ fill: "#f8fafc" }} />
+                    <Bar dataKey="count" radius={[0, 6, 6, 0]} label={{ position: "right", fontSize: 11, fill: "#64748b" }}>
                       {issuesBarData.map((entry, index) => (
                         <Cell key={`bar-${index}`} fill={entry.fill} />
                       ))}
@@ -442,31 +513,10 @@ export default function DashboardPage() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex h-55 items-center justify-center text-sm text-slate-400">
-                  No issues detected — data looks clean.
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold text-slate-900">File Types</h2>
-              <p className="text-xs text-slate-500">Breakdown by format</p>
-              {fileTypeData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={fileTypeData} layout="vertical" margin={{ top: 8, right: 32, left: 8, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={44} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value) => [value, "Datasets"]} cursor={{ fill: "#f1f5f9" }} />
-                    <Bar dataKey="count" radius={[0, 6, 6, 0]}>
-                      {fileTypeData.map((entry, index) => (
-                        <Cell key={`ft-${index}`} fill={entry.fill} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-55 items-center justify-center text-sm text-slate-400">
-                  No data yet.
+                <div className="flex h-64 items-center justify-center flex-col gap-2">
+                  <span className="text-2xl">✓</span>
+                  <p className="text-sm font-medium text-emerald-600">No issues detected</p>
+                  <p className="text-xs text-slate-400">Your data looks clean across all datasets.</p>
                 </div>
               )}
             </div>
@@ -564,9 +614,13 @@ export default function DashboardPage() {
                     if (issues.missing > 0) issueParts.push(`${issues.missing} missing`);
                     if (issues.duplicate > 0) issueParts.push(`${issues.duplicate} dup${issues.duplicate !== 1 ? "s" : ""}`);
                     if (issues.invalid > 0) issueParts.push(`${issues.invalid} invalid`);
+                    const rowBorderColor = health.score >= 80 ? "#22c55e" : health.score >= 50 ? "#f59e0b" : "#ef4444";
                     return (
                       <tr key={dataset.id} className="transition hover:bg-slate-50/60">
-                        <td className="px-4 py-3">
+                        <td
+                          className="py-3 pl-0 pr-4"
+                          style={{ borderLeft: `4px solid ${rowBorderColor}`, paddingLeft: 12 }}
+                        >
                           <div className="flex items-center gap-2">
                             <p className="max-w-44 truncate font-medium text-slate-900">{dataset.original_filename}</p>
                             {dataset.file_format === "image" && (
@@ -579,13 +633,21 @@ export default function DashboardPage() {
                         </td>
                         <td className="px-4 py-3 text-slate-600">{dataset.row_count?.toLocaleString() ?? "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{dataset.column_count ?? "—"}</td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium cursor-help ${health.classes}`}
-                            title={`Score: ${health.score}. Good ≥80, Fair ≥50, Needs Work <50`}
-                          >
-                            {health.label} · {health.score}
-                          </span>
+                        <td className="px-4 py-3 min-w-32.5">
+                          <div className="flex flex-col gap-1" title={`Score: ${health.score}. Good ≥80, Fair ≥50, Needs Work <50`}>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-semibold text-slate-700">{health.score}%</span>
+                              <span className={`text-xs font-medium ${health.score >= 80 ? "text-green-600" : health.score >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                                {health.label}
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${health.score}%`, backgroundColor: rowBorderColor }}
+                              />
+                            </div>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           {hasIssues ? (
