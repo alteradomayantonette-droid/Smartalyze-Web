@@ -754,6 +754,119 @@ export function PrepareTab(props: PrepareTabProps) {
                     </div>
                   )}
 
+                  {/* Formatting Group */}
+                  {cleaningDetection && (
+                    <div className="rounded-2xl border border-purple-200 bg-white overflow-hidden shadow-sm">
+                      <button type="button" className="flex w-full items-center gap-2 px-5 py-3.5 bg-slate-50 border-b border-slate-100 text-left hover:bg-slate-100 transition" onClick={() => setFormattingOpen((o) => !o)}>
+                        <span className="h-2.5 w-2.5 rounded-full bg-purple-500 shrink-0" />
+                        <span className="font-semibold text-slate-950 text-sm">Formatting</span>
+                        {formattingIssueCount > 0
+                          ? <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-700 ml-1">{formattingIssueCount} found</span>
+                          : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500 ml-1">none detected</span>}
+                        <span className="ml-auto text-slate-400 text-xs">{formattingOpen ? "▾" : "▸"}</span>
+                      </button>
+
+                      {formattingOpen && (
+                        <div className="divide-y divide-slate-100">
+
+                          {/* Type inconsistencies */}
+                          {typeIssues.map((issue) => {
+                            const col = issue.column ?? "";
+                            const inferred = String(issue.details?.inferred_type ?? "");
+                            const target: "numeric" | "datetime" = inferred === "datetime_string" ? "datetime" : "numeric";
+                            const queued = hasQueuedOperation(buildConvertTypeOperation(col, target));
+                            return (
+                              <div key={col} className="flex items-start gap-3 px-5 py-3.5">
+                                <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"}`} onClick={() => toggleConvertType(col, target)}>
+                                  {queued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
+                                </button>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-slate-950">Convert <span className="text-indigo-600">&quot;{col}&quot;</span> from text → {target}</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">This column contains {target} values stored as text. AI is confident this is a mistake.</p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-700">Type Fix</span>
+                              </div>
+                            );
+                          })}
+
+                          {/* Date standardization */}
+                          {dateCols.map((col) => {
+                            const fmt = dateFormatChoices[col] ?? "iso";
+                            const hint = dayfirstChoices[col] ?? "auto";
+                            const queued = hasQueuedOperation(buildStandardizeDatesOperation(col, fmt, hint));
+                            const unparseable = unparseableMap[col] ?? [];
+                            return (
+                              <div key={col} className="px-5 py-3.5">
+                                <div className="flex items-start gap-3">
+                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"}`} onClick={() => toggleStandardizeDates(col)}>
+                                    {queued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
+                                  </button>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-slate-950">Standardize dates in <span className="text-indigo-600">&quot;{col}&quot;</span></p>
+                                    <div className="mt-1.5 flex flex-wrap gap-3">
+                                      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                                        Format
+                                        <select className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none" value={fmt} onChange={(e) => setDateFormatChoices((c) => ({ ...c, [col]: e.target.value as DateOutputFormat }))}>
+                                          {(["iso", "us", "eu"] as DateOutputFormat[]).map((f) => <option key={f} value={f}>{DATE_FORMAT_LABELS[f]}</option>)}
+                                        </select>
+                                      </label>
+                                      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                                        Order
+                                        <select className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none" value={hint} onChange={(e) => setDayfirstChoices((c) => ({ ...c, [col]: e.target.value as DayFirstHint }))}>
+                                          {(["auto", "day", "month"] as DayFirstHint[]).map((h) => <option key={h} value={h}>{DAYFIRST_LABELS[h]}</option>)}
+                                        </select>
+                                      </label>
+                                    </div>
+                                    {unparseable.length > 0 && <p className="mt-1.5 text-xs text-amber-700">{unparseable.length} cell{unparseable.length !== 1 ? "s" : ""} could not be parsed — original values preserved.</p>}
+                                  </div>
+                                  <span className="shrink-0 rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-700">Dates</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* Category standardization */}
+                          {categorySuggestions.map((sug) => {
+                            const mapping = buildCategoryMapping(sug);
+                            const queued = hasQueuedOperation(buildStandardizeCategoriesOperation(sug.column, mapping));
+                            const edits = categoryMappingEdits[sug.column] ?? {};
+                            return (
+                              <div key={`cat-${sug.column}`} className="px-5 py-3.5">
+                                <div className="flex items-start gap-3">
+                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"}`} onClick={() => toggleStandardizeCategories(sug.column, mapping)}>
+                                    {queued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
+                                  </button>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-slate-950">Fix inconsistent values in <span className="text-indigo-600">&quot;{sug.column}&quot;</span></p>
+                                    <div className="mt-2 space-y-1.5">
+                                      {sug.groups.map((g) => (
+                                        <div key={`${sug.column}-${g.canonical}`} className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                                          <span className="flex flex-wrap gap-1">
+                                            {g.variants.map((v) => (
+                                              <span key={v} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 line-through">{v}</span>
+                                            ))}
+                                          </span>
+                                          <span className="text-slate-400">→</span>
+                                          <input type="text" className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-900 outline-none focus:border-indigo-500" value={edits[g.canonical] ?? g.canonical} onChange={(e) => setCategoryCanonical(sug.column, g.canonical, e.target.value)} />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <span className="shrink-0 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">Categories</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {formattingIssueCount === 0 && (
+                            <div className="px-5 py-4 text-sm text-slate-500">No formatting issues detected.</div>
+                          )}
+
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>{/* /LEFT */}
 
                 {/* RIGHT: AI sidebar */}
