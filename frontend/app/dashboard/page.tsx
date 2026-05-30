@@ -105,6 +105,7 @@ export default function DashboardPage() {
   const [loadingSample, setLoadingSample] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<DatasetSortKey>("recent");
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const storedToken = getStoredToken();
@@ -178,6 +179,34 @@ export default function DashboardPage() {
   }
 
   function handleLogout() { clearStoredToken(); router.replace("/login"); }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false);
+  }
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0] ?? null;
+    if (!file) return;
+    const tok = token ?? getStoredToken();
+    if (!tok) { toast.warning("You need to be logged in to upload."); return; }
+    const isImage = /\.(png|jpe?g)$/i.test(file.name);
+    setUploadingMessage(isImage ? "Extracting table from image…" : "Uploading…");
+    setUploading(true);
+    try {
+      await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok);
+      await refreshDatasets(tok);
+      toast.success(isImage ? "Image table extracted and saved." : "Dataset uploaded successfully.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   // Derived data
   const byLatest = [...datasets].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -553,39 +582,59 @@ export default function DashboardPage() {
           </div>
 
           {datasets.length === 0 ? (
-            <div className="mt-5">
-              <p className="mb-4 text-sm font-medium text-slate-700">Get started in 4 steps</p>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {([
-                  { step: "1", title: "Upload", desc: "Add a CSV, Excel, JSON, or a photo of a data table (PNG/JPG)" },
-                  { step: "2", title: "Clean", desc: "Remove duplicates, fill missing values, standardise types" },
-                  { step: "3", title: "Explore", desc: "Group, trend, and visualise your data with one click" },
-                  { step: "4", title: "Export", desc: "Download your cleaned data or analysis results" },
-                ] as const).map(({ step, title, desc }) => (
-                  <div key={step} className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
-                    <p className="text-xs font-bold text-indigo-400">Step {step}</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900">{title}</p>
-                    <p className="mt-1 text-xs text-slate-500 leading-relaxed">{desc}</p>
+            <div
+              className={`mt-5 flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed py-14 transition-colors ${
+                isDragging ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50/60"
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => { void handleDrop(e); }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none"
+                stroke={isDragging ? "#6366f1" : "#94a3b8"} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true">
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+                <path d="M12 12v9" />
+                <path d="m16 16-4-4-4 4" />
+              </svg>
+              <div className="text-center">
+                <p className={`text-lg font-semibold ${isDragging ? "text-indigo-600" : "text-slate-500"}`}>
+                  {uploading ? uploadingMessage : "Drag & Drop files here"}
+                </p>
+                {!uploading && (
+                  <p className="mt-1 text-sm text-slate-400">CSV, Excel, JSON — or a PNG/JPG for OCR table extraction</p>
+                )}
+              </div>
+              {uploading ? (
+                <div className="flex items-center gap-2 text-sm text-indigo-600">
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  {uploadingMessage}
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-400">or</p>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      className="rounded-xl border-2 border-indigo-400 bg-white px-6 py-2.5 text-sm font-bold text-indigo-500 transition hover:bg-indigo-50"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Browse Files
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                      onClick={handleLoadSample}
+                      disabled={loadingSample}
+                    >
+                      {loadingSample ? "Loading…" : "Try sample data"}
+                    </button>
                   </div>
-                ))}
-              </div>
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload your first dataset
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                  onClick={handleLoadSample}
-                  disabled={loadingSample}
-                >
-                  {loadingSample ? "Loading…" : "Try sample data"}
-                </button>
-              </div>
+                </>
+              )}
             </div>
           ) : sorted.length === 0 ? (
             <div className="mt-5 rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
