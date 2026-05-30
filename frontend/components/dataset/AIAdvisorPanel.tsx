@@ -57,8 +57,6 @@ export function AIAdvisorPanel({ detectResult, dataset, token }: AIAdvisorPanelP
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
-
   const chatEndRef = useRef<HTMLDivElement>(null);
   const context = buildContext(detectResult, dataset);
 
@@ -79,8 +77,8 @@ export function AIAdvisorPanel({ detectResult, dataset, token }: AIAdvisorPanelP
   }, [detectResult.dataset_version_id]);
 
   useEffect(() => {
-    if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory, chatOpen]);
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory]);
 
   async function handleSendChat() {
     const msg = chatInput.trim();
@@ -113,20 +111,11 @@ export function AIAdvisorPanel({ detectResult, dataset, token }: AIAdvisorPanelP
   return (
     <div className="rounded-2xl border border-indigo-200 bg-indigo-50 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-indigo-100">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-indigo-900">AI Advice</span>
-          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600 uppercase tracking-wide">
-            ModelOllama
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setChatOpen((o) => !o)}
-          className="rounded-lg border border-indigo-200 bg-white px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50 transition-colors"
-        >
-          {chatOpen ? "Hide chat" : "Ask a question"}
-        </button>
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-indigo-100">
+        <span className="text-sm font-semibold text-indigo-900">AI Advisor</span>
+        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600 uppercase tracking-wide">
+          AI
+        </span>
       </div>
 
       {/* Suggestion body */}
@@ -151,8 +140,7 @@ export function AIAdvisorPanel({ detectResult, dataset, token }: AIAdvisorPanelP
       </div>
 
       {/* Chat panel */}
-      {chatOpen && (
-        <div className="border-t border-indigo-100 bg-white">
+      <div className="border-t border-indigo-100 bg-white">
           {/* Chat history */}
           {chatHistory.length > 0 && (
             <div className="max-h-60 overflow-y-auto px-5 py-3 space-y-3">
@@ -206,7 +194,6 @@ export function AIAdvisorPanel({ detectResult, dataset, token }: AIAdvisorPanelP
             </button>
           </div>
         </div>
-      )}
     </div>
   );
 }
