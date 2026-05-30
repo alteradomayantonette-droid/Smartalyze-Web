@@ -31,36 +31,30 @@ const CHART_COLORS = {
   invalid: "#f97316",
 };
 
-function getNumericSummaryValue(summary: Record<string, unknown> | null | undefined, keys: string[]): number {
-  for (const key of keys) {
-    const value = summary?.[key];
-    const numericValue = typeof value === "number" ? value : Number(value ?? 0);
-    if (Number.isFinite(numericValue) && numericValue > 0) return numericValue;
-  }
-  return 0;
-}
-
-function getHealthScore(dataset: Dataset): { score: number; label: "Good" | "Fair" | "Needs Work"; classes: string } {
-  const summary = dataset.summary_json ?? {};
+function getDeductions(dataset: Dataset) {
+  const s = dataset.summary_json ?? {};
   const rowCount = dataset.row_count ?? 0;
-  const missingCells = Number(summary.missing_cells ?? 0);
-  const duplicateRows = Number(summary.duplicate_rows ?? 0);
-  const totalCells = rowCount * (dataset.column_count ?? 1) || 1;
-  const missingRate = missingCells / totalCells;
-  const dupRate = rowCount > 0 ? duplicateRows / rowCount : 0;
-  const score = Math.round((1 - missingRate) * 0.6 * 100 + (1 - dupRate) * 0.4 * 100);
-  if (score >= 80) return { score, label: "Good", classes: "bg-green-100 text-green-700" };
-  if (score >= 50) return { score, label: "Fair", classes: "bg-yellow-100 text-yellow-700" };
-  return { score, label: "Needs Work", classes: "bg-red-100 text-red-700" };
-}
+  const colCount = dataset.column_count ?? 1;
+  const missing = Number(s.missing_cells ?? 0);
+  const dups = Number(s.duplicate_rows ?? 0);
+  const totalCells = rowCount * colCount || 1;
 
-function getIssueItems(dataset: Dataset) {
-  const summary = dataset.summary_json ?? {};
-  return {
-    missing: getNumericSummaryValue(summary, ["missing_cells", "missing_values"]),
-    duplicate: getNumericSummaryValue(summary, ["duplicate_rows", "duplicates"]),
-    invalid: getNumericSummaryValue(summary, ["invalid_values", "invalid_rows", "invalid_data_types", "type_issues"]),
-  };
+  const missingDed = Math.min(30, Math.round((missing / totalCells) * 150));
+  const dupDed     = Math.min(20, Math.round((rowCount > 0 ? dups / rowCount : 0) * 200));
+  const typeDed    = Math.min(15, Number(s.type_issue_columns ?? 0) * 5);
+  const pseudoDed  = Math.min(10, Number(s.pseudo_null_columns ?? 0) * 3);
+  const variantDed = Math.min(10, Number(s.variant_columns ?? 0) * 3);
+  const outlierDed = Math.min(5,  Number(s.outlier_columns ?? 0) * 2);
+
+  const score = Math.max(0, 100 - missingDed - dupDed - typeDed - pseudoDed - variantDed - outlierDed);
+  const label = score >= 85 ? "Great" : score >= 65 ? "Good" : score >= 45 ? "Fair" : "Needs Work";
+  const classes = score >= 85 ? "bg-green-100 text-green-700"
+                : score >= 65 ? "bg-teal-100 text-teal-700"
+                : score >= 45 ? "bg-yellow-100 text-yellow-700"
+                : "bg-red-100 text-red-700";
+  const borderColor = score >= 85 ? "#22c55e" : score >= 65 ? "#14b8a6" : score >= 45 ? "#f59e0b" : "#ef4444";
+
+  return { score, label, classes, borderColor, missingDed, dupDed, typeDed, pseudoDed, variantDed, outlierDed };
 }
 
 function formatRelativeDate(value: string): string {
@@ -220,32 +214,33 @@ export default function DashboardPage() {
   const totalRows = datasets.reduce((s, d) => s + Number(d.row_count ?? 0), 0);
   const totalColumns = datasets.reduce((s, d) => s + Number(d.column_count ?? 0), 0);
   const healthCounts = datasets.reduce((acc, d) => {
-    const h = getHealthScore(d).label;
-    acc[h] = (acc[h] ?? 0) + 1;
+    const label = getDeductions(d).label;
+    acc[label] = (acc[label] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-  const cleanDatasets = healthCounts["Good"] ?? 0;
+  const cleanDatasets = (healthCounts["Great"] ?? 0) + (healthCounts["Good"] ?? 0);
 
   const qualityPieData = [
-    { name: "Good", value: healthCounts["Good"] ?? 0, fill: CHART_COLORS.good },
-    { name: "Fair", value: healthCounts["Fair"] ?? 0, fill: CHART_COLORS.fair },
+    { name: "Great", value: healthCounts["Great"] ?? 0, fill: CHART_COLORS.good },
+    { name: "Good",  value: healthCounts["Good"]  ?? 0, fill: "#14b8a6" },
+    { name: "Fair",  value: healthCounts["Fair"]  ?? 0, fill: CHART_COLORS.fair },
     { name: "Needs Work", value: healthCounts["Needs Work"] ?? 0, fill: CHART_COLORS.needsWork },
   ].filter((d) => d.value > 0);
 
   const totalIssues = datasets.reduce(
     (acc, d) => {
-      const issues = getIssueItems(d);
-      acc.missing += issues.missing;
-      acc.duplicate += issues.duplicate;
-      acc.invalid += issues.invalid;
+      const s = d.summary_json ?? {};
+      acc.missing   += Number(s.missing_cells ?? 0);
+      acc.duplicate += Number(s.duplicate_rows ?? 0);
+      acc.invalid   += Number(s.type_issue_columns ?? 0) + Number(s.pseudo_null_columns ?? 0);
       return acc;
     },
     { missing: 0, duplicate: 0, invalid: 0 },
   );
   const issuesBarData = [
-    { name: "Missing Values", count: totalIssues.missing, fill: CHART_COLORS.missing },
-    { name: "Duplicates", count: totalIssues.duplicate, fill: CHART_COLORS.duplicate },
-    { name: "Invalid Values", count: totalIssues.invalid, fill: CHART_COLORS.invalid },
+    { name: "Missing Values", count: totalIssues.missing,   fill: CHART_COLORS.missing },
+    { name: "Duplicates",     count: totalIssues.duplicate, fill: CHART_COLORS.duplicate },
+    { name: "Type / Format",  count: totalIssues.invalid,   fill: CHART_COLORS.invalid },
   ].filter((d) => d.count > 0);
 
   if (loading) {
@@ -404,13 +399,13 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 sorted.map((dataset) => {
-                  const health = getHealthScore(dataset);
-                  const rowBorderColor = health.score >= 80 ? "#22c55e" : health.score >= 50 ? "#f59e0b" : "#ef4444";
+                  const d = getDeductions(dataset);
+                  const isClean = d.score === 100;
                   return (
                     <div
                       key={dataset.id}
-                      className="group flex cursor-pointer items-center gap-3 border-b border-slate-50 px-4 py-3 transition hover:bg-slate-50"
-                      style={{ borderLeft: `3px solid ${rowBorderColor}` }}
+                      className="group flex cursor-pointer items-start gap-3 border-b border-slate-50 px-4 py-3 transition hover:bg-slate-50"
+                      style={{ borderLeft: `3px solid ${d.borderColor}` }}
                       onClick={() => router.push(`/dataset/${dataset.id}`)}
                     >
                       <div className="min-w-0 flex-1">
@@ -423,13 +418,36 @@ export default function DashboardPage() {
                         <p className="text-xs text-slate-400">
                           {dataset.row_count?.toLocaleString() ?? "—"} rows · {dataset.column_count ?? "—"} cols · {formatRelativeDate(dataset.created_at)}
                         </p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {isClean && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-100 text-green-700">✓ Clean</span>
+                          )}
+                          {d.missingDed > 0 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800">↓ Missing −{d.missingDed}%</span>
+                          )}
+                          {d.dupDed > 0 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700">⊗ Dupes −{d.dupDed}%</span>
+                          )}
+                          {d.typeDed > 0 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-violet-100 text-violet-700">⚠ Types −{d.typeDed}%</span>
+                          )}
+                          {d.pseudoDed > 0 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-yellow-100 text-yellow-800">~ Pseudo-nulls −{d.pseudoDed}%</span>
+                          )}
+                          {d.variantDed > 0 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-sky-100 text-sky-700">≈ Variants −{d.variantDed}%</span>
+                          )}
+                          {d.outlierDed > 0 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">◈ Outliers −{d.outlierDed}%</span>
+                          )}
+                        </div>
                       </div>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${health.classes}`}>
-                        {health.score}%
+                      <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${d.classes}`}>
+                        {d.score}%
                       </span>
                       <button
                         type="button"
-                        className="shrink-0 text-sm text-red-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100"
+                        className="mt-0.5 shrink-0 text-sm text-red-400 opacity-0 transition hover:text-red-600 group-hover:opacity-100"
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget(dataset); }}
                         aria-label="Delete dataset"
                       >

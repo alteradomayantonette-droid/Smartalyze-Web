@@ -11,6 +11,7 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.session import get_db
 from app.schemas.cleaning import CleanApplyRequest, CleanApplyResponse, CleanDetectRequest, CleanDetectResponse
@@ -53,6 +54,29 @@ async def detect_cleaning(
         dataset,
         payload.dataset_version_id,
     )
+
+    # Persist scan-derived issue counts into the version's summary so the dashboard
+    # can use them for the deduction-based health score without requiring a re-scan.
+    type_issue_cols = len({i.column for i in issues if i.kind in ("type_inconsistency", "format_inconsistency") and i.column})
+    pseudo_null_cols = len(findings.pseudo_nulls or [])
+    variant_cols = len(findings.category_suggestions or [])
+    outlier_cols = len(findings.outliers or [])
+
+    existing_summary = version.data_snapshot.get("summary") or {}
+    version.data_snapshot = {
+        **version.data_snapshot,
+        "summary": {
+            **existing_summary,
+            "type_issue_columns": type_issue_cols,
+            "pseudo_null_columns": pseudo_null_cols,
+            "variant_columns": variant_cols,
+            "outlier_columns": outlier_cols,
+            "scan_completed": True,
+        },
+    }
+    flag_modified(version, "data_snapshot")
+    await db.commit()
+
     return {
         "dataset_id": dataset.id,
         "dataset_version_id": version.id,
