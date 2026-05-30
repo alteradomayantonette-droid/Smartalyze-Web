@@ -853,6 +853,10 @@ export default function DatasetWorkspacePage() {
                 workspace={workspace}
                 cleaningDetection={cleaningDetection}
                 onNavigate={(tab) => setActiveTab(tab as WorkspaceTab)}
+                extraRows={overviewExtraRows}
+                totalRows={overviewTotalRows}
+                loadingMore={overviewLoadingMore}
+                onLoadMore={handleLoadMoreOverviewRows}
               />
             </TabErrorBoundary>
           )}

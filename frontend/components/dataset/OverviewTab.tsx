@@ -1,11 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { CleanDetectResponse, DatasetWorkspace } from "@/lib/api";
 
 interface OverviewTabProps {
   workspace: DatasetWorkspace;
   cleaningDetection: CleanDetectResponse | null;
   onNavigate: (tab: "prepare" | "explore" | "detect") => void;
+  extraRows: Record<string, unknown>[];
+  totalRows: number | null;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -15,34 +20,31 @@ function formatBytes(bytes: number): string {
 }
 
 function computeHealth(
-  missingCells: number,
-  duplicateRows: number,
-  totalCells: number,
+  summary: Record<string, unknown>,
   rowCount: number,
-): { score: number; color: string; label: string } {
-  const missingRate = totalCells > 0 ? missingCells / totalCells : 0;
-  const dupRate = rowCount > 0 ? duplicateRows / rowCount : 0;
-  const score = Math.round((1 - missingRate) * 0.6 * 100 + (1 - dupRate) * 0.4 * 100);
-  const color = score >= 80 ? "#22c55e" : score >= 50 ? "#f59e0b" : "#ef4444";
-  const label = score >= 80 ? "Good" : score >= 50 ? "Fair" : "Needs Work";
-  return { score, color, label };
+  colCount: number,
+): { score: number; color: string; label: string; badgeClasses: string } {
+  const missing = Number(summary.missing_cells ?? 0);
+  const dups = Number(summary.duplicate_rows ?? 0);
+  const totalCells = rowCount * (colCount || 1) || 1;
+
+  const missingDed = Math.min(30, Math.round((missing / totalCells) * 150));
+  const dupDed     = Math.min(20, Math.round((rowCount > 0 ? dups / rowCount : 0) * 200));
+  const typeDed    = Math.min(15, Number(summary.type_issue_columns ?? 0) * 5);
+  const pseudoDed  = Math.min(10, Number(summary.pseudo_null_columns ?? 0) * 3);
+  const variantDed = Math.min(10, Number(summary.variant_columns ?? 0) * 3);
+  const outlierDed = Math.min(5,  Number(summary.outlier_columns ?? 0) * 2);
+
+  const score = Math.max(0, 100 - missingDed - dupDed - typeDed - pseudoDed - variantDed - outlierDed);
+  const label = score >= 85 ? "Great" : score >= 65 ? "Good" : score >= 45 ? "Fair" : "Needs Work";
+  const color = score >= 85 ? "#22c55e" : score >= 65 ? "#14b8a6" : score >= 45 ? "#f59e0b" : "#ef4444";
+  const badgeClasses = score >= 85 ? "bg-green-100 text-green-700"
+                     : score >= 65 ? "bg-teal-100 text-teal-700"
+                     : score >= 45 ? "bg-amber-100 text-amber-700"
+                     : "bg-red-100 text-red-700";
+  return { score, color, label, badgeClasses };
 }
 
-function TypeBadge({ type }: { type: string }) {
-  const config: Record<string, { label: string; classes: string }> = {
-    numeric: { label: "Numeric", classes: "bg-blue-100 text-blue-700" },
-    numeric_string: { label: "Numeric", classes: "bg-blue-100 text-blue-700" },
-    text: { label: "Text", classes: "bg-slate-100 text-slate-600" },
-    categorical: { label: "Category", classes: "bg-violet-100 text-violet-700" },
-    datetime: { label: "Date/Time", classes: "bg-amber-100 text-amber-700" },
-    datetime_string: { label: "Date/Time", classes: "bg-amber-100 text-amber-700" },
-    boolean: { label: "Boolean", classes: "bg-pink-100 text-pink-700" },
-  };
-  const info = config[type] ?? { label: type || "Unknown", classes: "bg-slate-100 text-slate-500" };
-  return (
-    <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${info.classes}`}>{info.label}</span>
-  );
-}
 
 function SeverityBadge({ severity }: { severity: string }) {
   const classes =
@@ -58,7 +60,7 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
-export function OverviewTab({ workspace, cleaningDetection, onNavigate }: OverviewTabProps) {
+export function OverviewTab({ workspace, cleaningDetection, onNavigate, extraRows, totalRows, loadingMore, onLoadMore }: OverviewTabProps) {
   const { dataset } = workspace;
   const rowCount = dataset.row_count ?? 0;
   const colCount = dataset.column_count ?? 0;
@@ -67,7 +69,7 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
   const duplicateRows = Number(summary.duplicate_rows ?? 0);
   const totalCells = rowCount * (colCount || 1);
 
-  const health = computeHealth(missingCells, duplicateRows, totalCells, rowCount);
+  const health = computeHealth(summary, rowCount, colCount);
   const ringRadius = 38;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringDashOffset = ringCircumference - (health.score / 100) * ringCircumference;
@@ -76,33 +78,19 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
   const preview = (dataset.preview_json ?? []) as Array<Record<string, unknown>>;
   const colNames = columns.map((c) => String(c.name ?? "")).filter(Boolean);
 
-  const uniqueCounts: Record<string, number> = {};
-  colNames.forEach((col) => {
-    const seen = new Set<unknown>();
-    preview.forEach((row) => {
-      const val = row[col];
-      if (val !== null && val !== undefined && val !== "") seen.add(val);
-    });
-    uniqueCounts[col] = seen.size;
-  });
+  const [visibleCount, setVisibleCount] = useState(10);
+  const allRows = [...preview, ...extraRows];
+  const shownRows = allRows.slice(0, visibleCount);
 
-  function getFirstValue(col: string): string {
-    for (const row of preview) {
-      const val = row[col];
-      if (val !== null && val !== undefined && val !== "") return String(val);
+  function handleShowMore() {
+    const nextCount = visibleCount + 10;
+    if (nextCount > allRows.length && allRows.length < (totalRows ?? rowCount)) {
+      onLoadMore();
     }
-    return "—";
+    setVisibleCount(nextCount);
   }
 
-  function getCompleteness(col: string): number {
-    if (rowCount === 0) return 100;
-    const missing = cleaningDetection?.missing_values?.[col] ?? 0;
-    return Math.max(0, Math.round(((rowCount - missing) / rowCount) * 100));
-  }
-
-  function getColType(col: string, rawType: string): string {
-    return cleaningDetection?.column_types?.[col] ?? rawType;
-  }
+  const hasMore = visibleCount < allRows.length || allRows.length < (totalRows ?? rowCount);
 
   const overallCompleteness = totalCells > 0 ? Math.round(((totalCells - missingCells) / totalCells) * 100) : 100;
   const issues = (cleaningDetection?.issues ?? []) as Array<Record<string, unknown>>;
@@ -175,15 +163,7 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
             </text>
           </svg>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Dataset Health</p>
-          <span
-            className={`rounded-full px-3 py-0.5 text-xs font-semibold ${
-              health.score >= 80
-                ? "bg-green-100 text-green-700"
-                : health.score >= 50
-                ? "bg-amber-100 text-amber-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
+          <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${health.badgeClasses}`}>
             {health.label}
           </span>
         </div>
@@ -198,68 +178,6 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
           ))}
         </div>
       </div>
-
-      {/* Column Overview Table */}
-      {colNames.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="text-sm font-semibold text-slate-900">Column Overview</h2>
-            <p className="text-xs text-slate-500">
-              {colNames.length} columns · completeness based on {rowCount.toLocaleString()} rows
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100 text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500">
-                <tr>
-                  <th className="px-5 py-3 text-left font-medium">Column</th>
-                  <th className="px-4 py-3 text-left font-medium">Type</th>
-                  <th className="px-4 py-3 text-left font-medium min-w-36">Completeness</th>
-                  <th className="px-4 py-3 text-left font-medium">Unique (sample)</th>
-                  <th className="px-4 py-3 text-left font-medium">Sample value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50 bg-white">
-                {columns.map((col) => {
-                  const name = String(col.name ?? "");
-                  const rawType = String(col.data_type ?? "");
-                  const colType = getColType(name, rawType);
-                  const completeness = getCompleteness(name);
-                  const completenessColor =
-                    completeness >= 90 ? "#22c55e" : completeness >= 70 ? "#f59e0b" : "#ef4444";
-                  return (
-                    <tr key={name} className="transition-colors hover:bg-slate-50/60">
-                      <td className="px-5 py-3 font-medium text-slate-900">{name}</td>
-                      <td className="px-4 py-3">
-                        <TypeBadge type={colType} />
-                      </td>
-                      <td className="px-4 py-3 min-w-36">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-xs font-semibold text-slate-700">{completeness}%</span>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${completeness}%`, backgroundColor: completenessColor }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
-                        {uniqueCounts[name] ?? "—"}{preview.length < rowCount ? "+" : ""}
-                      </td>
-                      <td className="max-w-32 px-4 py-3">
-                        <span className="block truncate font-mono text-xs text-slate-500">
-                          {getFirstValue(name)}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Issues + Quick Actions */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -322,12 +240,12 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
       </div>
 
       {/* Data Preview */}
-      {preview.length > 0 && colNames.length > 0 && (
+      {allRows.length > 0 && colNames.length > 0 && (
         <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-4">
             <h2 className="text-sm font-semibold text-slate-900">Data Preview</h2>
             <p className="text-xs text-slate-500">
-              Showing first {Math.min(preview.length, 8)} of {rowCount.toLocaleString()} rows
+              Showing {shownRows.length} of {rowCount.toLocaleString()} rows
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -345,7 +263,7 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 bg-white">
-                {preview.slice(0, 8).map((row, i) => (
+                {shownRows.map((row, i) => (
                   <tr key={i} className="transition-colors hover:bg-slate-50/50">
                     {colNames.map((col) => {
                       const val = row[col];
@@ -366,6 +284,24 @@ export function OverviewTab({ workspace, cleaningDetection, onNavigate }: Overvi
               </tbody>
             </table>
           </div>
+          {hasMore && (
+            <div className="flex items-center justify-center border-t border-slate-100 py-3">
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={handleShowMore}
+                className="flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 transition"
+              >
+                {loadingMore && (
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-300 border-t-indigo-600" />
+                )}
+                Load more rows
+              </button>
+              <span className="ml-3 text-xs text-slate-400">
+                Showing {Math.min(visibleCount, allRows.length)} of {totalRows ?? rowCount} rows
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
