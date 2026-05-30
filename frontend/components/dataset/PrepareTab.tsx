@@ -544,8 +544,7 @@ export function PrepareTab(props: PrepareTabProps) {
         </div>
       )}
 
-      {subTab === "cleaning" && (
-        <div className="space-y-6">
+      <div className={subTab !== "cleaning" ? "hidden" : "space-y-6"}>
           {cleaningDetecting ? (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
               Detecting cleaning issues…
@@ -1013,8 +1012,7 @@ export function PrepareTab(props: PrepareTabProps) {
               )}
             </>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

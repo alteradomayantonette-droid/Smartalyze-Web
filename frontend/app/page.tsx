@@ -132,7 +132,7 @@ export default function Home() {
             </p>
             <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
               <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Email</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">smartalyze.project@example.com</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">Smartalyze@example.com</p>
             </div>
           </div>
 
@@ -164,7 +164,7 @@ export default function Home() {
                   value={contactForm.email}
                   onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-indigo-500"
-                  placeholder="you@example.com"
+                  placeholder="Yourname@example.com"
                 />
               </label>
               <label className="block">
