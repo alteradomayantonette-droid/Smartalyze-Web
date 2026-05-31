@@ -121,6 +121,18 @@ def detect_categorical_variants(series: pd.Series, column: str) -> CategoryStand
     if non_null.empty:
         return None
 
+    # Skip structured identifier columns (emails, URLs) — fuzzy matching would
+    # incorrectly merge distinct addresses like john@co.com and jane@co.com.
+    if non_null.astype(str).head(20).str.contains("@", regex=False).any():
+        return None
+
+    # Skip date-dominant columns — consecutive dates share high string similarity
+    # (e.g. 2024-01-05 vs 2024-01-06 scores 0.90) and would be wrongly clustered
+    # as categorical variants of each other.
+    date_ratio = pd.to_datetime(non_null.astype(str).head(20), errors="coerce").notna().mean()
+    if date_ratio >= 0.7:
+        return None
+
     counts = non_null.astype(str).value_counts()
     if not (2 <= len(counts) <= _MAX_CATEGORICAL_CARDINALITY):
         return None
@@ -212,7 +224,7 @@ def detect_format_inconsistency(series: pd.Series, column: str) -> dict[str, obj
             seen.add(cls)
 
     total = len(sample)
-    if total and matched / total >= 0.5 and len(seen) >= 2:
+    if total and matched / total >= 0.7 and len(seen) >= 2:
         return {"formats": sorted(seen), "match_ratio": round(matched / total, 2)}
     return None
 

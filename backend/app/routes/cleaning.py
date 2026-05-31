@@ -57,7 +57,12 @@ async def detect_cleaning(
 
     # Persist scan-derived issue counts into the version's summary so the dashboard
     # can use them for the deduction-based health score without requiring a re-scan.
-    type_issue_cols = len({i.column for i in issues if i.kind in ("type_inconsistency", "format_inconsistency") and i.column})
+    type_issue_cols = len({
+        i.column for i in issues
+        if i.kind in ("type_inconsistency", "format_inconsistency")
+        and i.column
+        and i.severity != "info"
+    })
     pseudo_null_cols = len(findings.pseudo_nulls or [])
     variant_cols = len(findings.category_suggestions or [])
     outlier_cols = len(findings.outliers or [])

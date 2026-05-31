@@ -56,9 +56,9 @@ def _infer_column_type(series: pd.Series) -> str:
         dt_df = pd.to_datetime(non_null, errors="coerce", dayfirst=True).notna().mean()
         datetime_ratio = max(dt_mf, dt_df)
 
-    if numeric_ratio >= 0.8:
+    if numeric_ratio >= 0.9:
         return "numeric_string"
-    if datetime_ratio >= 0.5:
+    if datetime_ratio >= 0.85:
         return "datetime_string"
 
     unique_ratio = series.nunique(dropna=True) / max(len(non_null), 1)
@@ -148,8 +148,8 @@ def _build_detection(
                 CleaningIssue(
                     kind="type_inconsistency",
                     column=column_name,
-                    severity="warning",
-                    message=f"{column_name} appears to contain datetime values stored as text.",
+                    severity="info",
+                    message=f"{column_name} contains date values stored as text — convert to datetime type if needed.",
                     suggestion="Use convert_column_type to convert this column to datetime.",
                     details={"inferred_type": inferred_type},
                 )
