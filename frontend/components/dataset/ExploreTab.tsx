@@ -67,9 +67,8 @@ export interface ExploreTabProps {
 
 function InsightCard({ text }: { text: string }) {
   return (
-    <div className="flex gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-      <span className="mt-0.5 shrink-0">ℹ️</span>
-      <span className="italic">{text}</span>
+    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm italic text-sky-800">
+      {text}
     </div>
   );
 }
@@ -789,14 +788,11 @@ export function ExploreTab(props: ExploreTabProps) {
       />
 
       {/* Guided workflow hint */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 flex gap-3 items-start">
-        <span className="text-xl shrink-0">💡</span>
-        <div>
-          <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
-          <p className="text-sm text-indigo-700 mt-0.5">
-            Use <strong>Column Analysis</strong> to see statistics (mean, min, max) for each column and explore distributions. Switch to <strong>Aggregation</strong> to group your data and compute totals or averages. Use <strong>Trends</strong> to detect patterns over time.
-          </p>
-        </div>
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+        <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
+        <p className="text-sm text-indigo-700 mt-0.5">
+          Use <strong>Column Analysis</strong> to see statistics (mean, min, max) for each column and explore distributions. Switch to <strong>Aggregation</strong> to group your data and compute totals or averages. Use <strong>Trends</strong> to detect patterns over time.
+        </p>
       </div>
       <div className="flex flex-wrap gap-2">
         {subTabs.map(({ key, label }) => (

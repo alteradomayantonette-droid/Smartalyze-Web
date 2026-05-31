@@ -30,18 +30,16 @@ export interface DetectTabProps {
 
 function TipCard({ text }: { text: string }) {
   return (
-    <div className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-      <span className="mt-0.5 shrink-0">💡</span>
-      <span>{text}</span>
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+      {text}
     </div>
   );
 }
 
 function InsightCard({ text }: { text: string }) {
   return (
-    <div className="flex gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-      <span className="mt-0.5 shrink-0">ℹ️</span>
-      <span className="italic">{text}</span>
+    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm italic text-sky-800">
+      {text}
     </div>
   );
 }
@@ -411,14 +409,11 @@ export function DetectTab(props: DetectTabProps) {
       />
 
       {/* Guided workflow hint */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 flex gap-3 items-start">
-        <span className="text-xl shrink-0">💡</span>
-        <div>
-          <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
-          <p className="text-sm text-indigo-700 mt-0.5">
-            <strong>Anomaly Detection</strong> uses the IQR statistical method to automatically flag unusual values in your numeric columns. Switch to <strong>Correlation</strong> to discover which columns are related — and how strongly.
-          </p>
-        </div>
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+        <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
+        <p className="text-sm text-indigo-700 mt-0.5">
+          <strong>Anomaly Detection</strong> uses the IQR statistical method to automatically flag unusual values in your numeric columns. Switch to <strong>Correlation</strong> to discover which columns are related — and how strongly.
+        </p>
       </div>
       <div className="flex flex-wrap gap-2">
         {subTabs.map(({ key, label }) => (
