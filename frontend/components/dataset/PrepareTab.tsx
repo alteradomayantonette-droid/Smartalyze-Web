@@ -48,8 +48,8 @@ function getOperationLabel(op: CleaningOperation): string {
     case "derive_column": return op.new_column_name ? `Derived column "${op.new_column_name}"` : "Derived column";
     case "standardize_categories": return op.column ? `Standardize values in "${op.column}"` : "Standardize values";
     case "replace_with_missing": return op.column ? `Convert disguised-missing in "${op.column}"` : "Convert disguised-missing to empty";
-    case "nullify_outliers": return op.column ? `Convert outliers to empty in "${op.column}"` : "Convert outliers to empty";
-    case "remove_outliers": return op.column ? `Remove outlier rows in "${op.column}"` : "Remove outlier rows";
+    case "nullify_outliers": return op.column ? `Blank out potential errors in "${op.column}"` : "Blank out potential errors";
+    case "remove_outliers": return op.column ? `Drop error rows in "${op.column}"` : "Drop error rows";
     default: return "Cleaning action";
   }
 }
@@ -342,7 +342,7 @@ export function PrepareTab(props: PrepareTabProps) {
       type_mismatch: { cls: "px-4 py-3 bg-amber-50 text-amber-700 border-l-2 border-amber-300", title: "This value doesn't look like a number — check your data" },
       pseudo_null: { cls: "px-4 py-3 bg-orange-50 text-orange-700 border-l-2 border-orange-300", title: "This looks like a disguised missing value (e.g. NA) — convert it to empty in Cleaning" },
       variant: { cls: "px-4 py-3 bg-purple-50 text-purple-700 border-l-2 border-purple-300", title: "Inconsistent value — looks like a variant of another value in this column" },
-      outlier: { cls: "px-4 py-3 bg-teal-50 text-teal-700 border-l-2 border-teal-300", title: "Potential outlier — far outside the typical range for this column" },
+      outlier: { cls: "px-4 py-3 bg-teal-50 text-teal-700 border-l-2 border-teal-300", title: "Statistical outlier — unusually far from the typical range. Could be a rare valid event (e.g. heavy rainfall, sales spike) or a data entry error — investigate before removing." },
       format_mismatch: { cls: "px-4 py-3 bg-sky-50 text-sky-700 border-l-2 border-sky-300", title: "Different date format — this date is written differently from the rest of the column. Fix it in the Clean tab." },
     };
     return (
@@ -781,24 +781,27 @@ export function PrepareTab(props: PrepareTabProps) {
                             return (
                               <div key={`out-${o.column}`} className="divide-y divide-slate-100">
                                 <div className="flex items-start gap-3 px-5 py-3.5">
-                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${nullifyQueued ? "border-rose-500 bg-rose-500" : "border-slate-300 bg-white hover:border-rose-400"}`} onClick={() => toggleNullifyOutliers(o.column)}>
+                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${nullifyQueued ? "border-amber-500 bg-amber-500" : "border-slate-300 bg-white hover:border-amber-400"}`} onClick={() => toggleNullifyOutliers(o.column)}>
                                     {nullifyQueued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
                                   </button>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-slate-950">Blank out outliers in <span className="text-rose-600">&quot;{o.column}&quot;</span></p>
-                                    <p className="text-xs text-slate-500 mt-0.5">{o.outlier_count} values outside {o.lower_fence}–{o.upper_fence}. Converts them to empty (keeps rows).</p>
+                                    <p className="text-sm font-semibold text-slate-950">Potential outliers in <span className="text-teal-600">&quot;{o.column}&quot;</span></p>
+                                    <p className="text-xs text-slate-500 mt-0.5">{o.outlier_count} values outside the typical range ({o.lower_fence}–{o.upper_fence}). If these are errors, convert them to empty — rows are kept.</p>
+                                    {o.sample_values.length > 0 && (
+                                      <p className="mt-0.5 text-xs text-teal-700">Flagged values: {o.sample_values.map(String).join(", ")}</p>
+                                    )}
                                   </div>
-                                  <span className="shrink-0 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">Outlier</span>
+                                  <span className="shrink-0 rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-semibold text-teal-700">Stat. Outlier</span>
                                 </div>
                                 <div className="flex items-start gap-3 px-5 py-3 bg-slate-50/60">
-                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${removeQueued ? "border-rose-500 bg-rose-500" : "border-slate-300 bg-white hover:border-rose-400"}`} onClick={() => toggleRemoveOutliers(o.column)}>
+                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${removeQueued ? "border-amber-500 bg-amber-500" : "border-slate-300 bg-white hover:border-amber-400"}`} onClick={() => toggleRemoveOutliers(o.column)}>
                                     {removeQueued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
                                   </button>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-slate-950">Remove outlier rows in <span className="text-rose-600">&quot;{o.column}&quot;</span></p>
-                                    <p className="text-xs text-slate-500 mt-0.5">Drops entire rows containing these outlier values.</p>
+                                    <p className="text-sm font-semibold text-slate-950">Drop rows with outliers in <span className="text-teal-600">&quot;{o.column}&quot;</span></p>
+                                    <p className="text-xs text-slate-500 mt-0.5">If these are errors, drops the entire rows containing them. Only use if you&apos;re sure the rows are invalid.</p>
                                   </div>
-                                  <span className="shrink-0 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">Outlier</span>
+                                  <span className="shrink-0 rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-semibold text-teal-700">Stat. Outlier</span>
                                 </div>
                               </div>
                             );

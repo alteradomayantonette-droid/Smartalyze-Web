@@ -359,7 +359,7 @@ def analyze_quality(frame: pd.DataFrame) -> QualityFindings:
                 severity="info",
                 message=f"{outlier.column} has {outlier.outlier_count} potential outlier(s) "
                 f"outside [{outlier.lower_fence}, {outlier.upper_fence}].",
-                suggestion="Review these values; optionally remove the outlier rows.",
+                suggestion="Investigate these values — they may be rare valid events or data errors. Only remove if you are confident they are mistakes.",
                 details={
                     "outlier_count": outlier.outlier_count,
                     "lower_fence": outlier.lower_fence,
