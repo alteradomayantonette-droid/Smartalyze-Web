@@ -43,11 +43,21 @@ _WS_RE = re.compile(r"\s+")
 
 # Date-format "fingerprints". A column mixing 2+ of these is flagged as inconsistent.
 _DATE_FORMATS: list[tuple[str, re.Pattern[str]]] = [
-    ("iso", re.compile(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$")),
-    ("numeric", re.compile(r"^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}$")),
-    ("month_name", re.compile(r"^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$")),
+    ("iso",            re.compile(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$")),
+    ("datetime_iso",   re.compile(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}[T ]\d{1,2}:\d{2}")),
+    ("numeric",        re.compile(r"^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}$")),
+    ("month_name",     re.compile(r"^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$")),
     ("day_month_name", re.compile(r"^\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}$")),
+    ("compact",        re.compile(r"^\d{8}$")),
+    ("oracle",         re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{2,4}$")),
 ]
+
+# Formats in the same family are treated as equivalent — mixing them does NOT count
+# as a format inconsistency (e.g. ISO date vs ISO datetime differ only by time component).
+_FORMAT_FAMILY: dict[str, str] = {
+    "iso": "iso_family",
+    "datetime_iso": "iso_family",
+}
 
 
 @dataclass
@@ -133,6 +143,12 @@ def detect_categorical_variants(series: pd.Series, column: str) -> CategoryStand
     if date_ratio >= 0.7:
         return None
 
+    # Skip numeric-dominant columns — numeric strings like "500" and "1500" score
+    # ~0.857 fuzzy similarity and would be wrongly clustered as categorical variants.
+    numeric_ratio = pd.to_numeric(non_null.astype(str), errors="coerce").notna().mean()
+    if numeric_ratio >= 0.8:
+        return None
+
     counts = non_null.astype(str).value_counts()
     if not (2 <= len(counts) <= _MAX_CATEGORICAL_CARDINALITY):
         return None
@@ -216,16 +232,18 @@ def detect_format_inconsistency(series: pd.Series, column: str) -> dict[str, obj
 
     sample = non_null.head(_FORMAT_SAMPLE_SIZE)
     matched = 0
-    seen: set[str] = set()
+    seen_families: set[str] = set()
+    seen_raw: set[str] = set()
     for value in sample:
         cls = _date_fingerprint(value)
         if cls:
             matched += 1
-            seen.add(cls)
+            seen_raw.add(cls)
+            seen_families.add(_FORMAT_FAMILY.get(cls, cls))
 
     total = len(sample)
-    if total and matched / total >= 0.7 and len(seen) >= 2:
-        return {"formats": sorted(seen), "match_ratio": round(matched / total, 2)}
+    if total and matched / total >= 0.7 and len(seen_families) >= 2:
+        return {"formats": sorted(seen_raw), "match_ratio": round(matched / total, 2)}
     return None
 
 

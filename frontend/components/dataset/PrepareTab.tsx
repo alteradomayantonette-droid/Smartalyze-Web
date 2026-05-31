@@ -41,7 +41,7 @@ function getOperationLabel(op: CleaningOperation): string {
     case "drop_rows": return op.column ? `Drop rows missing "${op.column}"` : "Drop rows with missing";
     case "trim_whitespace": return "Trim whitespace";
     case "lowercase_column": return op.column ? `Lowercase "${op.column}"` : "Lowercase text";
-    case "convert_column_type": return op.column ? `Convert "${op.column}"` : "Convert column type";
+    case "convert_column_type": return op.column ? `Convert "${op.column}" → ${op.target_type ?? "numeric"}` : "Convert column type";
     case "standardize_dates": return op.column ? `Standardize dates in "${op.column}"` : "Standardize dates";
     case "sort_values": return op.column ? `Sort by "${op.column}" (${op.ascending === false ? "desc" : "asc"})` : "Sort data";
     case "fill_pattern": return op.column && op.key_column ? `Smart fill "${op.column}" using "${op.key_column}"` : "Smart fill";
@@ -85,7 +85,7 @@ function getSummaryTone(label: string, value: number | string | null | undefined
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-type CellIssue = "missing" | "type_mismatch" | "pseudo_null" | "variant" | "outlier" | null;
+type CellIssue = "missing" | "type_mismatch" | "pseudo_null" | "variant" | "outlier" | "format_mismatch" | null;
 
 const PSEUDO_NULL_TOKENS = new Set([
   "na", "n/a", "n.a", "n.a.", "not applicable", "not available",
@@ -93,12 +93,58 @@ const PSEUDO_NULL_TOKENS = new Set([
   "unknown", "unk", "missing", "tbd", "blank", "empty",
 ]);
 
+const _DATE_FP: Array<[string, RegExp]> = [
+  ["iso",            /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/],
+  ["datetime_iso",   /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}[T ]\d{1,2}:\d{2}/],
+  ["numeric",        /^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}$/],
+  ["month_name",     /^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$/],
+  ["day_month_name", /^\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}$/],
+  ["compact",        /^\d{8}$/],
+  ["oracle",         /^\d{1,2}-[A-Za-z]{3}-\d{2,4}$/],
+];
+const _DATE_FP_FAMILY: Record<string, string> = { iso: "iso_family", datetime_iso: "iso_family" };
+
+function dateFingerprintFamily(value: string): string | null {
+  const s = value.trim();
+  for (const [name, re] of _DATE_FP) {
+    if (re.test(s)) {
+      const family = _DATE_FP_FAMILY[name] ?? name;
+      // For ISO-family dates (YYYY?MM?DD), also track the separator so
+      // "2024-01-05" (dash) vs "2024/01/06" (slash) count as distinct sub-families.
+      if (family === "iso_family") return `iso_family:${s[4]}`;
+      return family;
+    }
+  }
+  return null;
+}
+
+function computeDominantDateFormats(
+  rows: Array<Record<string, unknown>>,
+  cols: Set<string>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const col of cols) {
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      const v = row[col];
+      if (v == null || v === "") continue;
+      const fam = dateFingerprintFamily(String(v));
+      if (fam) counts[fam] = (counts[fam] ?? 0) + 1;
+    }
+    let best: string | null = null, max = 0;
+    for (const [fam, n] of Object.entries(counts)) if (n > max) { max = n; best = fam; }
+    if (best) result[col] = best;
+  }
+  return result;
+}
+
 type DetectContext = {
   columnTypes: Record<string, string>;
   pseudoNullCols?: Set<string>;
   outlierFences?: Record<string, { low: number; high: number }>;
   variantValues?: Record<string, Set<string>>;
   formatInconsistentCols?: Set<string>;
+  dominantDateFormats?: Record<string, string>;
 };
 
 function getCellIssue(value: unknown, colName: string, ctx: DetectContext): CellIssue {
@@ -112,6 +158,15 @@ function getCellIssue(value: unknown, colName: string, ctx: DetectContext): Cell
   }
   const t = ctx.columnTypes[colName];
   if ((t === "int64" || t === "float64") && isNaN(Number(value))) return "type_mismatch";
+  if (t === "numeric_string") {
+    const cleaned = String(value).trim().replace(/^[$€£¥₱]+/, "").replace(/[$€£¥₱]+$/, "").replace(/,/g, "");
+    if (cleaned !== "" && isNaN(parseFloat(cleaned))) return "type_mismatch";
+  }
+  const dominant = ctx.dominantDateFormats?.[colName];
+  if (dominant !== undefined) {
+    const family = dateFingerprintFamily(String(value));
+    if (family !== null && family !== dominant) return "format_mismatch";
+  }
   return null;
 }
 
@@ -288,6 +343,7 @@ export function PrepareTab(props: PrepareTabProps) {
       pseudo_null: { cls: "px-4 py-3 bg-orange-50 text-orange-700 border-l-2 border-orange-300", title: "This looks like a disguised missing value (e.g. NA) — convert it to empty in Cleaning" },
       variant: { cls: "px-4 py-3 bg-purple-50 text-purple-700 border-l-2 border-purple-300", title: "Inconsistent value — looks like a variant of another value in this column" },
       outlier: { cls: "px-4 py-3 bg-rose-50 text-rose-700 border-l-2 border-rose-300", title: "Potential outlier — far outside the typical range for this column" },
+      format_mismatch: { cls: "px-4 py-3 bg-sky-50 text-sky-700 border-l-2 border-sky-300", title: "Different date format — this date is written differently from the rest of the column. Fix it in the Clean tab." },
     };
     return (
       <>
@@ -328,7 +384,8 @@ export function PrepareTab(props: PrepareTabProps) {
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-orange-300 shrink-0" /> Disguised missing</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-purple-300 shrink-0" /> Inconsistent value</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-rose-300 shrink-0" /> Outlier</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-sky-300 shrink-0" /> Mixed date formats</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-amber-300 shrink-0" /> Type mismatch</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-sky-300 shrink-0" /> Inconsistent date format</span>
           </div>
         )}
       </>
@@ -347,7 +404,7 @@ export function PrepareTab(props: PrepareTabProps) {
     return mapping;
   }
 
-  function buildOverviewDetectCtx(det: CleanDetectResponse): DetectContext {
+  function buildOverviewDetectCtx(det: CleanDetectResponse, rows: Array<Record<string, unknown>>): DetectContext {
     const pseudoNullCols = new Set((det.pseudo_nulls ?? []).map((p) => p.column));
     const outlierFences: Record<string, { low: number; high: number }> = {};
     for (const o of det.outliers ?? []) outlierFences[o.column] = { low: o.lower_fence, high: o.upper_fence };
@@ -360,7 +417,8 @@ export function PrepareTab(props: PrepareTabProps) {
     const formatInconsistentCols = new Set(
       (det.issues ?? []).filter((i) => i.kind === "format_inconsistency" && i.column).map((i) => i.column as string)
     );
-    return { columnTypes: det.column_types, pseudoNullCols, outlierFences, variantValues, formatInconsistentCols };
+    const dominantDateFormats = computeDominantDateFormats(rows, formatInconsistentCols);
+    return { columnTypes: det.column_types, pseudoNullCols, outlierFences, variantValues, formatInconsistentCols, dominantDateFormats };
   }
 
 
@@ -530,7 +588,7 @@ export function PrepareTab(props: PrepareTabProps) {
             <>
               {renderPreviewTable(
                 displayPreview,
-                !cleaningResult && cleaningDetection ? buildOverviewDetectCtx(cleaningDetection) : null
+                !cleaningResult && cleaningDetection ? buildOverviewDetectCtx(cleaningDetection, displayPreview) : null
               )}
               {!cleaningResult && canLoadMore ? (
                 <button onClick={handleLoadMoreOverviewRows} disabled={overviewLoadingMore} className="w-full rounded-xl border border-slate-200 bg-white py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
@@ -767,11 +825,26 @@ export function PrepareTab(props: PrepareTabProps) {
                         <div className="divide-y divide-slate-100">
 
                           {/* Type inconsistencies */}
+                          {(() => {
+                            const pseudoCols = new Set(pseudoNullSummaries.map((p) => p.column));
+                            const overlap = typeIssues
+                              .filter((i) => i.column && pseudoCols.has(i.column))
+                              .map((i) => i.column as string);
+                            if (overlap.length === 0) return null;
+                            return (
+                              <div className="mx-5 my-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                💡 <strong>{overlap.join(", ")}</strong>{overlap.length === 1 ? " has" : " have"} disguised empty values — replacing them first (in Data Issues above) gives a cleaner type conversion.
+                              </div>
+                            );
+                          })()}
                           {typeIssues.map((issue) => {
                             const col = issue.column ?? "";
                             const inferred = String(issue.details?.inferred_type ?? "");
                             const target: "numeric" | "datetime" = inferred === "datetime_string" ? "datetime" : "numeric";
                             const queued = hasQueuedOperation(buildConvertTypeOperation(col, target));
+                            const invalidSamples = Array.isArray(issue.details?.invalid_value_samples)
+                              ? (issue.details.invalid_value_samples as string[])
+                              : [];
                             return (
                               <div key={col} className="flex items-start gap-3 px-5 py-3.5">
                                 <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white hover:border-indigo-400"}`} onClick={() => toggleConvertType(col, target)}>
@@ -780,6 +853,11 @@ export function PrepareTab(props: PrepareTabProps) {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-semibold text-slate-950">Convert <span className="text-indigo-600">&quot;{col}&quot;</span> from text → {target}</p>
                                   <p className="text-xs text-slate-500 mt-0.5">This column contains {target} values stored as text. AI is confident this is a mistake.</p>
+                                  {invalidSamples.length > 0 && (
+                                    <p className="mt-0.5 text-xs text-amber-700">
+                                      Non-{target === "numeric" ? "numeric" : "date"} value{invalidSamples.length > 1 ? "s" : ""}: {invalidSamples.map((v) => `"${v}"`).join(", ")}
+                                    </p>
+                                  )}
                                 </div>
                                 <span className="shrink-0 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-700">Type Fix</span>
                               </div>

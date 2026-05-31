@@ -133,6 +133,9 @@ def _build_detection(
             )
 
         if inferred_type == "numeric_string":
+            non_null_str = series.dropna().astype(str).str.strip()
+            invalid_mask = pd.to_numeric(non_null_str, errors="coerce").isna()
+            invalid_samples: list[str] = non_null_str[invalid_mask].unique()[:5].tolist()
             issues.append(
                 CleaningIssue(
                     kind="type_inconsistency",
@@ -140,10 +143,16 @@ def _build_detection(
                     severity="warning",
                     message=f"{column_name} appears numeric but is stored as text.",
                     suggestion="Use convert_column_type to convert this column to numeric.",
-                    details={"inferred_type": inferred_type},
+                    details={"inferred_type": inferred_type, "invalid_value_samples": invalid_samples},
                 )
             )
         elif inferred_type == "datetime_string":
+            non_null_str = series.dropna().astype(str).str.strip()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UserWarning)
+                invalid_dt_mask = pd.to_datetime(non_null_str, errors="coerce", dayfirst=False).isna() & \
+                                  pd.to_datetime(non_null_str, errors="coerce", dayfirst=True).isna()
+            invalid_dt_samples: list[str] = non_null_str[invalid_dt_mask].unique()[:5].tolist()
             issues.append(
                 CleaningIssue(
                     kind="type_inconsistency",
@@ -151,7 +160,7 @@ def _build_detection(
                     severity="info",
                     message=f"{column_name} contains date values stored as text — convert to datetime type if needed.",
                     suggestion="Use convert_column_type to convert this column to datetime.",
-                    details={"inferred_type": inferred_type},
+                    details={"inferred_type": inferred_type, "invalid_value_samples": invalid_dt_samples},
                 )
             )
 
@@ -202,9 +211,27 @@ def _convert_boolean_series(series: pd.Series, errors: str) -> pd.Series:
     return series.map(convert)
 
 
+def _normalize_for_numeric(series: pd.Series) -> pd.Series:
+    """Strip currency symbols and thousands-separator commas from string values.
+
+    Only touches object-dtype series; leaves NaN slots intact.
+    Handles: $500, €1,000, ₱55,000, 500€, 1.000,50 (European), etc.
+    """
+    if not pd.api.types.is_object_dtype(series):
+        return series
+    mask = series.notna()
+    cleaned = series.copy()
+    str_vals = series[mask].astype(str).str.strip()
+    str_vals = str_vals.str.replace(r"^[$€£¥₱]+", "", regex=True)
+    str_vals = str_vals.str.replace(r"[$€£¥₱]+$", "", regex=True)
+    str_vals = str_vals.str.replace(",", "", regex=False)
+    cleaned[mask] = str_vals
+    return cleaned
+
+
 def _convert_column_type(series: pd.Series, target_type: str, errors: str) -> pd.Series:
     if target_type == "numeric":
-        return pd.to_numeric(series, errors=errors)
+        return pd.to_numeric(_normalize_for_numeric(series), errors=errors)
     if target_type == "datetime":
         return pd.to_datetime(series, errors=errors)
     if target_type == "string":
@@ -289,18 +316,37 @@ def _parse_one_date(value: Any, dayfirst: bool) -> pd.Timestamp | None:
     text = str(value).strip()
     if not text:
         return None
+
+    # Compact YYYYMMDD — checked before the token-count guard because all 8 digits
+    # form a single token and would otherwise be rejected as "fewer than 3 tokens."
+    if re.match(r"^\d{8}$", text):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            try:
+                return pd.to_datetime(text, format="%Y%m%d", errors="raise")
+            except (ValueError, TypeError, OverflowError):
+                return None
+
     if len(_DATE_TOKEN_RE.findall(text)) < 3:
         return None
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=UserWarning)
-        # ISO-looking inputs are parsed strictly with dayfirst=False. If the strict parse
-        # fails (e.g. month=13), we return None instead of falling through, since a permissive
-        # fallback would silently rescue invalid dates by swapping day/month.
+
+        # ISO-looking inputs are parsed strictly with dayfirst=False. If that fails
+        # AND the middle segment (month position) exceeds 12, the only valid reading
+        # is YYYY-DD-MM so we safely try dayfirst=True. For genuinely ambiguous dates
+        # (month ≤ 12 in both positions) we still return None to avoid silent mis-rescues.
         if _ISO_DATE_RE.match(text):
             try:
                 return pd.to_datetime(text, errors="raise", dayfirst=False)
             except (ValueError, TypeError, OverflowError):
+                parts = re.split(r"[-/.]", text.strip().split()[0])
+                if len(parts) >= 3 and parts[1].isdigit() and int(parts[1]) > 12:
+                    try:
+                        return pd.to_datetime(text, errors="raise", dayfirst=True)
+                    except (ValueError, TypeError, OverflowError):
+                        pass
                 return None
 
         try:
@@ -636,22 +682,22 @@ def _apply_operation(frame: pd.DataFrame, operation: CleaningOperation) -> pd.Da
 # convert types before fills; standardize categories before trim/lowercase; create
 # missing (replace_with_missing / nullify_outliers) before fills; drops and sort last.
 _OPERATION_PRIORITY: dict[str, int] = {
-    "remove_all_duplicates": 0,
-    "convert_column_type": 1,
-    "standardize_dates": 2,
-    "standardize_categories": 3,
-    "trim_whitespace": 4,
-    "lowercase_column": 5,
-    "replace_with_missing": 6,
-    "nullify_outliers": 7,
-    "fill_pattern": 8,
-    "fill_mean": 9,
-    "fill_median": 9,
-    "fill_mode": 9,
-    "derive_column": 10,
-    "drop_rows": 11,
-    "remove_outliers": 12,
-    "sort_values": 13,
+    "remove_all_duplicates":  0,
+    "replace_with_missing":   1,  # pseudo-nulls → true NaN before type conversion
+    "convert_column_type":    2,
+    "standardize_dates":      3,
+    "standardize_categories": 4,
+    "trim_whitespace":        5,
+    "lowercase_column":       6,
+    "nullify_outliers":       7,
+    "fill_pattern":           8,
+    "fill_mean":              9,
+    "fill_median":            9,
+    "fill_mode":              9,
+    "derive_column":         10,
+    "drop_rows":             11,
+    "remove_outliers":       12,
+    "sort_values":           13,
 }
 
 
