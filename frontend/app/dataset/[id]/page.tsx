@@ -104,10 +104,6 @@ function buildSortValuesOperation(column: string, ascending: boolean): CleaningO
   return { operation_type: "sort_values", column, ascending, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
 }
 
-function buildDeriveColumnOperation(newColumnName: string, expression: string): CleaningOperation {
-  return { operation_type: "derive_column", new_column_name: newColumnName, expression, column: null, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
-}
-
 function buildPatternImputationOperation(targetCol: string, keyCol: string): CleaningOperation {
   return { operation_type: "fill_pattern", column: targetCol, key_column: keyCol, target_column_fill: targetCol, columns: [], target_type: null, drop_all_missing: true, errors: "coerce" };
 }
@@ -232,8 +228,6 @@ export default function DatasetWorkspacePage() {
   const [categoryMappingEdits, setCategoryMappingEdits] = useState<Record<string, Record<string, string>>>({});
   const [sortColumn, setSortColumn] = useState("");
   const [sortAscending, setSortAscending] = useState(true);
-  const [derivedColumnName, setDerivedColumnName] = useState("");
-  const [derivedExpression, setDerivedExpression] = useState("");
 
   // Filter
   const [filterPredicates, setFilterPredicates] = useState<FilterPredicate[]>([]);
@@ -449,17 +443,6 @@ export default function DatasetWorkspacePage() {
   function toggleSortValues() {
     if (!sortColumn) return;
     toggleOperation(buildSortValuesOperation(sortColumn, sortAscending), `Added sort by "${sortColumn}".`, `Removed sort by "${sortColumn}" from queue.`);
-  }
-
-  function addDerivedColumn() {
-    const name = derivedColumnName.trim();
-    const expr = derivedExpression.trim();
-    if (!name || !expr) { toast.warning("Provide both a new column name and a formula."); return; }
-    if (workspace?.dataset.columns_json?.some((c) => String((c as { name?: string }).name) === name)) {
-      toast.warning(`Column "${name}" already exists. Pick a different name.`); return;
-    }
-    toggleOperation(buildDeriveColumnOperation(name, expr), `Added derived column "${name}".`, `Removed derived column "${name}" from queue.`);
-    setDerivedColumnName(""); setDerivedExpression("");
   }
 
   function togglePatternImputation(targetCol: string, keyCol: string) {
@@ -906,10 +889,6 @@ export default function DatasetWorkspacePage() {
               setSortColumn={setSortColumn}
               sortAscending={sortAscending}
               setSortAscending={setSortAscending}
-              derivedColumnName={derivedColumnName}
-              setDerivedColumnName={setDerivedColumnName}
-              derivedExpression={derivedExpression}
-              setDerivedExpression={setDerivedExpression}
               handleApplyCleaning={handleApplyCleaning}
               handleLoadMoreOverviewRows={handleLoadMoreOverviewRows}
               addFilterPredicate={addFilterPredicate}
@@ -924,7 +903,6 @@ export default function DatasetWorkspacePage() {
               toggleStandardizeDates={toggleStandardizeDates}
               togglePatternImputation={togglePatternImputation}
               addMissingValueOperation={addMissingValueOperation}
-              addDerivedColumn={addDerivedColumn}
               categoryMappingEdits={categoryMappingEdits}
               setCategoryCanonical={setCategoryCanonical}
               toggleStandardizeCategories={toggleStandardizeCategories}

@@ -172,9 +172,8 @@ function getCellIssue(value: unknown, colName: string, ctx: DetectContext): Cell
 
 function InsightCard({ text }: { text: string }) {
   return (
-    <div className="flex gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-      <span className="mt-0.5 shrink-0">ℹ️</span>
-      <span className="italic">{text}</span>
+    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm italic text-sky-800">
+      {text}
     </div>
   );
 }
@@ -222,10 +221,6 @@ export type PrepareTabProps = {
   setSortColumn: React.Dispatch<React.SetStateAction<string>>;
   sortAscending: boolean;
   setSortAscending: React.Dispatch<React.SetStateAction<boolean>>;
-  derivedColumnName: string;
-  setDerivedColumnName: React.Dispatch<React.SetStateAction<string>>;
-  derivedExpression: string;
-  setDerivedExpression: React.Dispatch<React.SetStateAction<string>>;
   // handlers
   handleApplyCleaning: () => void;
   handleLoadMoreOverviewRows: () => void;
@@ -241,7 +236,6 @@ export type PrepareTabProps = {
   toggleStandardizeDates: (col: string) => void;
   togglePatternImputation: (target: string, key: string) => void;
   addMissingValueOperation: (col: string) => void;
-  addDerivedColumn: () => void;
   categoryMappingEdits: Record<string, Record<string, string>>;
   setCategoryCanonical: (col: string, suggested: string, edited: string) => void;
   toggleStandardizeCategories: (col: string, mapping: Record<string, string>) => void;
@@ -279,12 +273,11 @@ export function PrepareTab(props: PrepareTabProps) {
     draftFilterValue, setDraftFilterValue, draftFilterLower, setDraftFilterLower, draftFilterUpper, setDraftFilterUpper,
     cumulativeAppliedOperations, applying,
     sortColumn, setSortColumn, sortAscending, setSortAscending,
-    derivedColumnName, setDerivedColumnName, derivedExpression, setDerivedExpression,
     handleApplyCleaning, handleLoadMoreOverviewRows,
     addFilterPredicate, removeFilterPredicate, clearAllFilters,
     handleRescanData, toggleDuplicateRows, toggleTrimWhitespace,
     toggleLowercaseColumn, toggleConvertType, toggleSortValues,
-    toggleStandardizeDates, togglePatternImputation, addMissingValueOperation, addDerivedColumn,
+    toggleStandardizeDates, togglePatternImputation, addMissingValueOperation,
     categoryMappingEdits, setCategoryCanonical, toggleStandardizeCategories, toggleReplaceWithMissing, toggleRemoveOutliers, toggleNullifyOutliers,
     buildStandardizeCategoriesOperation, buildReplaceWithMissingOperation, buildRemoveOutliersOperation, buildNullifyOutliersOperation,
     hasQueuedOperation, getColumnType, isLowercaseCandidate, getDefaultMissingStrategy,
@@ -293,11 +286,12 @@ export function PrepareTab(props: PrepareTabProps) {
   } = props;
 
   const [expandedSmartFill, setExpandedSmartFill] = useState<Set<string>>(new Set());
+  const [selectedSmartFillKey, setSelectedSmartFillKey] = useState<Record<string, string>>({});
   const [cleanedPreviewLimit, setCleanedPreviewLimit] = useState(10);
   const [dataIssuesOpen, setDataIssuesOpen] = useState(true);
   const [formattingOpen, setFormattingOpen] = useState(false);
   const [textCleanupOpen, setTextCleanupOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [statInsightsOpen, setStatInsightsOpen] = useState(true);
 
   useEffect(() => {
     setCleanedPreviewLimit(10);
@@ -457,6 +451,11 @@ export function PrepareTab(props: PrepareTabProps) {
   const pseudoNullSummaries = cleaningDetection?.pseudo_nulls ?? [];
   const outlierSummaries = cleaningDetection?.outliers ?? [];
   const patternSuggestions = cleaningDetection?.pattern_suggestions ?? [];
+  const smartFillByTarget = new Map<string, (typeof patternSuggestions)[0][]>();
+  for (const s of patternSuggestions) {
+    if (!smartFillByTarget.has(s.target_column)) smartFillByTarget.set(s.target_column, []);
+    smartFillByTarget.get(s.target_column)!.push(s);
+  }
   const dateCols = availableColumns.filter((col) => {
     const t = getColumnType(col);
     return t === "datetime" || t === "datetime_string";
@@ -466,8 +465,7 @@ export function PrepareTab(props: PrepareTabProps) {
     (duplicateCount > 0 ? 1 : 0) +
     missingIssues.length +
     pseudoNullSummaries.length +
-    patternSuggestions.length +
-    outlierSummaries.length;
+    smartFillByTarget.size;
   const formattingIssueCount = typeIssues.length + formatIssues.length + categorySuggestions.length;
   const totalIssueCount = dataIssueCount + formattingIssueCount;
   const textColumns = availableColumns.filter((col) => {
@@ -480,14 +478,11 @@ export function PrepareTab(props: PrepareTabProps) {
   return (
     <div className="space-y-6">
       {/* Guided workflow hint */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 flex gap-3 items-start">
-        <span className="text-xl shrink-0">💡</span>
-        <div>
-          <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
-          <p className="text-sm text-indigo-700 mt-0.5">
-            Browse your live data in the <strong>Data</strong> view — cells highlighted red are missing, yellow have a type problem. Switch to <strong>Clean</strong> to queue operations and apply them.
-          </p>
-        </div>
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+        <p className="text-sm font-semibold text-indigo-800">How to use this tab</p>
+        <p className="text-sm text-indigo-700 mt-0.5">
+          Browse your live data in the <strong>Data</strong> view — cells highlighted red are missing, yellow have a type problem. Switch to <strong>Clean</strong> to queue operations and apply them.
+        </p>
       </div>
       {/* Sub-tab pills */}
       <div className="flex gap-2">
@@ -615,11 +610,15 @@ export function PrepareTab(props: PrepareTabProps) {
 
                   {/* AI Summary Strip */}
                   <div className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-linear-to-r from-indigo-50 to-emerald-50 px-4 py-3">
-                    <span className="text-base shrink-0">🤖</span>
                     <p className="flex-1 text-sm text-indigo-800">
                       {cleaningDetection ? (
                         totalIssueCount > 0 ? (
-                          <><strong>{totalIssueCount} issue{totalIssueCount !== 1 ? "s" : ""} found</strong> — {cleaningOperations.length} fix{cleaningOperations.length !== 1 ? "es" : ""} selected. Uncheck anything you don&apos;t want, then hit Apply.</>
+                          <>
+                            <strong>{dataIssueCount} data</strong>
+                            {formattingIssueCount > 0 && <> · <strong>{formattingIssueCount} formatting</strong></>}
+                            {outlierSummaries.length > 0 && <> · <strong>{outlierSummaries.length} statistical</strong></>}
+                            {" "}issue{totalIssueCount !== 1 ? "s" : ""} found — {cleaningOperations.length} fix{cleaningOperations.length !== 1 ? "es" : ""} selected. Uncheck anything you don&apos;t want, then hit Apply.
+                          </>
                         ) : (
                           <strong>Your data looks clean — no issues detected.</strong>
                         )
@@ -688,7 +687,7 @@ export function PrepareTab(props: PrepareTabProps) {
                                         setMissingValueStrategies((s) => ({ ...s, [col]: e.target.value as MissingStrategy }));
                                       }}
                                     >
-                                      <option value={aiPick}>🤖 {strategyLabel(aiPick)} (AI pick)</option>
+                                      <option value={aiPick}>{strategyLabel(aiPick)} (AI pick)</option>
                                       {(["fill_mean", "fill_median", "fill_mode", "drop_rows"] as MissingStrategy[])
                                         .filter((s) => s !== aiPick)
                                         .map((s) => <option key={s} value={s}>{strategyLabel(s)}</option>)}
@@ -718,28 +717,41 @@ export function PrepareTab(props: PrepareTabProps) {
                           })}
 
                           {/* Smart Fill */}
-                          {patternSuggestions.map((s) => {
-                            const op = buildPatternImputationOperation(s.target_column, s.key_column);
+                          {[...smartFillByTarget.entries()].map(([target, options]) => {
+                            const selectedKey = selectedSmartFillKey[target] ?? options[0].key_column;
+                            const activeSuggestion = options.find((s) => s.key_column === selectedKey) ?? options[0];
+                            const op = buildPatternImputationOperation(target, selectedKey);
                             const queued = hasQueuedOperation(op);
-                            const confidencePct = Math.round(s.weighted_confidence * 100);
-                            const isExpanded = expandedSmartFill.has(s.target_column);
-                            const topGroups = [...s.groups].sort((a, b) => b.fillable_count - a.fillable_count).slice(0, 5);
-                            const extraCount = s.groups.length - topGroups.length;
+                            const confidencePct = Math.round(activeSuggestion.weighted_confidence * 100);
+                            const isExpanded = expandedSmartFill.has(target);
+                            const topGroups = [...activeSuggestion.groups].sort((a, b) => b.fillable_count - a.fillable_count).slice(0, 5);
+                            const extraCount = activeSuggestion.groups.length - topGroups.length;
                             return (
-                              <div key={`sf-${s.key_column}-${s.target_column}`} className="px-5 py-3.5">
+                              <div key={`sf-${target}`} className="px-5 py-3.5">
                                 <div className="flex items-start gap-3">
-                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-white hover:border-emerald-400"}`} onClick={() => togglePatternImputation(s.target_column, s.key_column)} aria-label={`Toggle smart fill for ${s.target_column}`}>
+                                  <button type="button" className={`mt-0.5 h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center transition ${queued ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-white hover:border-emerald-400"}`} onClick={() => togglePatternImputation(target, selectedKey)} aria-label={`Toggle smart fill for ${target}`}>
                                     {queued && <svg viewBox="0 0 12 9" className="h-2.5 w-2.5 stroke-white fill-none" strokeWidth="2.5"><polyline points="1,5 4,8 11,1"/></svg>}
                                   </button>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-slate-950">Smart fill <span className="text-emerald-600">&quot;{s.target_column}&quot;</span> using <span className="text-slate-700">&quot;{s.key_column}&quot;</span></p>
-                                    <p className="text-xs text-slate-500 mt-0.5">Fills empty cells using a pattern found in your data.</p>
+                                    <p className="text-sm font-semibold text-slate-950">Smart fill <span className="text-emerald-600">&quot;{target}&quot;</span></p>
+                                    <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs text-slate-500">Using:</span>
+                                      <select
+                                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 focus:border-emerald-400 focus:outline-none"
+                                        value={selectedKey}
+                                        onChange={(e) => setSelectedSmartFillKey((prev) => ({ ...prev, [target]: e.target.value }))}
+                                      >
+                                        {options.map((o) => (
+                                          <option key={o.key_column} value={o.key_column}>{o.key_column}</option>
+                                        ))}
+                                      </select>
+                                    </div>
                                     <div className="mt-1.5 flex items-center gap-2">
                                       <div className="h-1.5 w-16 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${confidencePct}%` }} /></div>
                                       <span className="text-xs font-medium text-emerald-700">{confidencePct}% match</span>
                                       {topGroups.length > 0 && (
                                         <button type="button" className="text-xs text-indigo-500 hover:text-indigo-700 underline underline-offset-2 transition"
-                                          onClick={() => setExpandedSmartFill((prev) => { const next = new Set(prev); if (next.has(s.target_column)) next.delete(s.target_column); else next.add(s.target_column); return next; })}>
+                                          onClick={() => setExpandedSmartFill((prev) => { const next = new Set(prev); if (next.has(target)) next.delete(target); else next.add(target); return next; })}>
                                           {isExpanded ? "Hide example ▴" : "Show example ▾"}
                                         </button>
                                       )}
@@ -749,8 +761,8 @@ export function PrepareTab(props: PrepareTabProps) {
                                         <table className="min-w-full text-xs">
                                           <thead className="bg-slate-100 text-slate-500">
                                             <tr>
-                                              <th className="px-3 py-2 text-left font-medium">When &quot;{s.key_column}&quot; is…</th>
-                                              <th className="px-3 py-2 text-left font-medium">Fill &quot;{s.target_column}&quot; with</th>
+                                              <th className="px-3 py-2 text-left font-medium">When &quot;{selectedKey}&quot; is…</th>
+                                              <th className="px-3 py-2 text-left font-medium">Fill &quot;{target}&quot; with</th>
                                               <th className="px-3 py-2 text-right font-medium">Cells</th>
                                             </tr>
                                           </thead>
@@ -774,7 +786,25 @@ export function PrepareTab(props: PrepareTabProps) {
                             );
                           })}
 
-                          {/* Outliers */}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Statistical Insights Group */}
+                  {cleaningDetection && outlierSummaries.length > 0 && (
+                    <div className="rounded-2xl border border-teal-200 bg-white overflow-hidden shadow-sm">
+                      <button type="button" className="flex w-full items-center gap-2 px-5 py-3.5 bg-slate-50 border-b border-slate-100 text-left hover:bg-slate-100 transition" onClick={() => setStatInsightsOpen((o) => !o)}>
+                        <span className="h-2.5 w-2.5 rounded-full bg-teal-500 shrink-0" />
+                        <span className="font-semibold text-slate-950 text-sm">Statistical Insights</span>
+                        <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-semibold text-teal-700 ml-1">{outlierSummaries.length} column{outlierSummaries.length !== 1 ? "s" : ""}</span>
+                        <span className="ml-auto text-slate-400 text-xs">{statInsightsOpen ? "▾" : "▸"}</span>
+                      </button>
+                      {statInsightsOpen && (
+                        <div className="divide-y divide-slate-100">
+                          <div className="px-5 py-3 text-xs text-slate-500 bg-teal-50/40">
+                            These values are statistically unusual — not necessarily errors. Review the flagged values before deciding to act.
+                          </div>
                           {outlierSummaries.map((o) => {
                             const nullifyQueued = hasQueuedOperation(buildNullifyOutliersOperation(o.column));
                             const removeQueued = hasQueuedOperation(buildRemoveOutliersOperation(o.column));
@@ -806,7 +836,6 @@ export function PrepareTab(props: PrepareTabProps) {
                               </div>
                             );
                           })}
-
                         </div>
                       )}
                     </div>
@@ -836,7 +865,7 @@ export function PrepareTab(props: PrepareTabProps) {
                             if (overlap.length === 0) return null;
                             return (
                               <div className="mx-5 my-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                💡 <strong>{overlap.join(", ")}</strong>{overlap.length === 1 ? " has" : " have"} disguised empty values — replacing them first (in Data Issues above) gives a cleaner type conversion.
+                                <strong>{overlap.join(", ")}</strong>{overlap.length === 1 ? " has" : " have"} disguised empty values — replacing them first (in Data Issues above) gives a cleaner type conversion.
                               </div>
                             );
                           })()}
@@ -982,58 +1011,34 @@ export function PrepareTab(props: PrepareTabProps) {
                     )}
                   </div>
 
-                  {/* Advanced Group */}
+                  {/* Sort Data */}
                   <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-                    <button type="button" className="flex w-full items-center gap-2 px-5 py-3.5 bg-slate-50 text-left hover:bg-slate-100 transition" onClick={() => setAdvancedOpen((o) => !o)}>
-                      <span className="h-2.5 w-2.5 rounded-full bg-indigo-400 shrink-0" />
-                      <span className="font-semibold text-slate-950 text-sm">Advanced</span>
-                      <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-500 ml-1">Derived Column · Sort</span>
-                      <span className="ml-auto text-slate-400 text-xs">{advancedOpen ? "▾" : "▸"}</span>
-                    </button>
-                    {advancedOpen && (
-                      <div className="divide-y divide-slate-100">
-                        <div className="p-5">
-                          <p className="text-sm font-semibold text-slate-950 mb-1">Add Derived Column</p>
-                          <p className="text-xs text-slate-500 mb-3">Compute a new column from a formula. Reference existing columns by name.</p>
-                          <div className="grid gap-2 sm:grid-cols-[minmax(0,200px)_minmax(0,1fr)_auto]">
-                            <input type="text" value={derivedColumnName} onChange={(e) => setDerivedColumnName(e.target.value)} placeholder="new column name" className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none" />
-                            <input type="text" value={derivedExpression} onChange={(e) => setDerivedExpression(e.target.value)} placeholder="e.g. price * qty" className="rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-indigo-500 focus:outline-none" />
-                            <button type="button" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50" onClick={addDerivedColumn} disabled={!derivedColumnName.trim() || !derivedExpression.trim()}>Add</button>
-                          </div>
-                          {availableColumns.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              <span className="text-xs text-slate-500 self-center">Columns:</span>
-                              {availableColumns.slice(0, 12).map((col) => (
-                                <button key={col} type="button" className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700" onClick={() => setDerivedExpression((prev) => prev ? `${prev} ${col}` : col)}>{col}</button>
-                              ))}
-                              {availableColumns.length > 12 && <span className="text-xs text-slate-400">+{availableColumns.length - 12} more</span>}
-                            </div>
-                          )}
-                        </div>
-                        <div className="p-5">
-                          <p className="text-sm font-semibold text-slate-950 mb-3">Sort Data</p>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <select className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none" value={sortColumn} onChange={(e) => setSortColumn(e.target.value)}>
-                              <option value="">Column…</option>
-                              {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
-                            </select>
-                            <select className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none" value={sortAscending ? "asc" : "desc"} onChange={(e) => setSortAscending(e.target.value === "asc")}>
-                              <option value="asc">Ascending (A→Z, 0→9)</option>
-                              <option value="desc">Descending (Z→A, 9→0)</option>
-                            </select>
-                            {(() => {
-                              const op = sortColumn ? buildSortValuesOperation(sortColumn, sortAscending) : null;
-                              const queued = op ? hasQueuedOperation(op) : false;
-                              return (
-                                <button type="button" className={`rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`} onClick={toggleSortValues} disabled={!sortColumn}>
-                                  {queued ? "Added" : "Add"}
-                                </button>
-                              );
-                            })()}
-                          </div>
-                        </div>
+                    <div className="flex items-center gap-2 px-5 py-3.5 bg-slate-50 border-b border-slate-100">
+                      <span className="h-2.5 w-2.5 rounded-full bg-slate-400 shrink-0" />
+                      <span className="font-semibold text-slate-950 text-sm">Sort Data</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500 ml-1">optional</span>
+                    </div>
+                    <div className="p-5">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <select className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none" value={sortColumn} onChange={(e) => setSortColumn(e.target.value)}>
+                          <option value="">Column…</option>
+                          {availableColumns.map((col) => <option key={col} value={col}>{col}</option>)}
+                        </select>
+                        <select className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none" value={sortAscending ? "asc" : "desc"} onChange={(e) => setSortAscending(e.target.value === "asc")}>
+                          <option value="asc">Ascending (A→Z, 0→9)</option>
+                          <option value="desc">Descending (Z→A, 9→0)</option>
+                        </select>
+                        {(() => {
+                          const op = sortColumn ? buildSortValuesOperation(sortColumn, sortAscending) : null;
+                          const queued = op ? hasQueuedOperation(op) : false;
+                          return (
+                            <button type="button" className={`rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${queued ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-700 text-white hover:bg-slate-600"}`} onClick={toggleSortValues} disabled={!sortColumn}>
+                              {queued ? "Added" : "Add"}
+                            </button>
+                          );
+                        })()}
                       </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* Sticky Apply bar */}
