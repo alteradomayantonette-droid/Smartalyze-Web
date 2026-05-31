@@ -1,0 +1,52 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="cfd-smartalyze" name="CFD - Level 0 DFD">
+    <mxGraphModel dx="2313" dy="624" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="0" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" value="Context Flow Diagram (Level 0 DFD) — Smartalyze" vertex="1">
+          <mxGeometry height="30" width="600" x="180" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="e_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;" value="Entity / User" vertex="1">
+          <mxGeometry height="70" width="140" x="-90" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="p0" parent="1" style="swimlane;startSize=24;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;align=left;spacingLeft=6;" value="0" vertex="1">
+          <mxGeometry height="250" width="260" x="360" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="p0n" parent="p0" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=14;fontStyle=1;" value="Smartalyze: An AI-Assisted Data Visualization&lt;div&gt;and Analysis Platform&lt;/div&gt;" vertex="1">
+          <mxGeometry height="226" width="260" as="geometry" />
+        </mxCell>
+        <mxCell id="e_llm" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;" value="LLM Provider&#xa;(Ollama / Groq / Gemini)" vertex="1">
+          <mxGeometry height="70" width="165" x="840" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="f01" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=bottom;" target="p0n" value="Login Credentials / Registration&#xa;Dataset File (CSV / Excel / JSON / Image)&#xa;Analysis Request&#xa;Cleaning / Apply Request&#xa;AI Question / Chat&#xa;Export / Version Request">
+          <mxGeometry relative="1" x="0.3007" y="-30" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="100" y="350" />
+              <mxPoint x="100" y="287" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f02" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=top;" target="e_user" value="Authentication Token&#xa;Dataset Preview / Health Summary&#xa;Analysis Results / Charts&#xa;Cleaning Results&#xa;AI Suggestions / Chat Reply&#xa;Exported File">
+          <mxGeometry relative="1" x="-0.2625" y="-41" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="360" y="420" />
+              <mxPoint x="100" y="420" />
+              <mxPoint x="100" y="380" />
+              <mxPoint x="70" y="380" />
+              <mxPoint x="70" y="379" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f03" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=bottom;" target="e_llm" value="Dataset Context&#xa;(schema + issue summary)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f04" edge="1" parent="1" source="e_llm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=top;" target="p0" value="Cleaning Plans&#xa;Chat Responses">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
