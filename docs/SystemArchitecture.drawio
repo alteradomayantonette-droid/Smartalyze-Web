@@ -1,0 +1,46 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="sysarch-smartalyze" name="System Architecture">
+    <mxGraphModel dx="1212" dy="661" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" value="System Architecture — Smartalyze" vertex="1">
+          <mxGeometry height="30" width="600" x="280" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="box_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="User&#xa;(Student / Researcher / Small Business Owner)" vertex="1">
+          <mxGeometry height="70" width="300" x="250" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="box_webui" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Next.js Web Frontend&#xa;(Browser-based User Interface)" vertex="1">
+          <mxGeometry height="70" width="300" x="250" y="195" as="geometry" />
+        </mxCell>
+        <mxCell id="box_backend" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Python FastAPI Backend Server&#xa;(REST API · Auth · Dataset Management)" vertex="1">
+          <mxGeometry height="70" width="300" x="250" y="325" as="geometry" />
+        </mxCell>
+        <mxCell id="box_processing" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Data Processing Engine&#xa;(Rule-based Cleaning · ML Analysis · OCR)" vertex="1">
+          <mxGeometry height="70" width="300" x="250" y="455" as="geometry" />
+        </mxCell>
+        <mxCell id="box_output" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Output&#xa;(Cleaned Data · Visualizations · Export Files)" vertex="1">
+          <mxGeometry height="70" width="300" x="250" y="585" as="geometry" />
+        </mxCell>
+        <mxCell id="box_db" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="PostgreSQL Database&#xa;(User DB · Dataset DB)" vertex="1">
+          <mxGeometry height="70" width="200" x="680" y="325" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_user_webui" edge="1" parent="1" source="box_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="box_webui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_webui_backend" edge="1" parent="1" source="box_webui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="box_backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_backend_processing" edge="1" parent="1" source="box_backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="box_processing">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_processing_output" edge="1" parent="1" source="box_processing" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="box_output">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr_backend_db" edge="1" parent="1" source="box_backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=block;startArrow=block;startFill=1;endFill=1;" target="box_db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
