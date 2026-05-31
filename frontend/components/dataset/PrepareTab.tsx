@@ -342,7 +342,7 @@ export function PrepareTab(props: PrepareTabProps) {
       type_mismatch: { cls: "px-4 py-3 bg-amber-50 text-amber-700 border-l-2 border-amber-300", title: "This value doesn't look like a number — check your data" },
       pseudo_null: { cls: "px-4 py-3 bg-orange-50 text-orange-700 border-l-2 border-orange-300", title: "This looks like a disguised missing value (e.g. NA) — convert it to empty in Cleaning" },
       variant: { cls: "px-4 py-3 bg-purple-50 text-purple-700 border-l-2 border-purple-300", title: "Inconsistent value — looks like a variant of another value in this column" },
-      outlier: { cls: "px-4 py-3 bg-rose-50 text-rose-700 border-l-2 border-rose-300", title: "Potential outlier — far outside the typical range for this column" },
+      outlier: { cls: "px-4 py-3 bg-teal-50 text-teal-700 border-l-2 border-teal-300", title: "Potential outlier — far outside the typical range for this column" },
       format_mismatch: { cls: "px-4 py-3 bg-sky-50 text-sky-700 border-l-2 border-sky-300", title: "Different date format — this date is written differently from the rest of the column. Fix it in the Clean tab." },
     };
     return (
@@ -383,7 +383,7 @@ export function PrepareTab(props: PrepareTabProps) {
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-red-300 shrink-0" /> Empty cell</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-orange-300 shrink-0" /> Disguised missing</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-purple-300 shrink-0" /> Inconsistent value</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-rose-300 shrink-0" /> Outlier</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-teal-300 shrink-0" /> Outlier</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-amber-300 shrink-0" /> Type mismatch</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-sky-300 shrink-0" /> Inconsistent date format</span>
           </div>

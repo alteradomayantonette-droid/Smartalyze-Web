@@ -256,8 +256,8 @@ def detect_outliers(frame: pd.DataFrame) -> list[OutlierColumnSummary]:
             df[col] = coerced
 
     results: list[OutlierColumnSummary] = []
-    for col in [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]:
-        series = df[col].dropna()
+    for col in [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])]:
+        series = df[col].dropna().astype(float)
         if len(series) < 4:
             continue
         q1 = float(series.quantile(0.25))
