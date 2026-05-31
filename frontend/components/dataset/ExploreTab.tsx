@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { useState } from "react";
 import type {
+  AIAnalyzeContext,
   AnalyzeStatsResponse,
   CleanApplyResponse,
   DistributionResponse,
@@ -22,6 +23,7 @@ import type {
   StructureSummaryResponse,
   TrendResponse,
 } from "@/lib/api";
+import { AIInsightPanel } from "@/components/dataset/AIInsightPanel";
 
 type ExploreSubTab = "analysis" | "aggregation" | "trends";
 
@@ -59,6 +61,8 @@ export interface ExploreTabProps {
   handleGenerateAggregation: () => void;
   handleExportGroupCSV: () => void;
   handleSaveGroupAsDataset: () => void;
+  aiContext: AIAnalyzeContext | null;
+  token: string;
 }
 
 function InsightCard({ text }: { text: string }) {
@@ -105,6 +109,8 @@ export function ExploreTab(props: ExploreTabProps) {
     handleGenerateAggregation,
     handleExportGroupCSV,
     handleSaveGroupAsDataset,
+    aiContext,
+    token,
   } = props;
 
   const [subTab, setSubTab] = useState<ExploreSubTab>("analysis");
@@ -776,6 +782,12 @@ export function ExploreTab(props: ExploreTabProps) {
 
   return (
     <div className="space-y-6">
+      <AIInsightPanel
+        context={aiContext}
+        token={token}
+        contextKey={aiContext?.dataset_name ?? ""}
+      />
+
       {/* Guided workflow hint */}
       <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 flex gap-3 items-start">
         <span className="text-xl shrink-0">💡</span>

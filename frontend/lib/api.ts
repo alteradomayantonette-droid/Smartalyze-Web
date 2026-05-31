@@ -888,3 +888,74 @@ export function sendAIChat(
     AI_TIMEOUT_MS,
   );
 }
+
+export type AIAnalyzeContext = {
+  dataset_name: string;
+  row_count: number;
+  col_count: number;
+  column_stats: Array<{
+    name: string;
+    dtype: string;
+    missing_pct: number;
+    mean?: number | null;
+    min?: number | null;
+    max?: number | null;
+    std?: number | null;
+  }>;
+  trends: Array<{
+    column: string;
+    direction: string;
+    slope: number;
+    r_squared: number;
+  }>;
+  anomalies: Array<{
+    column: string;
+    outlier_count: number;
+    outlier_pct: number;
+    lower_fence: number;
+    upper_fence: number;
+  }>;
+  top_correlations: Array<{
+    col_a: string;
+    col_b: string;
+    r: number;
+  }>;
+};
+
+export type AIAnalyzeResponse = {
+  insight: string;
+};
+
+export function getAIInsight(
+  context: AIAnalyzeContext,
+  token: string,
+): Promise<AIAnalyzeResponse> {
+  return request<AIAnalyzeResponse>(
+    "/ai/analyze",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context }),
+    },
+    token,
+    AI_TIMEOUT_MS,
+  );
+}
+
+export function sendAIAnalyzeChat(
+  context: AIAnalyzeContext,
+  message: string,
+  history: AIChatMessage[],
+  token: string,
+): Promise<AIChatResponse> {
+  return request<AIChatResponse>(
+    "/ai/analyze/chat",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context, message, history }),
+    },
+    token,
+    AI_TIMEOUT_MS,
+  );
+}

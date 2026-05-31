@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
+  AIAnalyzeContext,
   analyzeStats,
   AnalyzeStatsResponse,
   AnomalyResponse,
@@ -284,6 +285,61 @@ export default function DatasetWorkspacePage() {
 
   const availableColumns = workspace?.dataset.columns_json?.map((c) => String(c.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
+
+  const exploreAIContext: AIAnalyzeContext | null =
+    analysisStats && workspace
+      ? {
+          dataset_name: workspace.dataset.original_filename ?? "dataset",
+          row_count: analysisStats.row_count,
+          col_count: analysisStats.col_count,
+          column_stats: analysisStats.column_stats.slice(0, 10).map((c) => ({
+            name: c.name,
+            dtype: c.dtype,
+            missing_pct: c.missing_pct,
+            mean: c.mean ?? null,
+            min: c.min ?? null,
+            max: c.max ?? null,
+            std: c.std ?? null,
+          })),
+          trends: (trendData?.columns ?? []).slice(0, 5).map((t) => ({
+            column: t.column,
+            direction: t.direction,
+            slope: t.slope,
+            r_squared: t.r_squared,
+          })),
+          anomalies: [],
+          top_correlations: [],
+        }
+      : null;
+
+  const detectAIContext: AIAnalyzeContext | null =
+    (anomalyData ?? correlationData) && workspace
+      ? {
+          dataset_name: workspace.dataset.original_filename ?? "dataset",
+          row_count: workspace.dataset.row_count ?? 0,
+          col_count: workspace.dataset.column_count ?? 0,
+          column_stats: [],
+          trends: [],
+          anomalies: (anomalyData?.columns ?? []).slice(0, 5).map((a) => ({
+            column: a.column,
+            outlier_count: a.outlier_count,
+            outlier_pct: a.outlier_pct,
+            lower_fence: a.lower_fence,
+            upper_fence: a.upper_fence,
+          })),
+          top_correlations: (() => {
+            if (!correlationData) return [];
+            const { columns, matrix } = correlationData;
+            const pairs: Array<{ col_a: string; col_b: string; r: number }> = [];
+            for (let i = 0; i < columns.length; i++)
+              for (let j = i + 1; j < columns.length; j++) {
+                const r = matrix[columns[i]]?.[columns[j]] ?? NaN;
+                if (!isNaN(r)) pairs.push({ col_a: columns[i], col_b: columns[j], r });
+              }
+            return pairs.sort((a, b) => Math.abs(b.r) - Math.abs(a.r)).slice(0, 5);
+          })(),
+        }
+      : null;
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -964,6 +1020,8 @@ export default function DatasetWorkspacePage() {
               handleGenerateAggregation={handleGenerateAggregation}
               handleExportGroupCSV={handleExportGroupCSV}
               handleSaveGroupAsDataset={handleSaveGroupAsDataset}
+              aiContext={exploreAIContext}
+              token={token ?? ""}
             />
             </TabErrorBoundary>
           )}
@@ -978,6 +1036,8 @@ export default function DatasetWorkspacePage() {
               correlationMethod={correlationMethod}
               setCorrelationMethod={setCorrelationMethod}
               onSwitchTab={(tab) => setActiveTab(tab)}
+              aiContext={detectAIContext}
+              token={token ?? ""}
             />
             </TabErrorBoundary>
           )}

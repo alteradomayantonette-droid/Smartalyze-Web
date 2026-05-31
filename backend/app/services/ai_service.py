@@ -23,7 +23,7 @@ Provider config (set in .env):
 import os
 import httpx
 
-from app.schemas.ai import AIContext, AIChatMessage
+from app.schemas.ai import AIContext, AIChatMessage, AIAnalyzeContext
 
 _PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()
 _OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -149,6 +149,79 @@ async def get_chat_reply(ctx: AIContext, message: str, history: list[AIChatMessa
         f"Here is the current dataset context:\n{context_text}"
     )
     messages: list[dict] = [{"role": "system", "content": system_with_context}]
+    for h in history[-10:]:
+        messages.append({"role": h.role, "content": h.content})
+    messages.append({"role": "user", "content": message})
+    return await _chat(messages)
+
+
+_ANALYZE_SYSTEM_PROMPT = (
+    "You are a data insight assistant for Smartalyze. "
+    "Interpret analysis results for non-technical users in plain English — "
+    "explain what the numbers mean, not how to clean the data. "
+    "Highlight 2-3 of the most interesting findings: notable correlations, "
+    "suspicious outlier rates, strong or weak trends, or columns worth investigating. "
+    "Be concise (under 200 words). Define any statistical term you use in one phrase. "
+    "Do not suggest cleaning steps. Do not ask follow-up questions."
+)
+
+
+def _build_analyze_context_text(ctx: AIAnalyzeContext) -> str:
+    lines: list[str] = [
+        f'Dataset: "{ctx.dataset_name}" — {ctx.row_count} rows, {ctx.col_count} columns'
+    ]
+    if ctx.column_stats:
+        lines.append("Column statistics:")
+        for c in ctx.column_stats[:10]:
+            parts = [f"  {c.name} ({c.dtype})", f"missing={c.missing_pct:.1f}%"]
+            if c.mean is not None:
+                parts.append(f"mean={c.mean:.2f}")
+            if c.min is not None and c.max is not None:
+                parts.append(f"range=[{c.min:.2f}, {c.max:.2f}]")
+            lines.append(" ".join(parts))
+    if ctx.trends:
+        lines.append("Trend analysis:")
+        for t in ctx.trends[:5]:
+            lines.append(
+                f"  {t.column}: {t.direction} (slope={t.slope:.4f}, R²={t.r_squared:.2f})"
+            )
+    if ctx.anomalies:
+        lines.append("Anomaly detection:")
+        for a in ctx.anomalies[:5]:
+            lines.append(
+                f"  {a.column}: {a.outlier_count} outliers ({a.outlier_pct:.1f}%), "
+                f"fence=[{a.lower_fence:.2f}, {a.upper_fence:.2f}]"
+            )
+    if ctx.top_correlations:
+        lines.append("Top correlations:")
+        for p in ctx.top_correlations[:5]:
+            direction = "positive" if p.r >= 0 else "negative"
+            lines.append(f"  {p.col_a} vs {p.col_b}: r={p.r:.2f} ({direction})")
+    return "\n".join(lines)
+
+
+async def get_analysis_insight(ctx: AIAnalyzeContext) -> str:
+    context_text = _build_analyze_context_text(ctx)
+    messages = [
+        {"role": "system", "content": _ANALYZE_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"{context_text}\n\n"
+                "Summarize the most interesting findings. "
+                "Focus on what a business user should know about this data."
+            ),
+        },
+    ]
+    return await _chat(messages)
+
+
+async def get_analysis_chat_reply(
+    ctx: AIAnalyzeContext, message: str, history: list[AIChatMessage]
+) -> str:
+    context_text = _build_analyze_context_text(ctx)
+    system = f"{_ANALYZE_SYSTEM_PROMPT}\n\nAnalysis context:\n{context_text}"
+    messages: list[dict] = [{"role": "system", "content": system}]
     for h in history[-10:]:
         messages.append({"role": h.role, "content": h.content})
     messages.append({"role": "user", "content": message})
