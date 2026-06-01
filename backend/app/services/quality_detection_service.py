@@ -149,6 +149,15 @@ def detect_categorical_variants(series: pd.Series, column: str) -> CategoryStand
     if numeric_ratio >= 0.8:
         return None
 
+    # Skip identifier / free-text columns — when (almost) every value is distinct
+    # there is no repeated category to standardize. Without this, sequential IDs
+    # like ORD-2024-1051, ORD-2024-1052, … (~0.92 fuzzy similarity) get wrongly
+    # clustered as variants of one category. Genuine categoricals repeat heavily,
+    # so their uniqueness ratio stays far below this threshold.
+    distinct = int(non_null.astype(str).nunique())
+    if len(non_null) >= 5 and distinct / len(non_null) >= 0.9:
+        return None
+
     counts = non_null.astype(str).value_counts()
     if not (2 <= len(counts) <= _MAX_CATEGORICAL_CARDINALITY):
         return None

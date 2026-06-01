@@ -288,13 +288,6 @@ export default function DashboardPage() {
                 Open Recent
               </button>
             )}
-            <button
-              type="button"
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
-              onClick={handleLogout}
-            >
-              Logout
-            </button>
           </div>
         </header>
 
@@ -555,6 +548,26 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* OCR Loading Overlay */}
+      {uploading && uploadingMessage.startsWith("Extracting") && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white px-10 py-8 shadow-2xl">
+            <div className="relative flex items-center justify-center">
+              <svg className="h-12 w-12 animate-spin text-indigo-200" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+              </svg>
+              <svg className="absolute h-12 w-12 animate-spin text-indigo-600" viewBox="0 0 24 24" fill="none" style={{ animationDuration: "0.8s" }}>
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-900">Extracting table from image</p>
+              <p className="mt-1 text-xs text-slate-400">This may take a few seconds…</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteTarget ? (

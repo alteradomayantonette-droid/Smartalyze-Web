@@ -28,7 +28,7 @@ def prewarm_ocr() -> None:
 
 
 def _upscale(image_bytes: bytes, scale: int = 2) -> bytes:
-    """Upscale image to improve EasyOCR accuracy on small text (e.g. single-digit narrow cells)."""
+    """Upscale image to improve OCR accuracy on small text (e.g. single-digit narrow cells)."""
     img = PILImage.open(io.BytesIO(image_bytes))
     w, h = img.size
     img = img.resize((w * scale, h * scale), PILImage.LANCZOS)
