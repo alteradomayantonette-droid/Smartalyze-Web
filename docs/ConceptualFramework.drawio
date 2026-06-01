@@ -1,0 +1,99 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="conceptual-framework" name="Conceptual Framework">
+    <mxGraphModel dx="1373" dy="749" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontStyle=1;fontSize=16;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" value="Conceptual Framework of Smartalyze" vertex="1">
+          <mxGeometry height="50" width="1120" x="50" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;fontStyle=2;fontSize=12;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" value="An AI-Assisted Data Visualization and Analysis Platform" vertex="1">
+          <mxGeometry height="30" width="1120" x="50" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="input" parent="1" style="swimlane;startSize=40;fillColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=14;align=center;verticalAlign=middle;" value="INPUT" vertex="1">
+          <mxGeometry height="370" width="310" x="50" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="i1" connectable="0" parent="input" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Raw Datasets (CSV, Excel, JSON)" vertex="1">
+          <mxGeometry height="46" width="310" y="44" as="geometry" />
+        </mxCell>
+        <mxCell id="i2" connectable="0" parent="input" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Image-based Tables (PNG / JPG)" vertex="1">
+          <mxGeometry height="46" width="310" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="i3" connectable="0" parent="input" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="User Cleaning Operations" vertex="1">
+          <mxGeometry height="46" width="310" y="136" as="geometry" />
+        </mxCell>
+        <mxCell id="i4" connectable="0" parent="input" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Analysis and Visualization Requests" vertex="1">
+          <mxGeometry height="46" width="310" y="182" as="geometry" />
+        </mxCell>
+        <mxCell id="i5" connectable="0" parent="input" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="AI Chat Questions" vertex="1">
+          <mxGeometry height="46" width="310" y="228" as="geometry" />
+        </mxCell>
+        <mxCell id="i6" connectable="0" parent="input" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;" value="Export Format Selection" vertex="1">
+          <mxGeometry height="46" width="310" y="274" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow1" edge="1" parent="1" source="input" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;startArrow=none;strokeWidth=2;strokeColor=#000000;" target="process" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="process" parent="1" style="swimlane;startSize=40;fillColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=14;align=center;verticalAlign=middle;" value="PROCESS" vertex="1">
+          <mxGeometry height="370" width="350" x="440" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" connectable="0" parent="process" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="1.  Data Ingestion and Validation" vertex="1">
+          <mxGeometry height="46" width="350" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" connectable="0" parent="process" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="2.  OCR Table Extraction" vertex="1">
+          <mxGeometry height="46" width="350" y="86" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" connectable="0" parent="process" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="3.  Missing Value Detection and Handling" vertex="1">
+          <mxGeometry height="46" width="350" y="132" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" connectable="0" parent="process" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="4.  Duplicate Record Detection and Removal" vertex="1">
+          <mxGeometry height="46" width="350" y="178" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" connectable="0" parent="process" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="5.  Data Type Standardization" vertex="1">
+          <mxGeometry height="46" width="350" y="224" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" connectable="0" parent="process" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="6.  ML Trend and Anomaly Analysis" vertex="1">
+          <mxGeometry height="46" width="350" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" connectable="0" parent="process" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;" value="7.  AI-Guided Cleaning Suggestions" vertex="1">
+          <mxGeometry height="46" width="350" y="316" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow2" edge="1" parent="1" source="process" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;startArrow=none;strokeWidth=2;strokeColor=#000000;" target="output" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="output" parent="1" style="swimlane;startSize=40;fillColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=14;align=center;verticalAlign=middle;" value="OUTPUT" vertex="1">
+          <mxGeometry height="370" width="310" x="870" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="o1" connectable="0" parent="output" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Cleaned and Structured Dataset" vertex="1">
+          <mxGeometry height="46" width="310" y="44" as="geometry" />
+        </mxCell>
+        <mxCell id="o2" connectable="0" parent="output" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Statistical Summaries per Column" vertex="1">
+          <mxGeometry height="46" width="310" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="o3" connectable="0" parent="output" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Trend Analysis and Anomaly Reports" vertex="1">
+          <mxGeometry height="46" width="310" y="136" as="geometry" />
+        </mxCell>
+        <mxCell id="o4" connectable="0" parent="output" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Interactive Visualizations and Charts" vertex="1">
+          <mxGeometry height="46" width="310" y="182" as="geometry" />
+        </mxCell>
+        <mxCell id="o5" connectable="0" parent="output" style="text;html=0;strokeColor=#dddddd;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;top=0;left=0;right=0;bottom=1;" value="Exported Files (CSV, Excel, JSON)" vertex="1">
+          <mxGeometry height="46" width="310" y="228" as="geometry" />
+        </mxCell>
+        <mxCell id="o6" connectable="0" parent="output" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;" value="AI Cleaning Recommendations" vertex="1">
+          <mxGeometry height="46" width="310" y="274" as="geometry" />
+        </mxCell>
+        <mxCell id="feedback" edge="1" parent="1" source="output" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;endFill=1;startArrow=none;strokeWidth=1.5;strokeColor=#000000;dashed=1;fontSize=10;align=center;" target="process" value="Iterative Refinement">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1025" y="530" />
+              <mxPoint x="615" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="footnote" parent="1" style="text;html=1;fontStyle=2;fontSize=10;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;" value="Note: The dashed arrow indicates iterative refinement — users may re-clean and re-analyze datasets multiple times before exporting." vertex="1">
+          <mxGeometry height="30" width="1130" x="50" y="545" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
