@@ -1,51 +1,30 @@
 <mxfile host="app.diagrams.net">
   <diagram id="cfd-smartalyze" name="CFD - Level 0 DFD">
-    <mxGraphModel dx="2313" dy="624" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="0" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="1031" dy="489" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="0" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" value="Context Flow Diagram (Level 0 DFD) — Smartalyze" vertex="1">
-          <mxGeometry height="30" width="600" x="180" y="60" as="geometry" />
+          <mxGeometry height="30" width="600" x="300" y="160" as="geometry" />
         </mxCell>
-
         <mxCell id="e_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;" value="Entity / User" vertex="1">
           <mxGeometry height="70" width="140" x="60" y="360" as="geometry" />
         </mxCell>
-
         <mxCell id="p0" parent="1" style="swimlane;startSize=24;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;align=left;spacingLeft=6;" value="0" vertex="1">
           <mxGeometry height="280" width="300" x="440" y="245" as="geometry" />
         </mxCell>
         <mxCell id="p0n" parent="p0" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=14;fontStyle=1;" value="Smartalyze: An AI-Assisted Data Visualization&lt;div&gt;and Analysis Platform&lt;/div&gt;" vertex="1">
           <mxGeometry height="256" width="300" as="geometry" />
         </mxCell>
-
         <mxCell id="e_llm" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;" value="LLM Provider&#xa;(Ollama / Groq / Gemini)" vertex="1">
           <mxGeometry height="70" width="180" x="900" y="360" as="geometry" />
         </mxCell>
-
-        <!--
-          Flow grouping below mirrors the Level-1 DFD exactly (balancing rule: every
-          flow crossing the system boundary here must reappear, unchanged, at Level 1).
-
-          f01 groups DFD flows: f01 Login Credentials/Registration, f03 Dataset File,
-          f05 Detect Request, f11 Analysis Request, f13 Context + Questions,
-          f07 Export Format, f09 Save Response (New/Current)
-
-          f02 groups DFD flows: f02 Auth Token/Status, f04 Dataset Response,
-          f06 Apply Results, f12 Stats/Trends/Predictions, f14 AI Suggestions/Chat Reply,
-          f08 Exported File, f10 Success Save
-        -->
         <mxCell id="f01" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=bottom;" target="p0" value="Login Credentials / Registration&#xa;Dataset File (CSV / Excel / JSON / Image)&#xa;Detect Request&#xa;Analysis Request&#xa;Context + Questions (AI Chat)&#xa;Export Format Request&#xa;Save Request (New / Current Version)">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="f02" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=top;" target="e_user" value="Auth Token / Status&#xa;Dataset Response / Preview&#xa;Apply (Cleaning) Results&#xa;Stats / Trends / Predictions&#xa;AI Suggestions / Chat Reply&#xa;Exported File&#xa;Save / Success Response">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!--
-          f03 groups DFD flow: f25 Dataset Context (schema + issue summary)
-          f04 groups DFD flow: f26 AI Response
-        -->
         <mxCell id="f03" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=bottom;" target="e_llm" value="Dataset Context&#xa;(schema + issue summary)">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
