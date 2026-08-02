@@ -382,6 +382,17 @@ Dependent rows (versions/actions) are deleted via ORM cascades + FK ON DELETE CA
     await db.commit()
 
 
+async def rename_owned_dataset(db: AsyncSession, dataset: Dataset, new_name: str) -> Dataset:
+    """Rename a dataset in place and commit."""
+    name = new_name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset name cannot be empty.")
+    dataset.name = name
+    await db.commit()
+    await db.refresh(dataset)
+    return dataset
+
+
 def get_workspace_guidance(dataset: Dataset) -> tuple[list[dict], list[dict]]:
     """Compute warnings/suggestions shown in the dataset workspace UI."""
     return _build_workspace_guidance(dataset)

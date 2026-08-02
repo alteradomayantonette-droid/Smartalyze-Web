@@ -148,6 +148,17 @@ class DeleteDatasetResponse(BaseModel):
     message: str
 
 
+class RenameDatasetRequest(BaseModel):
+    """Request body for PATCH /dataset/{id}/rename."""
+    name: str = Field(min_length=1, max_length=255)
+
+
+class RenameDatasetResponse(BaseModel):
+    """Response body for PATCH /dataset/{id}/rename."""
+    message: str
+    dataset: DatasetRead
+
+
 class ExportDatasetRequest(BaseModel):
     """Request body for exporting a dataset/result.
 
