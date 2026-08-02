@@ -89,6 +89,7 @@ export default function DashboardPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadingMessage, setUploadingMessage] = useState("Uploading…");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const ocrProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -110,11 +111,39 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  useEffect(() => {
+    return () => { if (ocrProgressTimerRef.current !== null) clearInterval(ocrProgressTimerRef.current); };
+  }, []);
+
   async function refreshDatasets(t?: string) {
     const tok = t ?? token;
     if (!tok) return;
     const list = await listDatasets(tok);
     setDatasets(list);
+  }
+
+  // OCR extraction has no real progress signal from the backend (it's a single
+  // blocking call, no streaming channel) -- simulate a smooth, decelerating climb
+  // toward ~92% so the bar keeps visibly moving instead of sitting on a spinner,
+  // then snap to 100% once the real response actually arrives.
+  function startSimulatedOcrProgress() {
+    stopSimulatedOcrProgress();
+    setUploadProgress(0);
+    ocrProgressTimerRef.current = setInterval(() => {
+      setUploadProgress((prev) => {
+        const current = prev ?? 0;
+        if (current >= 0.92) return current;
+        const remaining = 0.92 - current;
+        return current + remaining * 0.08;
+      });
+    }, 200);
+  }
+
+  function stopSimulatedOcrProgress() {
+    if (ocrProgressTimerRef.current !== null) {
+      clearInterval(ocrProgressTimerRef.current);
+      ocrProgressTimerRef.current = null;
+    }
   }
 
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -129,14 +158,19 @@ export default function DashboardPage() {
     try {
       await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok, (fraction) => {
         setUploadProgress(fraction);
-        if (fraction >= 1) setUploadingMessage(isImage ? "Extracting table from image…" : "Processing…");
+        if (fraction >= 1) {
+          setUploadingMessage(isImage ? "Extracting table from image…" : "Processing…");
+          if (isImage) startSimulatedOcrProgress();
+        }
       });
+      setUploadProgress(1);
       event.target.value = "";
       await refreshDatasets(tok);
       toast.success(isImage ? "Image table extracted and saved as dataset." : "Dataset uploaded successfully.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed.");
     } finally {
+      stopSimulatedOcrProgress();
       setUploading(false);
       setUploadProgress(null);
     }
@@ -227,13 +261,18 @@ export default function DashboardPage() {
     try {
       await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok, (fraction) => {
         setUploadProgress(fraction);
-        if (fraction >= 1) setUploadingMessage(isImage ? "Extracting table from image…" : "Processing…");
+        if (fraction >= 1) {
+          setUploadingMessage(isImage ? "Extracting table from image…" : "Processing…");
+          if (isImage) startSimulatedOcrProgress();
+        }
       });
+      setUploadProgress(1);
       await refreshDatasets(tok);
       toast.success(isImage ? "Image table extracted and saved." : "Dataset uploaded successfully.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed.");
     } finally {
+      stopSimulatedOcrProgress();
       setUploading(false);
       setUploadProgress(null);
     }
@@ -650,7 +689,7 @@ export default function DashboardPage() {
       {/* OCR Loading Overlay */}
       {uploading && uploadingMessage.startsWith("Extracting") && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white px-10 py-8 shadow-2xl">
+          <div className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white px-10 py-8 shadow-2xl">
             <div className="relative flex items-center justify-center">
               <svg className="h-12 w-12 animate-spin text-indigo-200" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -662,6 +701,15 @@ export default function DashboardPage() {
             <div className="text-center">
               <p className="text-sm font-semibold text-slate-900">Extracting table from image</p>
               <p className="mt-1 text-xs text-slate-400">This may take a few seconds…</p>
+            </div>
+            <div className="w-full">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-100">
+                <div
+                  className="h-full rounded-full bg-indigo-500 transition-all duration-200"
+                  style={{ width: `${Math.round((uploadProgress ?? 0) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-center text-xs text-indigo-500">{Math.round((uploadProgress ?? 0) * 100)}%</p>
             </div>
           </div>
         </div>
