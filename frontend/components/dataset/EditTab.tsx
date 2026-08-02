@@ -20,7 +20,8 @@ type EditOperation =
   | { type: "row_insert"; rowIndex: number }
   | { type: "col_rename"; oldName: string; newName: string }
   | { type: "bulk_suggest"; changes: Array<{ rowIndex: number; colName: string; oldValue: unknown; newValue: unknown }> }
-  | { type: "col_delete"; colName: string; colIndex: number; deletedEdits: Array<[string, unknown]> };
+  | { type: "col_delete"; colName: string; colIndex: number; deletedEdits: Array<[string, unknown]> }
+  | { type: "col_insert"; colName: string; colIndex: number };
 
 function describeOperation(op: EditOperation): string {
   switch (op.type) {
@@ -30,6 +31,7 @@ function describeOperation(op: EditOperation): string {
     case "col_rename": return `column rename`;
     case "bulk_suggest": return `${op.changes.length} AI suggestion${op.changes.length !== 1 ? "s" : ""}`;
     case "col_delete": return `deletion of column "${op.colName}"`;
+    case "col_insert": return `addition of column "${op.colName}"`;
   }
 }
 
@@ -103,13 +105,18 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [renamingCol, setRenamingCol] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [addingColumn, setAddingColumn] = useState(false);
+  const [addColumnDraft, setAddColumnDraft] = useState("");
   const [loadingRows, setLoadingRows] = useState(true);
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // ── Dirty detection ──────────────────────────────────────────────────────
-  const isDirty = editedCells.size > 0 || deletedRows.size > 0 || insertedRows.size > 0;
+  const columnsChanged =
+    columns.length !== originalColumns.current.length ||
+    columns.some((c, i) => c !== originalColumns.current[i]);
+  const isDirty = editedCells.size > 0 || deletedRows.size > 0 || insertedRows.size > 0 || columnsChanged;
   useEffect(() => { onDirtyChange(isDirty); }, [isDirty, onDirtyChange]);
 
   // ── Search debounce ──────────────────────────────────────────────────────
@@ -302,6 +309,15 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
         for (const [k, v] of op.deletedEdits) next.set(k, v);
         return next;
       });
+    } else if (op.type === "col_insert") {
+      setColumns((cs) => cs.filter((c) => c !== op.colName));
+      setEditedCells((m) => {
+        const next = new Map(m);
+        for (const key of next.keys()) {
+          if (key.endsWith(`::${op.colName}`)) next.delete(key);
+        }
+        return next;
+      });
     }
   }
 
@@ -333,6 +349,12 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
       setEditedCells((m) => {
         const next = new Map(m);
         for (const [k] of op.deletedEdits) next.delete(k);
+        return next;
+      });
+    } else if (op.type === "col_insert") {
+      setColumns((cs) => {
+        const next = [...cs];
+        next.splice(op.colIndex, 0, op.colName);
         return next;
       });
     }
@@ -386,6 +408,20 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
     });
     setMissingValuesPerCol((prev) => { const n = { ...prev }; delete n[colName]; return n; });
     setColumnTypes((prev) => { const n = { ...prev }; delete n[colName]; return n; });
+  }
+
+  function commitAddColumn() {
+    const name = addColumnDraft.trim().slice(0, 100);
+    if (!name) { setAddingColumn(false); setAddColumnDraft(""); return; }
+    if (columns.includes(name)) {
+      toast.error(`A column named "${name}" already exists.`);
+      return;
+    }
+    const colIndex = columns.length;
+    setColumns((cs) => [...cs, name]);
+    pushUndo({ type: "col_insert", colName: name, colIndex });
+    setAddingColumn(false);
+    setAddColumnDraft("");
   }
 
   // ── Cell commit ──────────────────────────────────────────────────────────
@@ -507,6 +543,15 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
       });
 
       await saveManualEdit(datasetId, { records, columns }, token);
+
+      // Sync local state to exactly what was just persisted -- the "load on
+      // mount" effect is keyed on [datasetId, token, totalRows], none of which
+      // necessarily change after a save (e.g. adding a column or editing a cell
+      // doesn't change row count), so it won't refire and pick up the new
+      // baseline on its own.
+      setRows(records.map((r) => ({ ...r })));
+      originalRows.current = records.map((r) => ({ ...r }));
+      originalColumns.current = [...columns];
 
       // Reset dirty state before reloading workspace
       setEditedCells(new Map());
@@ -755,6 +800,31 @@ export function EditTab({ workspace, token, onDirtyChange, onSaved }: EditTabPro
                     </div>
                   </th>
                 ))}
+                {/* Add column */}
+                <th className="border-b border-slate-200 px-3 py-2 text-left whitespace-nowrap">
+                  {addingColumn ? (
+                    <input
+                      autoFocus
+                      className="w-32 rounded border border-indigo-400 bg-white px-2 py-0.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-300"
+                      placeholder="Column name…"
+                      value={addColumnDraft}
+                      onChange={(e) => setAddColumnDraft(e.target.value)}
+                      onBlur={commitAddColumn}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitAddColumn();
+                        if (e.key === "Escape") { setAddingColumn(false); setAddColumnDraft(""); }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setAddingColumn(true)}
+                      title="Add column"
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                    >
+                      + Add column
+                    </button>
+                  )}
+                </th>
               </tr>
             </thead>
           </table>
