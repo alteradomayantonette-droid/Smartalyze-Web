@@ -223,10 +223,17 @@ def _read_dataframe(file_bytes: bytes, filename: str) -> tuple[pd.DataFrame, str
         frame = pd.read_json(buffer)
         file_format = "json"
 
-    if frame.empty and frame.shape[1] == 0:
+    # Reject files with no usable data: zero rows (catches header-only files, where
+    # shape[1] > 0 but there's nothing beneath the header) or every cell null across
+    # the whole frame. Deliberately NOT a row-count/size minimum -- small real
+    # datasets (even 2-3 rows) must still be accepted.
+    if frame.shape[0] == 0 or frame.notna().sum().sum() == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file does not contain any usable tabular data.",
+            detail=(
+                "The uploaded file doesn't contain any usable data — it may be empty, "
+                "contain only column headers, or have no non-missing values."
+            ),
         )
 
     return frame, file_format
