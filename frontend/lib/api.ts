@@ -82,6 +82,11 @@ export type DeleteDatasetResponse = {
   message: string;
 };
 
+export type RenameDatasetResponse = {
+  message: string;
+  dataset: Dataset;
+};
+
 export type ExportDatasetFormat = "csv" | "xlsx" | "json" | "parquet";
 
 export type ExportDatasetRequest = {
@@ -469,6 +474,18 @@ export function deleteDataset(datasetId: number, token: string): Promise<DeleteD
   );
 }
 
+export function renameDataset(datasetId: number, name: string, token: string): Promise<RenameDatasetResponse> {
+  return request<RenameDatasetResponse>(
+    `/dataset/${datasetId}/rename`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    token,
+  );
+}
+
 function parseFilenameFromContentDisposition(headerValue: string | null): string | null {
   if (!headerValue) {
     return null;
@@ -810,25 +827,49 @@ export function saveManualEdit(
   );
 }
 
-export async function uploadDataset(file: File, description: string, token?: string): Promise<{ message: string; dataset: Dataset }> {
+// Upload uses XMLHttpRequest (not fetch) because fetch has no cross-browser way to
+// report upload progress; XHR's `upload.onprogress` gives real byte-level progress
+// for the dashboard's upload progress bar.
+export function uploadDataset(
+  file: File,
+  description: string,
+  token?: string,
+  onProgress?: (fraction: number) => void,
+): Promise<{ message: string; dataset: Dataset }> {
   const formData = new FormData();
   formData.append("file", file);
   if (description.trim()) {
     formData.append("description", description.trim());
   }
 
-  const response = await fetch(`${API_BASE_URL}/upload`, {
-    method: "POST",
-    body: formData,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE_URL}/upload`);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (onProgress && event.lengthComputable) {
+        onProgress(event.loaded / event.total);
+      }
+    };
+
+    xhr.onload = () => {
+      let body: unknown = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* non-JSON response body */ }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as { message: string; dataset: Dataset });
+      } else {
+        const detail = (body as { detail?: string } | null)?.detail;
+        reject(new Error(detail ?? "Upload failed."));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error(`Could not reach the API at ${API_BASE_URL}. Make sure the backend is running and CORS allows your frontend origin.`));
+    };
+
+    xhr.send(formData);
   });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    throw new Error(errorBody?.detail ?? "Upload failed.");
-  }
-
-  return response.json() as Promise<{ message: string; dataset: Dataset }>;
 }
 
 // --- AI Advisor ---
