@@ -27,6 +27,49 @@ import { AIInsightPanel } from "@/components/dataset/AIInsightPanel";
 
 type ExploreSubTab = "analysis" | "aggregation" | "trends";
 
+// Trend chart boundaries: cap how many raw points ever get sent to Recharts, and
+// clamp the Y-axis to the 1st-99th percentile so one extreme outlier can't
+// auto-scale the axis and flatten the rest of the series.
+const TREND_CHART_MAX_POINTS = 250;
+
+// Uniform-stride sample that always keeps the first and last point, so the
+// visible series start/end (and the trend-line overlay, which is anchored to
+// them) still line up. Keeps each point's original array index so downstream
+// interpolation math can stay correct after sampling.
+function sampleTrendPoints<T>(points: T[], maxPoints: number): Array<{ point: T; originalIndex: number }> {
+  const indexed = points.map((point, originalIndex) => ({ point, originalIndex }));
+  if (indexed.length <= maxPoints) return indexed;
+  const step = Math.ceil(indexed.length / maxPoints);
+  const sampled = indexed.filter((_, i) => i % step === 0);
+  const last = indexed[indexed.length - 1];
+  if (sampled[sampled.length - 1]?.originalIndex !== last.originalIndex) sampled.push(last);
+  return sampled;
+}
+
+function percentile(sortedValues: number[], p: number): number {
+  if (sortedValues.length === 0) return 0;
+  const idx = (p / 100) * (sortedValues.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sortedValues[lo];
+  return sortedValues[lo] + (sortedValues[hi] - sortedValues[lo]) * (idx - lo);
+}
+
+// Returns a clamped [min, max] Y-axis domain only when the 99th percentile is
+// meaningfully below the true max (i.e. outliers would otherwise dominate the
+// auto-scaled axis) -- well-behaved data renders with Recharts' normal
+// auto-scale, unchanged from today.
+function computeOutlierClampDomain(values: number[], trueMin: number, trueMax: number): [number, number] | null {
+  if (values.length < 5 || trueMax === trueMin) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const p1 = percentile(sorted, 1);
+  const p99 = percentile(sorted, 99);
+  const range = trueMax - trueMin;
+  if ((trueMax - p99) / range <= 0.05 && (p1 - trueMin) / range <= 0.05) return null;
+  const padding = (p99 - p1) * 0.1 || range * 0.1;
+  return [p1 - padding, p99 + padding];
+}
+
 export interface ExploreTabProps {
   workspace: { dataset: { row_count?: number | null; column_count?: number | null; summary_json?: Record<string, unknown> | null } } | null;
   availableColumns: string[];
@@ -515,8 +558,8 @@ export function ExploreTab(props: ExploreTabProps) {
           {groupResult ? (
             <p className="mt-1 text-sm text-slate-600">
               {isCount
-                ? <>Row count per <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by count.</>
-                : <>{opLabel} of <strong>{groupResult.aggregate_column}</strong> grouped by <strong>{groupResult.group_by}</strong> — {groupResult.results.length} groups, sorted by value.</>
+                ? <>Row count per <strong>{groupResult.group_by}</strong> — {groupResult.total_groups.toLocaleString()} groups, sorted by count.</>
+                : <>{opLabel} of <strong>{groupResult.aggregate_column}</strong> grouped by <strong>{groupResult.group_by}</strong> — {groupResult.total_groups.toLocaleString()} groups, sorted by value.</>
               }
             </p>
           ) : (
@@ -551,6 +594,11 @@ export function ExploreTab(props: ExploreTabProps) {
               </div>
             )}
           </div>
+          {groupResult && groupResult.total_groups > groupResult.results.length && (
+            <p className="mt-2 text-xs text-slate-500">
+              Showing top {groupResult.results.length.toLocaleString()} of {groupResult.total_groups.toLocaleString()} groups, sorted by {isCount ? "count" : "value"}.
+            </p>
+          )}
 
           {groupResult && groupResult.results.length > 0 && (
             <>
@@ -579,6 +627,11 @@ export function ExploreTab(props: ExploreTabProps) {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              {groupResult.total_groups > 15 && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Chart shows the top 15 of {groupResult.total_groups.toLocaleString()} groups.
+                </p>
+              )}
 
               <div className="mt-4 space-y-3">
                 <div className="flex flex-wrap gap-2">
@@ -718,53 +771,83 @@ export function ExploreTab(props: ExploreTabProps) {
 
                 <InsightCard text="R² measures how well the trend line fits your data. Above 0.7 = strong trend. Below 0.3 = weak or noisy pattern — the trend line may not be reliable." />
 
-                {activeTrend.chart_points.length >= 2 && (
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="mb-1 text-sm font-semibold text-slate-950">
-                      Trend chart — <span className="text-indigo-600">{activeTrend.column}</span>
-                      <span className="ml-2 text-xs font-normal text-slate-400">(indigo = data series, dashed = trend line)</span>
-                    </h3>
-                    <div className="h-52">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          data={activeTrend.chart_points.map((p, i) => ({
-                            x: i,
-                            value: p.y,
-                            trend: activeTrend.trend_line[0] && activeTrend.trend_line[1]
-                              ? activeTrend.trend_line[0].y + ((activeTrend.trend_line[1].y - activeTrend.trend_line[0].y) / (activeTrend.chart_points.length - 1 || 1)) * i
-                              : null,
-                          }))}
-                          margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="x" tick={{ fontSize: 10, fill: "#94a3b8" }} />
-                          <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} width={40} />
-                          <Tooltip
-                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                            formatter={(v, name) => [typeof v === "number" ? v.toFixed(2) : String(v ?? ""), name === "trend" ? "Trend line" : activeTrend.column]}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="value"
-                            stroke="#6366f1"
-                            strokeWidth={2}
-                            dot={false}
-                            name="value"
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="trend"
-                            stroke={activeTrend.direction === "increasing" ? "#22c55e" : "#ef4444"}
-                            strokeWidth={1.5}
-                            strokeDasharray="6 4"
-                            dot={false}
-                            name="trend"
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
+                {activeTrend.chart_points.length >= 2 && (() => {
+                  const totalPoints = activeTrend.chart_points.length;
+                  const sampled = sampleTrendPoints(activeTrend.chart_points, TREND_CHART_MAX_POINTS);
+                  const isSampled = sampled.length < totalPoints;
+                  const yClamp = computeOutlierClampDomain(
+                    activeTrend.chart_points.map((p) => p.y),
+                    activeTrend.min,
+                    activeTrend.max,
+                  );
+                  const trendSlopePerStep =
+                    activeTrend.trend_line[0] && activeTrend.trend_line[1]
+                      ? (activeTrend.trend_line[1].y - activeTrend.trend_line[0].y) / (totalPoints - 1 || 1)
+                      : null;
+
+                  return (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                      <h3 className="mb-1 text-sm font-semibold text-slate-950">
+                        Trend chart — <span className="text-indigo-600">{activeTrend.column}</span>
+                        <span className="ml-2 text-xs font-normal text-slate-400">(indigo = data series, dashed = trend line)</span>
+                      </h3>
+                      {isSampled && (
+                        <p className="mb-1 text-xs text-slate-400">
+                          Showing {sampled.length.toLocaleString()} of {totalPoints.toLocaleString()} points (sampled for readability).
+                        </p>
+                      )}
+                      <div className="h-52">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart
+                            data={sampled.map(({ point, originalIndex }) => ({
+                              x: originalIndex,
+                              value: point.y,
+                              trend: trendSlopePerStep !== null && activeTrend.trend_line[0]
+                                ? activeTrend.trend_line[0].y + trendSlopePerStep * originalIndex
+                                : null,
+                            }))}
+                            margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="x" tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                            <YAxis
+                              tick={{ fontSize: 10, fill: "#94a3b8" }}
+                              width={40}
+                              domain={yClamp ?? undefined}
+                              allowDataOverflow={yClamp !== null}
+                            />
+                            <Tooltip
+                              contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                              formatter={(v, name) => [typeof v === "number" ? v.toFixed(2) : String(v ?? ""), name === "trend" ? "Trend line" : activeTrend.column]}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="value"
+                              stroke="#6366f1"
+                              strokeWidth={2}
+                              dot={false}
+                              name="value"
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="trend"
+                              stroke={activeTrend.direction === "increasing" ? "#22c55e" : "#ef4444"}
+                              strokeWidth={1.5}
+                              strokeDasharray="6 4"
+                              dot={false}
+                              name="trend"
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {yClamp && (
+                        <p className="mt-2 text-xs text-slate-400">
+                          Y-axis range clipped to the 1st–99th percentile to keep the chart readable (full range: {activeTrend.min} to {activeTrend.max}).
+                        </p>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </>
             )}
           </>

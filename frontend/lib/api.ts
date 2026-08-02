@@ -233,6 +233,7 @@ export type CorrelationResponse = {
   columns: string[];
   matrix: Record<string, Record<string, number>>;
   method: CorrelationMethod;
+  total_columns: number;
 };
 
 export type StructureColumnSummary = {
@@ -330,6 +331,7 @@ export type GroupByResponse = {
   aggregate_column: string;
   aggregate_func: string;
   results: GroupResult[];
+  total_groups: number;
 };
 
 export type ChartPoint = { x: number; y: number };

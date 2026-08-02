@@ -30,6 +30,12 @@ from app.services.dataset_snapshot import snapshot_to_dataframe
 
 SUPPORTED_AGG_FUNCS = {"sum", "count", "mean", "min", "max"}
 
+# Cap on rows returned by group_dataset() -- a high-cardinality group-by column
+# (e.g. 5,000 distinct values) would otherwise ship an unbounded payload for a
+# result the UI only ever renders a top-N slice of. total_groups on the response
+# tells the frontend the true count so it can show a "top N of M" notice.
+MAX_GROUP_RESULTS = 50
+
 
 def _get_version(dataset: Dataset, version_id: int | None) -> DatasetVersion:
     """Return the requested version (or current) from the already-loaded dataset."""
@@ -440,13 +446,18 @@ def group_dataset(
         )
         for k, v in result_series.items()
     ]
+    # Stable sort: ties at the MAX_GROUP_RESULTS cutoff keep their original
+    # groupby iteration order rather than any secondary key.
     results.sort(key=lambda r: r.value, reverse=True)
+    total_groups = len(results)
+    results = results[:MAX_GROUP_RESULTS]
 
     return GroupByResponse(
         group_by=group_by,
         aggregate_column=aggregate_column,
         aggregate_func=aggregate_func,
         results=results,
+        total_groups=total_groups,
     )
 
 

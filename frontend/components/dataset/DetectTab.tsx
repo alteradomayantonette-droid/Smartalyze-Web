@@ -255,6 +255,9 @@ export function DetectTab(props: DetectTabProps) {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-slate-500">Columns analyzed</p>
             <p className="mt-1 text-2xl font-semibold text-slate-950">{n}</p>
+            {corr.total_columns > n && (
+              <p className="mt-1 text-xs text-slate-400">of {corr.total_columns.toLocaleString()} numeric columns</p>
+            )}
           </div>
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
             <p className="text-sm text-slate-500">Strongest positive</p>
@@ -326,6 +329,12 @@ export function DetectTab(props: DetectTabProps) {
               </button>
             </div>
           </div>
+
+          {corr.total_columns > n && (
+            <p className="mt-3 text-xs text-slate-500">
+              Showing the {n} columns with the strongest overall correlations, out of {corr.total_columns.toLocaleString()} numeric columns.
+            </p>
+          )}
 
           <div className="mt-4 overflow-x-auto">
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: W, height: H }}>

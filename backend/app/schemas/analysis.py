@@ -61,6 +61,7 @@ class GroupByResponse(BaseModel):
     aggregate_column: str
     aggregate_func: str
     results: list[GroupResult]
+    total_groups: int  # count of distinct groups before truncation to MAX_GROUP_RESULTS
 
 
 # ── Trend Analysis ────────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ class CorrelationResponse(BaseModel):
     columns: list[str]
     matrix: dict[str, dict[str, float]]
     method: CorrelationMethod = "pearson"
+    total_columns: int  # count of numeric columns before truncation to MAX_CORRELATION_COLUMNS
 
 
 # ── Distribution Analysis ─────────────────────────────────────────────────────
