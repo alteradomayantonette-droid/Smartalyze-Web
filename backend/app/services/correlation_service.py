@@ -13,6 +13,13 @@ from app.services.dataset_snapshot import snapshot_to_dataframe
 
 CorrelationMethod = Literal["pearson", "spearman"]
 
+# Cap on columns rendered in the heatmap -- at the frontend's fixed 64px cell size,
+# more than ~20 columns produces a grid too large to read even scrolled. When a
+# dataset has more numeric columns than this, keep the ones most correlated with
+# the rest of the dataset (by mean absolute correlation) rather than an arbitrary
+# subset, since those are the relationships most likely to be analytically useful.
+MAX_CORRELATION_COLUMNS = 20
+
 
 def _get_version(dataset: Dataset, version_id: int | None) -> DatasetVersion:
     if version_id is not None:
@@ -69,9 +76,10 @@ def compute_correlation(
         df = snapshot_to_dataframe(version.data_snapshot)
 
     numeric_cols = _coerce_numeric_columns(df)
+    total_columns = len(numeric_cols)
 
-    if len(numeric_cols) < 2:
-        return CorrelationResponse(columns=[], matrix={}, method=method)
+    if total_columns < 2:
+        return CorrelationResponse(columns=[], matrix={}, method=method, total_columns=total_columns)
 
     sub = df[numeric_cols].copy()
     for col in numeric_cols:
@@ -80,10 +88,18 @@ def compute_correlation(
 
     corr_df = sub.corr(method=method)
 
+    if len(corr_df.columns) > MAX_CORRELATION_COLUMNS:
+        # Rank by mean absolute correlation with the rest of the matrix (includes
+        # the self-correlation diagonal of 1.0, a constant offset that doesn't
+        # change the ranking) and keep the most "entangled" columns.
+        strength = corr_df.abs().mean().sort_values(ascending=False)
+        selected = list(strength.index[:MAX_CORRELATION_COLUMNS])
+        corr_df = corr_df.loc[selected, selected]
+
     columns = list(corr_df.columns)
     matrix: dict[str, dict[str, float]] = {
         col: {other: _safe_float(corr_df.loc[col, other]) for other in columns}
         for col in columns
     }
 
-    return CorrelationResponse(columns=columns, matrix=matrix, method=method)
+    return CorrelationResponse(columns=columns, matrix=matrix, method=method, total_columns=total_columns)

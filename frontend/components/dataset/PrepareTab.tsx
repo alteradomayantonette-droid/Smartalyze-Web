@@ -292,6 +292,9 @@ export function PrepareTab(props: PrepareTabProps) {
   const [formattingOpen, setFormattingOpen] = useState(false);
   const [textCleanupOpen, setTextCleanupOpen] = useState(false);
   const [statInsightsOpen, setStatInsightsOpen] = useState(true);
+  const [newColumnName, setNewColumnName] = useState("");
+  const [newColumnExpression, setNewColumnExpression] = useState("");
+  const [newColumnError, setNewColumnError] = useState<string | null>(null);
 
   useEffect(() => {
     setCleanedPreviewLimit(10);
@@ -323,6 +326,33 @@ export function PrepareTab(props: PrepareTabProps) {
 
   const availableColumns = workspace.dataset.columns_json?.map((c) => String(c.name ?? "")).filter(Boolean) ?? [];
   const cleaningIssues = cleaningDetection?.issues ?? [];
+  const queuedDerivedColumns = cleaningOperations.filter((op) => op.operation_type === "derive_column");
+
+  function handleAddDerivedColumn() {
+    const name = newColumnName.trim();
+    const expression = newColumnExpression.trim();
+    if (!name) { setNewColumnError("Enter a name for the new column."); return; }
+    if (!expression) { setNewColumnError("Enter a formula for the new column."); return; }
+    if (availableColumns.some((col) => col.toLowerCase() === name.toLowerCase())) {
+      setNewColumnError(`"${name}" already exists as a column.`);
+      return;
+    }
+    if (queuedDerivedColumns.some((op) => (op.new_column_name ?? "").toLowerCase() === name.toLowerCase())) {
+      setNewColumnError(`"${name}" is already queued as a new column.`);
+      return;
+    }
+    setCleaningOperations((ops) => [
+      ...ops,
+      { operation_type: "derive_column", columns: [], column: null, target_type: null, drop_all_missing: true, errors: "coerce", new_column_name: name, expression },
+    ]);
+    setNewColumnName("");
+    setNewColumnExpression("");
+    setNewColumnError(null);
+  }
+
+  function handleRemoveDerivedColumn(name: string | null | undefined) {
+    setCleaningOperations((ops) => ops.filter((op) => !(op.operation_type === "derive_column" && op.new_column_name === name)));
+  }
 
   function renderPreviewTable(
     rows: Array<Record<string, unknown>> = workspace.dataset.preview_json ?? [],
@@ -1038,6 +1068,67 @@ export function PrepareTab(props: PrepareTabProps) {
                           );
                         })()}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Add Column */}
+                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                    <div className="flex items-center gap-2 px-5 py-3.5 bg-slate-50 border-b border-slate-100">
+                      <span className="h-2.5 w-2.5 rounded-full bg-slate-400 shrink-0" />
+                      <span className="font-semibold text-slate-950 text-sm">Add Column</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500 ml-1">optional</span>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      <p className="text-xs text-slate-500">
+                        Create a new column from a formula using existing column names, e.g. <code className="rounded bg-slate-100 px-1 py-0.5">price * quantity</code> or <code className="rounded bg-slate-100 px-1 py-0.5">total - discount</code>.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          type="text"
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none w-48"
+                          placeholder="New column name…"
+                          value={newColumnName}
+                          onChange={(e) => { setNewColumnName(e.target.value); setNewColumnError(null); }}
+                        />
+                        <input
+                          type="text"
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none flex-1 min-w-50"
+                          placeholder="Formula, e.g. price * quantity"
+                          value={newColumnExpression}
+                          onChange={(e) => { setNewColumnExpression(e.target.value); setNewColumnError(null); }}
+                        />
+                        <button
+                          type="button"
+                          className="rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 bg-slate-700 text-white hover:bg-slate-600"
+                          onClick={handleAddDerivedColumn}
+                          disabled={!newColumnName.trim() || !newColumnExpression.trim()}
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {newColumnError && <p className="text-xs text-red-600">{newColumnError}</p>}
+                      {availableColumns.length > 0 && (
+                        <p className="text-xs text-slate-400">
+                          Available columns: {availableColumns.join(", ")}
+                        </p>
+                      )}
+                      {queuedDerivedColumns.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {queuedDerivedColumns.map((op) => (
+                            <span key={op.new_column_name} className="inline-flex items-center gap-2 rounded-full bg-indigo-50 border border-indigo-200 px-3 py-1 text-xs text-indigo-700">
+                              <span><strong>{op.new_column_name}</strong> = {op.expression}</span>
+                              <button
+                                type="button"
+                                className="text-indigo-400 hover:text-indigo-700"
+                                onClick={() => handleRemoveDerivedColumn(op.new_column_name)}
+                                aria-label={`Remove derived column ${op.new_column_name}`}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

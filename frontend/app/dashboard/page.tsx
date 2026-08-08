@@ -16,7 +16,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { Dataset, deleteDataset, getCurrentUser, listDatasets, uploadDataset } from "@/lib/api";
+import { Dataset, deleteDataset, getCurrentUser, listDatasets, renameDataset, uploadDataset } from "@/lib/api";
 import { clearStoredToken, getStoredToken } from "@/lib/auth";
 
 type DatasetSortKey = "recent" | "name" | "size";
@@ -88,9 +88,14 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadingMessage, setUploadingMessage] = useState("Uploading…");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const ocrProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [renameTargetId, setRenameTargetId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renaming, setRenaming] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<DatasetSortKey>("recent");
@@ -106,11 +111,39 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  useEffect(() => {
+    return () => { if (ocrProgressTimerRef.current !== null) clearInterval(ocrProgressTimerRef.current); };
+  }, []);
+
   async function refreshDatasets(t?: string) {
     const tok = t ?? token;
     if (!tok) return;
     const list = await listDatasets(tok);
     setDatasets(list);
+  }
+
+  // OCR extraction has no real progress signal from the backend (it's a single
+  // blocking call, no streaming channel) -- simulate a smooth, decelerating climb
+  // toward ~92% so the bar keeps visibly moving instead of sitting on a spinner,
+  // then snap to 100% once the real response actually arrives.
+  function startSimulatedOcrProgress() {
+    stopSimulatedOcrProgress();
+    setUploadProgress(0);
+    ocrProgressTimerRef.current = setInterval(() => {
+      setUploadProgress((prev) => {
+        const current = prev ?? 0;
+        if (current >= 0.92) return current;
+        const remaining = 0.92 - current;
+        return current + remaining * 0.08;
+      });
+    }, 200);
+  }
+
+  function stopSimulatedOcrProgress() {
+    if (ocrProgressTimerRef.current !== null) {
+      clearInterval(ocrProgressTimerRef.current);
+      ocrProgressTimerRef.current = null;
+    }
   }
 
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -119,17 +152,27 @@ export default function DashboardPage() {
     const tok = token ?? getStoredToken();
     if (!tok) { toast.warning("You need to be logged in to upload."); return; }
     const isImage = /\.(png|jpe?g)$/i.test(file.name);
-    setUploadingMessage(isImage ? "Extracting table from image…" : "Uploading…");
+    setUploadingMessage(isImage ? "Uploading…" : "Uploading…");
+    setUploadProgress(0);
     setUploading(true);
     try {
-      await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok);
+      await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok, (fraction) => {
+        setUploadProgress(fraction);
+        if (fraction >= 1) {
+          setUploadingMessage(isImage ? "Extracting table from image…" : "Processing…");
+          if (isImage) startSimulatedOcrProgress();
+        }
+      });
+      setUploadProgress(1);
       event.target.value = "";
       await refreshDatasets(tok);
       toast.success(isImage ? "Image table extracted and saved as dataset." : "Dataset uploaded successfully.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed.");
     } finally {
+      stopSimulatedOcrProgress();
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -167,6 +210,34 @@ export default function DashboardPage() {
     }
   }
 
+  function startRename(dataset: Dataset) {
+    setRenameTargetId(dataset.id);
+    setRenameValue(dataset.original_filename);
+  }
+
+  function cancelRename() {
+    setRenameTargetId(null);
+    setRenameValue("");
+  }
+
+  async function handleConfirmRename() {
+    const tok = token ?? getStoredToken();
+    const name = renameValue.trim();
+    if (!tok || renameTargetId === null) return;
+    if (!name) { toast.warning("Name cannot be empty."); return; }
+    setRenaming(true);
+    try {
+      await renameDataset(renameTargetId, name, tok);
+      await refreshDatasets(tok);
+      toast.success(`Renamed to "${name}".`);
+      cancelRename();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Rename failed.");
+    } finally {
+      setRenaming(false);
+    }
+  }
+
   function handleLogout() { clearStoredToken(); router.replace("/login"); }
 
   function handleDragOver(e: React.DragEvent) {
@@ -184,16 +255,26 @@ export default function DashboardPage() {
     const tok = token ?? getStoredToken();
     if (!tok) { toast.warning("You need to be logged in to upload."); return; }
     const isImage = /\.(png|jpe?g)$/i.test(file.name);
-    setUploadingMessage(isImage ? "Extracting table from image…" : "Uploading…");
+    setUploadingMessage("Uploading…");
+    setUploadProgress(0);
     setUploading(true);
     try {
-      await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok);
+      await uploadDataset(file, isImage ? "Uploaded via OCR" : "Dashboard upload", tok, (fraction) => {
+        setUploadProgress(fraction);
+        if (fraction >= 1) {
+          setUploadingMessage(isImage ? "Extracting table from image…" : "Processing…");
+          if (isImage) startSimulatedOcrProgress();
+        }
+      });
+      setUploadProgress(1);
       await refreshDatasets(tok);
       toast.success(isImage ? "Image table extracted and saved." : "Dataset uploaded successfully.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed.");
     } finally {
+      stopSimulatedOcrProgress();
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -358,13 +439,25 @@ export default function DashboardPage() {
                     )}
                   </div>
                   {uploading ? (
-                    <div className="flex items-center gap-2 text-xs text-indigo-600">
-                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                      </svg>
-                      {uploadingMessage}
-                    </div>
+                    uploadProgress !== null && uploadProgress < 1 ? (
+                      <div className="w-full max-w-xs px-4">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-100">
+                          <div
+                            className="h-full rounded-full bg-indigo-500 transition-all"
+                            style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+                          />
+                        </div>
+                        <p className="mt-1.5 text-center text-xs text-indigo-500">{Math.round(uploadProgress * 100)}%</p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-indigo-600">
+                        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                        </svg>
+                        {uploadingMessage}
+                      </div>
+                    )
                   ) : (
                     <div className="flex flex-wrap items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <button
@@ -393,20 +486,64 @@ export default function DashboardPage() {
                 sorted.map((dataset) => {
                   const d = getDeductions(dataset);
                   const isClean = d.score === 100;
+                  const isRenaming = renameTargetId === dataset.id;
                   return (
                     <div
                       key={dataset.id}
                       className="group flex cursor-pointer items-start gap-3 border-b border-slate-50 px-4 py-3 transition hover:bg-slate-50"
                       style={{ borderLeft: `3px solid ${d.borderColor}` }}
-                      onClick={() => router.push(`/dataset/${dataset.id}`)}
+                      onClick={() => { if (!isRenaming) router.push(`/dataset/${dataset.id}`); }}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="truncate text-sm font-semibold text-slate-800">{dataset.original_filename}</p>
-                          {dataset.file_format === "image" && (
-                            <span className="shrink-0 rounded px-1 py-0.5 text-xs font-medium bg-violet-100 text-violet-700">OCR</span>
-                          )}
-                        </div>
+                        {isRenaming ? (
+                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              autoFocus
+                              className="min-w-0 flex-1 rounded-lg border border-indigo-300 px-2 py-1 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                              value={renameValue}
+                              disabled={renaming}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleConfirmRename();
+                                if (e.key === "Escape") cancelRename();
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="shrink-0 text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-60"
+                              onClick={handleConfirmRename}
+                              disabled={renaming}
+                              aria-label="Save name"
+                            >
+                              {renaming ? "…" : "✓"}
+                            </button>
+                            <button
+                              type="button"
+                              className="shrink-0 text-xs font-medium text-slate-400 hover:text-slate-600 disabled:opacity-60"
+                              onClick={cancelRename}
+                              disabled={renaming}
+                              aria-label="Cancel rename"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <p className="truncate text-sm font-semibold text-slate-800">{dataset.original_filename}</p>
+                            {dataset.file_format === "image" && (
+                              <span className="shrink-0 rounded px-1 py-0.5 text-xs font-medium bg-violet-100 text-violet-700">OCR</span>
+                            )}
+                            <button
+                              type="button"
+                              className="shrink-0 text-xs text-slate-300 opacity-0 transition hover:text-indigo-600 group-hover:opacity-100"
+                              onClick={(e) => { e.stopPropagation(); startRename(dataset); }}
+                              aria-label="Rename dataset"
+                            >
+                              ✎
+                            </button>
+                          </div>
+                        )}
                         <p className="text-xs text-slate-400">
                           {dataset.row_count?.toLocaleString() ?? "—"} rows · {dataset.column_count ?? "—"} cols · {formatRelativeDate(dataset.created_at)}
                         </p>
@@ -552,7 +689,7 @@ export default function DashboardPage() {
       {/* OCR Loading Overlay */}
       {uploading && uploadingMessage.startsWith("Extracting") && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white px-10 py-8 shadow-2xl">
+          <div className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white px-10 py-8 shadow-2xl">
             <div className="relative flex items-center justify-center">
               <svg className="h-12 w-12 animate-spin text-indigo-200" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -564,6 +701,15 @@ export default function DashboardPage() {
             <div className="text-center">
               <p className="text-sm font-semibold text-slate-900">Extracting table from image</p>
               <p className="mt-1 text-xs text-slate-400">This may take a few seconds…</p>
+            </div>
+            <div className="w-full">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-100">
+                <div
+                  className="h-full rounded-full bg-indigo-500 transition-all duration-200"
+                  style={{ width: `${Math.round((uploadProgress ?? 0) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-center text-xs text-indigo-500">{Math.round((uploadProgress ?? 0) * 100)}%</p>
             </div>
           </div>
         </div>

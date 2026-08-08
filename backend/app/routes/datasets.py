@@ -6,6 +6,7 @@ Public API endpoints used by the frontend:
 - GET /dataset/{id}: "workspace" view for a dataset (dataset + warnings/suggestions)
 - POST /dataset/{id}/result: simplified save flow (replace current vs save as new dataset)
 - DELETE /dataset/{id}: delete a dataset owned by the current user
+- PATCH /dataset/{id}/rename: rename a dataset owned by the current user
 
 Notes:
 - Ownership is enforced by `get_owned_dataset()` in the service layer.
@@ -36,6 +37,8 @@ from app.schemas.dataset import (
     ExportDatasetRequest,
     ManualEditRequest,
     ManualEditResponse,
+    RenameDatasetRequest,
+    RenameDatasetResponse,
     RestoreVersionResponse,
     SaveResultRequest,
     SaveResultResponse,
@@ -55,6 +58,7 @@ from app.services.dataset_service import (
     get_owned_dataset,
     get_workspace_guidance,
     list_user_datasets,
+    rename_owned_dataset,
 )
 from app.services.filter_service import filter_rows
 from app.services.structure_service import compute_structure_summary
@@ -120,6 +124,21 @@ async def delete_dataset(dataset_id: int, authorization: str | None = Header(def
     dataset = await get_owned_dataset(db, dataset_id, owner)
     await delete_owned_dataset(db, dataset)
     return {"message": "Dataset deleted successfully."}
+
+
+@router.patch("/dataset/{dataset_id}/rename", response_model=RenameDatasetResponse)
+async def rename_dataset(
+    dataset_id: int,
+    payload: RenameDatasetRequest,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a dataset owned by the logged-in user."""
+    token = _get_current_token(authorization)
+    owner = await get_user_by_token(db, token)
+    dataset = await get_owned_dataset(db, dataset_id, owner)
+    dataset = await rename_owned_dataset(db, dataset, payload.name)
+    return {"message": "Dataset renamed successfully.", "dataset": dataset}
 
 
 @router.post("/dataset/{dataset_id}/export")
