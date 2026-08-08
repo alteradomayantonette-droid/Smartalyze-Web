@@ -1,40 +1,64 @@
 <mxfile host="app.diagrams.net">
   <diagram id="dfd-level1-smartalyze" name="DFD - Level 1">
-    <mxGraphModel dx="3236" dy="914" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="3575" dy="1110" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" value="Level 1 Data Flow Diagram - Smartalyze" vertex="1">
           <mxGeometry height="30" width="600" x="130" y="20" as="geometry" />
         </mxCell>
-        <mxCell id="e_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;" value="Non-Technical User" vertex="1">
+        <mxCell id="e_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontSize=12;fontStyle=1;" value="Non-Technical User" vertex="1">
           <mxGeometry height="145" width="230" x="-340" y="495" as="geometry" />
         </mxCell>
-        <mxCell id="p1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="1.0&#xa;User Authentication" vertex="1">
+        <mxCell id="p1" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="1.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="70" as="geometry" />
         </mxCell>
-        <mxCell id="p2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="2.0&#xa;Dataset Management" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-2" parent="p1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=1;" value="&lt;span style=&quot;font-weight: normal;&quot;&gt;User Authentication&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="115" x="32.5" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="2.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="200" as="geometry" />
         </mxCell>
-        <mxCell id="p3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="3.0&#xa;Data Cleaning (Detect and Apply)" vertex="1">
-          <mxGeometry height="70" width="180" x="360" y="330" as="geometry" />
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-3" parent="p2" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="Dataset Management" vertex="1">
+          <mxGeometry height="30" width="115" x="32.5" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="p6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="4.0&#xa;Analysis &amp; Prediction" vertex="1">
+        <mxCell id="p3" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="3.0" vertex="1">
+          <mxGeometry height="70" width="190" x="360" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-4" parent="p3" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="Data Cleaning (Detect and Apply)" vertex="1">
+          <mxGeometry height="30" width="200" x="-5" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="4.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="460" as="geometry" />
         </mxCell>
-        <mxCell id="p7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="5.0&#xa;AI Advisory" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-5" parent="p6" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="Analysis &amp;amp; Prediction" vertex="1">
+          <mxGeometry height="30" width="150" x="15" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="5.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="590" as="geometry" />
         </mxCell>
-        <mxCell id="p4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="6.0&#xa;Export Dataset / Result" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-6" parent="p7" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=1;" value="&lt;span style=&quot;font-weight: normal;&quot;&gt;AI Advisory&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="80" x="50" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="6.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="720" as="geometry" />
         </mxCell>
-        <mxCell id="p5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="7.0&#xa;Save Result" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-7" parent="p4" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=1;" value="&lt;span style=&quot;font-weight: normal;&quot;&gt;Export Dataset / Result&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="140" x="20" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="7.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="840" as="geometry" />
         </mxCell>
-        <mxCell id="p8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="8.0&#xa;LLM Processing (Ollama / Groq / Gemini)" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-8" parent="p5" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="Save Result" vertex="1">
+          <mxGeometry height="30" width="80" x="50" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p8" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="8.0" vertex="1">
           <mxGeometry height="70" width="180" x="750" y="590" as="geometry" />
         </mxCell>
-        <mxCell id="d1" parent="1" style="shape=mxgraph.dfd.dataStore;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;" value="D1   Smartalyze Database" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-9" parent="p8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="LLM Processing (Ollama / Groq / Gemini)" vertex="1">
+          <mxGeometry height="30" width="130" x="25" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" parent="1" style="shape=mxgraph.dfd.dataStoreID;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;fontColor=default;editIcon=0;editable=1;movable=1;resizable=1;rotatable=1;deletable=1;locked=0;connectable=1;" value="Smartalyze Database" vertex="1">
           <mxGeometry height="110" width="210" x="1100" y="310" as="geometry" />
         </mxCell>
         <mxCell id="f01" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;endArrow=classic;entryX=-0.007;entryY=0.338;entryDx=0;entryDy=0;entryPerimeter=0;" target="p1" value="Login Credentials / Registration">
@@ -197,8 +221,8 @@
           <mxGeometry relative="1" x="-0.7573" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
-              <mxPoint x="690" y="365" />
-              <mxPoint x="690" y="348.27" />
+              <mxPoint x="920" y="365" />
+              <mxPoint x="920" y="348.29" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -206,8 +230,8 @@
           <mxGeometry relative="1" x="-0.7681" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
-              <mxPoint x="710" y="495" />
-              <mxPoint x="710" y="365" />
+              <mxPoint x="940" y="495" />
+              <mxPoint x="940" y="365" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -236,6 +260,9 @@
         </mxCell>
         <mxCell id="f26" edge="1" parent="1" source="p8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;endArrow=classic;exitX=0;exitY=0.65;exitDx=0;exitDy=0;entryX=1;entryY=0.65;entryDx=0;entryDy=0;" target="p7" value="AI Response (Cleaning Plans / Replies)">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-10" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=1;" value="&lt;span style=&quot;font-weight: normal;&quot;&gt;D1&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="30" x="1100" y="350" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
