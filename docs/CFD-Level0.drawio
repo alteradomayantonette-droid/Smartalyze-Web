@@ -1,35 +1,131 @@
 <mxfile host="app.diagrams.net">
   <diagram id="cfd-smartalyze" name="CFD - Level 0 DFD">
-    <mxGraphModel dx="1031" dy="489" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="0" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="1121" dy="648" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="0" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" value="Context Flow Diagram (Level 0 DFD) — Smartalyze" vertex="1">
-          <mxGeometry height="30" width="600" x="300" y="160" as="geometry" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;" value="Context Flow Diagram (Level 0 DFD) - Smartalyze" vertex="1">
+          <mxGeometry height="30" width="600" x="300" y="20" as="geometry" />
         </mxCell>
-        <mxCell id="e_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;" value="Entity / User" vertex="1">
-          <mxGeometry height="70" width="140" x="60" y="360" as="geometry" />
+        <mxCell id="e_user" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;" value="Non-Technical User" vertex="1">
+          <mxGeometry height="140" width="150" x="50" y="150" as="geometry" />
         </mxCell>
-        <mxCell id="p0" parent="1" style="swimlane;startSize=24;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;align=left;spacingLeft=6;" value="0" vertex="1">
-          <mxGeometry height="280" width="300" x="440" y="245" as="geometry" />
+        <mxCell id="p0" parent="1" style="swimlane;startSize=24;fillColor=#ffffff;strokeColor=#000000;fontSize=12;fontStyle=1;align=center;spacingLeft=6;glass=0;absoluteArcSize=0;footerSize=0;" value="0" vertex="1">
+          <mxGeometry height="620" width="300" x="640" y="120" as="geometry">
+            <mxRectangle height="30" width="50" x="640" y="120" as="alternateBounds" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="p0n" parent="p0" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=14;fontStyle=1;" value="Smartalyze: An AI-Assisted Data Visualization&lt;div&gt;and Analysis Platform&lt;/div&gt;" vertex="1">
-          <mxGeometry height="256" width="300" as="geometry" />
+          <mxGeometry height="596" width="300" y="24" as="geometry" />
         </mxCell>
-        <mxCell id="e_llm" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;" value="LLM Provider&#xa;(Ollama / Groq / Gemini)" vertex="1">
-          <mxGeometry height="70" width="180" x="900" y="360" as="geometry" />
+        <mxCell id="in1" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.05;exitDx=0;exitDy=0;entryX=0;entryY=0.06;entryDx=0;entryDy=0;" target="p0" value="Login Credentials / Registration">
+          <mxGeometry relative="1" x="0.6562" y="-3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="f01" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=bottom;" target="p0" value="Login Credentials / Registration&#xa;Dataset File (CSV / Excel / JSON / Image)&#xa;Detect Request&#xa;Analysis Request&#xa;Context + Questions (AI Chat)&#xa;Export Format Request&#xa;Save Request (New / Current Version)">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="in2" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0;entryY=0.13;entryDx=0;entryDy=0;" target="p0" value="Dataset File (CSV / Excel / JSON / Image)">
+          <mxGeometry relative="1" x="0.6396" y="-9" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="320" y="171" />
+              <mxPoint x="320" y="200.6" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="f02" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=top;" target="e_user" value="Auth Token / Status&#xa;Dataset Response / Preview&#xa;Apply (Cleaning) Results&#xa;Stats / Trends / Predictions&#xa;AI Suggestions / Chat Reply&#xa;Exported File&#xa;Save / Success Response">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="in3" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.20;entryDx=0;entryDy=0;" target="p0" value="Detect Request">
+          <mxGeometry relative="1" x="0.6214" y="-6" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="300" y="185" />
+              <mxPoint x="300" y="244" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="f03" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=bottom;" target="e_llm" value="Dataset Context&#xa;(schema + issue summary)">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="in4" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.35;exitDx=0;exitDy=0;entryX=0;entryY=0.27;entryDx=0;entryDy=0;" target="p0" value="Analysis Request">
+          <mxGeometry relative="1" x="0.6012" y="-13" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="280" y="199" />
+              <mxPoint x="280" y="287.4" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="f04" edge="1" parent="1" source="e_llm" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;fontSize=9;align=center;verticalAlign=top;" target="p0" value="AI Response&#xa;(Cleaning Plans / Chat Replies)">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="in5" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.34;entryDx=0;entryDy=0;" target="p0" value="AI Question / Chat">
+          <mxGeometry relative="1" x="0.5787" y="-9" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="260" y="213" />
+              <mxPoint x="260" y="330.8" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="in6" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.55;exitDx=0;exitDy=0;entryX=0;entryY=0.41;entryDx=0;entryDy=0;" target="p0" value="Export Format Request">
+          <mxGeometry relative="1" x="0.5536" y="-6" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="240" y="227" />
+              <mxPoint x="240" y="374.2" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="in7" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.65;exitDx=0;exitDy=0;entryX=0;entryY=0.48;entryDx=0;entryDy=0;" target="p0" value="Save Request (New / Current Version)">
+          <mxGeometry relative="1" x="0.5135" y="-12" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="220" y="241" />
+              <mxPoint x="220" y="417.6" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out1" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;exitX=0;exitY=0.55;exitDx=0;exitDy=0;entryX=0.849;entryY=1.006;entryDx=0;entryDy=0;entryPerimeter=0;" target="e_user" value="Auth Token / Status">
+          <mxGeometry relative="1" x="-0.0201" y="-11" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out2" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;exitX=0;exitY=0.62;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;" target="e_user" value="Dataset Response / Preview">
+          <mxGeometry relative="1" x="-0.0172" y="-14" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out3" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;exitX=0;exitY=0.69;exitDx=0;exitDy=0;entryX=0.635;entryY=1.006;entryDx=0;entryDy=0;entryPerimeter=0;" target="e_user" value="Cleaning Results">
+          <mxGeometry relative="1" x="-0.0421" y="-8" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out4" edge="1" parent="1" source="p0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;exitX=0;exitY=0.76;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="e_user" value="Stats / Trends / Predictions">
+          <mxGeometry relative="1" x="-0.0443" y="-11" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out5" edge="1" parent="1" source="p0n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;" value="AI Suggestions / Chat Reply">
+          <mxGeometry relative="1" x="-0.0457" y="-10" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="110" y="630" />
+            </Array>
+            <mxPoint x="710" y="594.5999999999999" as="sourcePoint" />
+            <mxPoint x="110" y="290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out6" edge="1" parent="1" source="p0n" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;entryX=0.151;entryY=1.002;entryDx=0;entryDy=0;entryPerimeter=0;" value="Exported File">
+          <mxGeometry relative="1" x="-0.066" y="-12" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="90" y="671.72" />
+            </Array>
+            <mxPoint x="657.35" y="677.72" as="sourcePoint" />
+            <mxPoint x="89.99999999999997" y="290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="out7" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=top;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" value="Save / Success Response">
+          <mxGeometry relative="1" x="-0.0774" y="-10" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="70.00999999999999" y="710" />
+            </Array>
+            <mxPoint x="640" y="710" as="sourcePoint" />
+            <mxPoint x="70" y="290" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>
