@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram id="dfd-level1-smartalyze" name="DFD - Level 1">
-    <mxGraphModel dx="4344" dy="1554" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="3335" dy="971" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -37,8 +37,8 @@
         <mxCell id="p7" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="5.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="590" as="geometry" />
         </mxCell>
-        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-6" parent="p7" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=1;" value="&lt;span style=&quot;font-weight: normal;&quot;&gt;AI Advisory&lt;/span&gt;" vertex="1">
-          <mxGeometry height="30" width="80" x="50" y="30" as="geometry" />
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-6" parent="p7" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=1;" value="&lt;span style=&quot;font-weight: normal;&quot;&gt;AI Assisted Explanation&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="130" x="25" y="30" as="geometry" />
         </mxCell>
         <mxCell id="p4" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="6.0" vertex="1">
           <mxGeometry height="70" width="180" x="360" y="720" as="geometry" />
@@ -55,7 +55,7 @@
         <mxCell id="p8" parent="1" style="swimlane;startSize=22;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#000000;fontSize=11;fontStyle=1;align=center;rounded=1;" value="8.0" vertex="1">
           <mxGeometry height="70" width="180" x="750" y="590" as="geometry" />
         </mxCell>
-        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-9" parent="p8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="LLM Processing (Ollama / Groq / Gemini)" vertex="1">
+        <mxCell id="Fa8mTMxe2U7C3IEg-ewB-9" parent="p8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Helvetica;fontSize=11;fontColor=default;fontStyle=0;" value="LLM Processing (Groq)" vertex="1">
           <mxGeometry height="30" width="130" x="25" y="30" as="geometry" />
         </mxCell>
         <mxCell id="d1" parent="1" style="shape=mxgraph.dfd.dataStoreID;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontSize=11;align=center;verticalAlign=middle;fontColor=default;editIcon=0;editable=1;movable=1;resizable=1;rotatable=1;deletable=1;locked=0;connectable=1;noLabel=0;shapeInsidePadding=2;metaEdit=0;" value="Smartalyze Database" vertex="1">

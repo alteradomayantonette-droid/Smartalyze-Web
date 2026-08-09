@@ -19,12 +19,12 @@
           <mxGeometry height="596" width="300" y="24" as="geometry" />
         </mxCell>
         <mxCell id="in1" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.05;exitDx=0;exitDy=0;entryX=0;entryY=0.06;entryDx=0;entryDy=0;" target="p0" value="Login Credentials / Registration">
-          <mxGeometry relative="1" x="0.6562" y="-3" as="geometry">
+          <mxGeometry relative="1" x="0.2731" y="-3" as="geometry">
             <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
         <mxCell id="in2" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0;entryY=0.13;entryDx=0;entryDy=0;" target="p0" value="Dataset File (CSV / Excel / JSON / Image)">
-          <mxGeometry relative="1" x="0.6396" y="-9" as="geometry">
+          <mxGeometry relative="1" x="0.276" y="-9" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="320" y="171" />
@@ -33,7 +33,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="in3" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.20;entryDx=0;entryDy=0;" target="p0" value="Detect Request">
-          <mxGeometry relative="1" x="0.6214" y="-6" as="geometry">
+          <mxGeometry relative="1" x="0.3186" y="-6" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="300" y="185" />
@@ -42,7 +42,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="in4" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.35;exitDx=0;exitDy=0;entryX=0;entryY=0.27;entryDx=0;entryDy=0;" target="p0" value="Analysis Request">
-          <mxGeometry relative="1" x="0.6012" y="-13" as="geometry">
+          <mxGeometry relative="1" x="0.3187" y="-13" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="280" y="199" />
@@ -51,7 +51,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="in5" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.34;entryDx=0;entryDy=0;" target="p0" value="AI Question / Chat">
-          <mxGeometry relative="1" x="0.5787" y="-9" as="geometry">
+          <mxGeometry relative="1" x="0.3905" y="-9" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="260" y="213" />
@@ -60,7 +60,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="in6" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.55;exitDx=0;exitDy=0;entryX=0;entryY=0.41;entryDx=0;entryDy=0;" target="p0" value="Export Format Request">
-          <mxGeometry relative="1" x="0.5536" y="-6" as="geometry">
+          <mxGeometry relative="1" x="0.3529" y="-6" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="240" y="227" />
@@ -69,7 +69,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="in7" edge="1" parent="1" source="e_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;fontSize=9;align=center;verticalAlign=bottom;exitX=1;exitY=0.65;exitDx=0;exitDy=0;entryX=0;entryY=0.48;entryDx=0;entryDy=0;" target="p0" value="Save Request (New / Current Version)">
-          <mxGeometry relative="1" x="0.5135" y="-12" as="geometry">
+          <mxGeometry relative="1" x="0.4162" y="-12" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
               <mxPoint x="220" y="241" />
