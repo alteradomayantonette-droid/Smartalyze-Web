@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram id="runtime-view-smartalyze" name="Runtime View">
-    <mxGraphModel dx="2060" dy="1124" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1873" dy="1022" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -70,31 +70,19 @@
         <mxCell id="user_icon" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;strokeColor=#1E4E9B;fillColor=#1E4E9B;" value="" vertex="1">
           <mxGeometry height="55" width="35" x="570" y="162" as="geometry" />
         </mxCell>
-        <mxCell id="device_icon" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1E4E9B;fontSize=11;fontColor=#333333;" value="Browser / Desktop / Mobile" vertex="1">
-          <mxGeometry height="42" width="210" x="840" y="164" as="geometry" />
-        </mxCell>
-        <mxCell id="box_frontend" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F4FFF7;strokeColor=#40A56C;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1F8B4C;align=center;spacing=8;" value="WEB FRONTEND&#xa;&#xa;* Shows login, dashboard, and dataset workspace&#xa;* Sends typed requests through frontend/lib/api.ts&#xa;* Renders tables, charts, issue panels, and AI panels" vertex="1">
+        <mxCell id="box_frontend" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F4FFF7;strokeColor=#40A56C;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#1F8B4C;align=center;spacing=8;" value="WEB FRONTEND&lt;br&gt;&lt;br&gt;&amp;nbsp;Shows login, dashboard, and dataset workspace&lt;br&gt;&amp;nbsp;Sends typed requests through frontend/lib/api.ts&lt;br&gt;Renders tables, charts, issue panels, and AI panels" vertex="1">
           <mxGeometry height="140" width="640" x="430" y="295" as="geometry" />
         </mxCell>
         <mxCell id="frontend_icon" parent="1" style="shape=mxgraph.networks.pc;html=1;strokeColor=#1F8B4C;fillColor=#ffffff;" value="" vertex="1">
           <mxGeometry height="60" width="75" x="510" y="335" as="geometry" />
         </mxCell>
-        <mxCell id="box_app" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FAF6FF;strokeColor=#7A55C7;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#6842B8;align=center;spacing=8;" value="APPLICATION SERVICE&#xa;&#xa;* FastAPI validates requests and bearer tokens&#xa;* Auth, dataset, cleaning, analysis, and AI routes call services&#xa;* Services apply business rules and transform snapshots" vertex="1">
+        <mxCell id="box_app" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FAF6FF;strokeColor=#7A55C7;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#6842B8;align=center;spacing=8;" value="APPLICATION SERVICE&lt;br&gt;&lt;br&gt;&amp;nbsp;FastAPI validates requests and bearer tokens&lt;br&gt;&amp;nbsp;Auth, dataset, cleaning, analysis, and AI routes call services&lt;br&gt;Services apply business rules and transform snapshots" vertex="1">
           <mxGeometry height="165" width="640" x="430" y="485" as="geometry" />
         </mxCell>
-        <mxCell id="service_icon" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#ffffff;strokeColor=#6842B8;" value="" vertex="1">
-          <mxGeometry height="60" width="80" x="490" y="537.5" as="geometry" />
-        </mxCell>
-        <mxCell id="ai_note" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7A55C7;fontSize=11;align=left;spacing=8;" value="AI branch: compact dataset context can be sent to Groq for cleaning suggestions and insight." vertex="1">
-          <mxGeometry height="45" width="180" x="870" y="501.5" as="geometry" />
-        </mxCell>
-        <mxCell id="box_db" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8EF;strokeColor=#EF8B16;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#EF8B16;align=center;spacing=8;" value="DATABASE&#xa;&#xa;* Reads/writes user and session records&#xa;* Stores dataset metadata and current version pointer&#xa;* Stores JSONB snapshots for version history and restore" vertex="1">
+        <mxCell id="box_db" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8EF;strokeColor=#EF8B16;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#EF8B16;align=center;spacing=8;" value="DATABASE&lt;br&gt;&lt;br&gt;&amp;nbsp;Reads/writes user and session records&lt;br&gt;Stores dataset metadata and current version pointer&lt;br&gt;Stores JSONB snapshots for version history and restore" vertex="1">
           <mxGeometry height="140" width="640" x="430" y="705" as="geometry" />
         </mxCell>
-        <mxCell id="db_icon" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffffff;strokeColor=#EF8B16;" value="" vertex="1">
-          <mxGeometry height="75" width="82" x="470" y="740" as="geometry" />
-        </mxCell>
-        <mxCell id="box_response" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F1FCFE;strokeColor=#22A6B6;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#168A9A;align=center;spacing=8;" value="RESPONSE TO USER&#xa;&#xa;* Auth status, dataset preview, warnings, and suggestions&#xa;* Cleaned snapshot, statistics, trends, anomalies, correlations, predictions&#xa;* Saved result, restored version, or exported CSV/XLSX/JSON/Parquet file" vertex="1">
+        <mxCell id="box_response" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F1FCFE;strokeColor=#22A6B6;strokeWidth=1.5;fontSize=12;fontStyle=1;fontColor=#168A9A;align=center;spacing=8;" value="RESPONSE TO USER&lt;br&gt;&lt;br&gt;&amp;nbsp;Auth status, dataset preview, warnings, and suggestions&lt;br&gt;Cleaned snapshot, statistics, trends, anomalies, correlations, predictions&lt;br&gt;Saved result, restored version, or exported CSV/XLSX/JSON/Parquet file" vertex="1">
           <mxGeometry height="140" width="640" x="430" y="895" as="geometry" />
         </mxCell>
         <mxCell id="check_icon" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#168A9A;strokeColor=#168A9A;fontColor=#ffffff;fontSize=18;fontStyle=1;" value="OK" vertex="1">
@@ -164,6 +152,12 @@
               <mxPoint x="750" y="870.06" />
             </Array>
           </mxGeometry>
+        </mxCell>
+        <mxCell id="k3-DcUn9wJrLZumY8Y_S-1" parent="1" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.database;whiteSpace=wrap;fillColor=none;strokeColor=light-dark(#000000,#FF8000);" value="" vertex="1">
+          <mxGeometry height="60" width="60" x="470" y="747.5" as="geometry" />
+        </mxCell>
+        <mxCell id="k3-DcUn9wJrLZumY8Y_S-2" parent="1" style="points=[];aspect=fixed;html=1;align=center;shadow=0;dashed=0;fillColor=light-dark(#FFFFFF,#E5CCFF);strokeColor=light-dark(transparent,#FFCCFF);shape=mxgraph.alibaba_cloud.arms_application_real-time_monitoring_service;" value="" vertex="1">
+          <mxGeometry height="26.4" width="54.900000000000006" x="473" y="560" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
