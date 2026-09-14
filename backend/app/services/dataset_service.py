@@ -470,9 +470,9 @@ the new version.
     return version
 
 
-    # DIRI SUGOD
+#diri sugod
 
-"""Non-destructive IQR outlier detection for SmartAlyze."""
+"""Non-destructive IQR outlier detection for a pandas-backed dataset engine."""
 
 from __future__ import annotations
 
@@ -484,132 +484,85 @@ import pandas as pd
 
 
 @dataclass(frozen=True)
-class IQRResult:
+class IQRDetectionResult:
+    """JSON-ready result for one grid column.
+
+    rowIndex is the zero-based physical row position in the supplied DataFrame;
+    it is intentionally not the DataFrame index, which may be duplicated or
+    unsuitable for JSON. This makes it safe to map directly to a grid row.
+    """
+
     column: str
     q1: float | None
     q3: float | None
     iqr: float | None
-    lower_bound: float | None
-    upper_bound: float | None
+    lowerBound: float | None
+    upperBound: float | None
+    nonNullCount: int
     flags: list[dict[str, Any]]
 
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
-def detect_iqr_outliers(dataframe: pd.DataFrame, column: str) -> dict[str, Any]:
+
+def detect_iqr_outliers(frame: pd.DataFrame, column: str) -> IQRDetectionResult:
+    """Return, but never change, IQR flags for one numeric DataFrame column.
+
+    Quartiles use pandas' ``linear`` interpolation, so columns with uneven
+    value distributions and arbitrary lengths are handled consistently.
+    Missing values are ignored. A value is flagged only when it is *strictly*
+    outside the Tukey fences: Q1 - 1.5 * IQR and Q3 + 1.5 * IQR.
+
+    Raises:
+        KeyError: if ``column`` is absent.
+        TypeError: if the selected column is not numeric.
     """
-    Calculate IQR fences and return outlier cell coordinates.
-
-    This function does not modify the DataFrame.
-    """
-
-    if column not in dataframe.columns:
+    if column not in frame.columns:
         raise KeyError(f"Unknown column: {column}")
 
-    # Converts numeric-looking strings while safely ignoring invalid values.
-    values = pd.to_numeric(dataframe[column], errors="coerce")
+    series = frame[column]
+    if not pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+        raise TypeError(f"IQR detection requires a numeric column: {column}")
 
-    # Exclude NaN, positive infinity, and negative infinity.
-    valid = values.where(np.isfinite(values))
-    valid_values = valid.dropna()
+    # Convert infinities to missing values: they are not meaningful finite data
+    # points for quartile estimation and must not distort the calculated fences.
+    clean_series = series.replace([np.inf, -np.inf], np.nan)
+    finite = clean_series.dropna()
+    if finite.empty:
+        return IQRDetectionResult(column, None, None, None, None, None, 0, [])
 
-    if valid_values.empty:
-        return asdict(
-            IQRResult(
-                column=column,
-                q1=None,
-                q3=None,
-                iqr=None,
-                lower_bound=None,
-                upper_bound=None,
-                flags=[],
-            )
-        )
-
-    q1 = float(valid_values.quantile(0.25, interpolation="linear"))
-    q3 = float(valid_values.quantile(0.75, interpolation="linear"))
+    q1 = float(finite.quantile(0.25, interpolation="linear"))
+    q3 = float(finite.quantile(0.75, interpolation="linear"))
     iqr = q3 - q1
-
     lower_bound = q1 - 1.5 * iqr
     upper_bound = q3 + 1.5 * iqr
 
-    # Strict comparisons: values exactly on a fence are not flagged.
-    outlier_mask = ((values < lower_bound) | (values > upper_bound)).fillna(False)
-
-    flagged_positions = np.flatnonzero(outlier_mask.to_numpy())
-
+    # Work against the original series so row positions remain aligned with the
+    # frontend dataset grid. NaN comparisons naturally evaluate to False.
+    mask = ((clean_series < lower_bound) | (clean_series > upper_bound)).fillna(False)
     flags = [
         {
-            "rowIndex": int(position),  # zero-based grid row position
-            "rowId": _json_safe_index(dataframe.index[position]),
+            "rowIndex": int(position),
             "column": column,
-            "value": float(values.iloc[position]),
+            "value": _json_number(value),
         }
-        for position in flagged_positions
+        for position, value in enumerate(series)
+        if bool(mask.iloc[position])
     ]
-
-    return asdict(
-        IQRResult(
-            column=column,
-            q1=q1,
-            q3=q3,
-            iqr=iqr,
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-            flags=flags,
-        )
+    return IQRDetectionResult(
+        column=column,
+        q1=q1,
+        q3=q3,
+        iqr=iqr,
+        lowerBound=lower_bound,
+        upperBound=upper_bound,
+        nonNullCount=int(finite.size),
+        flags=flags,
     )
 
 
-def _json_safe_index(index_value: Any) -> str | int | float | bool | None:
-    """Convert a DataFrame index value into a JSON-safe row identifier."""
-    if pd.isna(index_value):
+def _json_number(value: Any) -> int | float | None:
+    """Convert pandas/NumPy numeric scalars to ordinary JSON-compatible types."""
+    if pd.isna(value) or not np.isfinite(value):
         return None
-
-    if isinstance(index_value, (str, int, float, bool)):
-        return index_value
-
-    return str(index_value)
-
-    from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-
-from iqr_outliers import detect_iqr_outliers
-
-router = APIRouter()
-
-
-class IQRRequest(BaseModel):
-    column: str
-
-
-@router.post("/api/datasets/{dataset_id}/outliers/iqr")
-def get_iqr_outliers(dataset_id: str, request: IQRRequest):
-    # Replace this with your existing read-only dataset loader.
-    dataframe = load_dataframe_for_dataset(dataset_id)
-
-    try:
-        return detect_iqr_outliers(dataframe, request.column)
-
-    except KeyError as error:
-        raise HTTPException(
-            status_code=400,
-            detail=str(error),
-        ) from error
-
-
-def apply_confirmed_outlier_action(
-    dataset_id: str,
-    confirmed: bool,
-    flags: list[dict],
-):
-    """
-    Keep any delete/replace/export action separate from detection.
-    This must only run after explicit user confirmation.
-    """
-    if not confirmed:
-        raise HTTPException(
-            status_code=409,
-            detail="Explicit user confirmation is required.",
-        )
-
-    # Add a user-selected modification action here only if needed.
-    # The IQR analysis endpoint never calls this function.
+    return value.item() if isinstance(value, np.generic) else value
