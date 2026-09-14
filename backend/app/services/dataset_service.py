@@ -468,3 +468,148 @@ the new version.
     await db.commit()
     await db.refresh(version)
     return version
+
+
+    # DIRI SUGOD
+
+"""Non-destructive IQR outlier detection for SmartAlyze."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class IQRResult:
+    column: str
+    q1: float | None
+    q3: float | None
+    iqr: float | None
+    lower_bound: float | None
+    upper_bound: float | None
+    flags: list[dict[str, Any]]
+
+
+def detect_iqr_outliers(dataframe: pd.DataFrame, column: str) -> dict[str, Any]:
+    """
+    Calculate IQR fences and return outlier cell coordinates.
+
+    This function does not modify the DataFrame.
+    """
+
+    if column not in dataframe.columns:
+        raise KeyError(f"Unknown column: {column}")
+
+    # Converts numeric-looking strings while safely ignoring invalid values.
+    values = pd.to_numeric(dataframe[column], errors="coerce")
+
+    # Exclude NaN, positive infinity, and negative infinity.
+    valid = values.where(np.isfinite(values))
+    valid_values = valid.dropna()
+
+    if valid_values.empty:
+        return asdict(
+            IQRResult(
+                column=column,
+                q1=None,
+                q3=None,
+                iqr=None,
+                lower_bound=None,
+                upper_bound=None,
+                flags=[],
+            )
+        )
+
+    q1 = float(valid_values.quantile(0.25, interpolation="linear"))
+    q3 = float(valid_values.quantile(0.75, interpolation="linear"))
+    iqr = q3 - q1
+
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+
+    # Strict comparisons: values exactly on a fence are not flagged.
+    outlier_mask = ((values < lower_bound) | (values > upper_bound)).fillna(False)
+
+    flagged_positions = np.flatnonzero(outlier_mask.to_numpy())
+
+    flags = [
+        {
+            "rowIndex": int(position),  # zero-based grid row position
+            "rowId": _json_safe_index(dataframe.index[position]),
+            "column": column,
+            "value": float(values.iloc[position]),
+        }
+        for position in flagged_positions
+    ]
+
+    return asdict(
+        IQRResult(
+            column=column,
+            q1=q1,
+            q3=q3,
+            iqr=iqr,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+            flags=flags,
+        )
+    )
+
+
+def _json_safe_index(index_value: Any) -> str | int | float | bool | None:
+    """Convert a DataFrame index value into a JSON-safe row identifier."""
+    if pd.isna(index_value):
+        return None
+
+    if isinstance(index_value, (str, int, float, bool)):
+        return index_value
+
+    return str(index_value)
+
+    from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from iqr_outliers import detect_iqr_outliers
+
+router = APIRouter()
+
+
+class IQRRequest(BaseModel):
+    column: str
+
+
+@router.post("/api/datasets/{dataset_id}/outliers/iqr")
+def get_iqr_outliers(dataset_id: str, request: IQRRequest):
+    # Replace this with your existing read-only dataset loader.
+    dataframe = load_dataframe_for_dataset(dataset_id)
+
+    try:
+        return detect_iqr_outliers(dataframe, request.column)
+
+    except KeyError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
+def apply_confirmed_outlier_action(
+    dataset_id: str,
+    confirmed: bool,
+    flags: list[dict],
+):
+    """
+    Keep any delete/replace/export action separate from detection.
+    This must only run after explicit user confirmation.
+    """
+    if not confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail="Explicit user confirmation is required.",
+        )
+
+    # Add a user-selected modification action here only if needed.
+    # The IQR analysis endpoint never calls this function.
